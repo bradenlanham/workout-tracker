@@ -47,7 +47,7 @@ export default function BottomNav() {
   const theme = getTheme(settings.accentColor)
 
   // Hide nav when in a logging sub-route
-  const isLogging = location.pathname.startsWith('/log/bb/') || location.pathname.startsWith('/log/hyrox/')
+  const isLogging = location.pathname.startsWith('/log/bb/')
   if (isLogging) return null
 
   return (

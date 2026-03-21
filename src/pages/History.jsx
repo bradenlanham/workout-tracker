@@ -3,8 +3,6 @@ import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { formatDate, formatTime } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../data/exercises'
-import { SESSION_TYPE_INFO } from '../data/hyrox'
-
 // ── Calendar heatmap ───────────────────────────────────────────────────────────
 
 const GRADE_COLORS = {
@@ -146,15 +144,8 @@ function Stat({ label, value }) {
 function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const d        = session.data || {}
-  const isBb     = session.mode === 'bb'
-  const isRun      = ['long_run', 'steady_run', 'tempo_run', '5k_time_trial'].includes(session.type)
-  const isInterval = session.type === 'intervals'
-  const isStation  = ['station_skills', 'station_endurance'].includes(session.type)
-  const isCombo    = session.type === 'combo'
-  const isSled     = session.type === 'sled_strength'
-
-  const sessionName  = isBb ? (BB_WORKOUT_NAMES[session.type]  || session.type) : (SESSION_TYPE_INFO[session.type]?.name  || session.type)
-  const sessionEmoji = isBb ? (BB_WORKOUT_EMOJI[session.type]  || '✏️')         : (SESSION_TYPE_INFO[session.type]?.emoji || '🏃')
+  const sessionName  = BB_WORKOUT_NAMES[session.type] || session.type
+  const sessionEmoji = BB_WORKOUT_EMOJI[session.type] || '🏋️'
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto" onClick={onClose}>
@@ -207,82 +198,6 @@ function SessionDetail({ session, onClose, onDelete }) {
             </div>
           )}
 
-          {/* Run details */}
-          {!isBb && isRun && (
-            <div className="grid grid-cols-3 gap-3">
-              {d.distance && <Stat label="Distance" value={`${d.distance} km`} />}
-              {d.time      && <Stat label="Time"     value={d.time}           />}
-              {d.pace      && <Stat label="Pace"     value={`${d.pace}/km`}   />}
-            </div>
-          )}
-
-          {/* Interval details */}
-          {!isBb && isInterval && (
-            <div className="grid grid-cols-2 gap-3">
-              {d.reps         && <Stat label="Reps"        value={d.reps}                    />}
-              {d.repDistanceM && <Stat label="Distance/Rep" value={`${d.repDistanceM}m`}     />}
-              {d.repTime      && <Stat label="Time/Rep"    value={d.repTime}                 />}
-              {d.avgSplit     && <Stat label="Avg Split"   value={`${d.avgSplit}/km`}        />}
-            </div>
-          )}
-
-          {/* Station / combo details */}
-          {!isBb && (isStation || isCombo) && d.stations && (
-            <div className="space-y-2">
-              {isCombo && (
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  {d.rounds           && <Stat label="Rounds" value={d.rounds}                       />}
-                  {d.totalRunDistance && <Stat label="Run"    value={`${d.totalRunDistance}km`}      />}
-                  {d.totalTime        && <Stat label="Total"  value={d.totalTime}                    />}
-                </div>
-              )}
-              {d.stations.map((s, i) => (
-                <div key={i} className="bg-gray-700/50 rounded-xl p-3">
-                  <p className="font-semibold text-sm mb-1">{s.name || s.id?.replace(/_/g, ' ')}</p>
-                  <p className="text-xs text-gray-400">
-                    {s.sets  ? `${s.sets} sets`       : ''}
-                    {s.value ? ` · ${s.value}${s.unit || ''}` : ''}
-                    {s.weight ? ` · ${s.weight}kg`    : ''}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Sled details */}
-          {!isBb && isSled && d.sled && (
-            <div className="space-y-3">
-              {(d.sled.pushSets || d.sled.pushWeight) && (
-                <div className="bg-gray-700/50 rounded-xl p-3">
-                  <p className="font-semibold text-sm mb-1">🛷 Sled Push</p>
-                  <p className="text-xs text-gray-400">
-                    {d.sled.pushSets && `${d.sled.pushSets} sets`}
-                    {d.sled.pushDistance && ` × ${d.sled.pushDistance}m`}
-                    {d.sled.pushWeight && ` · ${d.sled.pushWeight}kg`}
-                  </p>
-                </div>
-              )}
-              {(d.sled.pullSets || d.sled.pullWeight) && (
-                <div className="bg-gray-700/50 rounded-xl p-3">
-                  <p className="font-semibold text-sm mb-1">🧲 Sled Pull</p>
-                  <p className="text-xs text-gray-400">
-                    {d.sled.pullSets && `${d.sled.pullSets} sets`}
-                    {d.sled.pullDistance && ` × ${d.sled.pullDistance}m`}
-                    {d.sled.pullWeight && ` · ${d.sled.pullWeight}kg`}
-                  </p>
-                </div>
-              )}
-              {d.exercises?.map((ex, i) => (
-                <div key={i} className="bg-gray-700/50 rounded-xl p-3">
-                  <p className="font-semibold text-sm mb-1">{ex.name}</p>
-                  {ex.sets?.map((s, si) => (
-                    <p key={si} className="text-xs text-gray-400">{s.reps} reps × {s.weight} lbs</p>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-
           {session.notes && (
             <div className="mt-4 bg-gray-700/30 rounded-xl p-3">
               <p className="text-xs text-gray-500 font-semibold mb-1">NOTES</p>
@@ -316,22 +231,15 @@ function SessionDetail({ session, onClose, onDelete }) {
 // ── Session card ───────────────────────────────────────────────────────────────
 
 function SessionCard({ session, onClick }) {
-  const isBb = session.mode === 'bb'
   const d    = session.data || {}
 
-  const name  = isBb ? (BB_WORKOUT_NAMES[session.type] || session.type) : (SESSION_TYPE_INFO[session.type]?.name  || session.type)
-  const emoji = isBb ? (BB_WORKOUT_EMOJI[session.type] || '✏️')         : (SESSION_TYPE_INFO[session.type]?.emoji || '🏃')
-  const accentColor = isBb ? '#3B82F6' : (SESSION_TYPE_INFO[session.type]?.color || '#3B82F6')
+  const name  = BB_WORKOUT_NAMES[session.type] || session.type
+  const emoji = BB_WORKOUT_EMOJI[session.type] || '🏋️'
+  const accentColor = '#3B82F6'
 
-  const subtitle = isBb
-    ? `${d.exercises?.filter(e => e.sets.some(s => s.reps)).length || 0} exercises · ${d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0} sets`
-    : d.distance   ? `${d.distance} km${d.pace ? ` · ${d.pace}/km` : ''}`
-    : d.reps        ? `${d.reps} × ${d.repDistanceM}m${d.avgSplit ? ` · ${d.avgSplit}/km avg` : ''}`
-    : d.stations?.length ? `${d.stations.filter(s => s.selected).length} stations`
-    : d.rounds      ? `${d.rounds} rounds`
-    : ''
+  const subtitle = `${d.exercises?.filter(e => e.sets.some(s => s.reps)).length || 0} exercises · ${d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0} sets`
 
-  const hasPR = isBb && d.exercises?.some(e => e.sets.some(s => s.isNewPR))
+  const hasPR = d.exercises?.some(e => e.sets.some(s => s.isNewPR))
 
   return (
     <button onClick={onClick} className="w-full bg-gray-800 rounded-2xl p-4 flex items-center gap-4 text-left">
@@ -363,9 +271,8 @@ function SessionCard({ session, onClick }) {
 // ── Main History ───────────────────────────────────────────────────────────────
 
 const FILTER_OPTIONS = [
-  { id: 'all',   label: 'All'       },
-  { id: 'bb',    label: '🏋️ BB'    },
-  { id: 'hyrox', label: '🏃 HYROX' },
+  { id: 'all', label: 'All'    },
+  { id: 'bb',  label: '🏋️ BB' },
 ]
 
 export default function History() {

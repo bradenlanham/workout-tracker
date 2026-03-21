@@ -1,4 +1,3 @@
-import { HYROX_PHASES, WEEKLY_SCHEDULE } from '../data/hyrox'
 import { BB_WORKOUT_SEQUENCE } from '../data/exercises'
 
 // ── Time helpers ─────────────────────────────────────────────────────────────
@@ -22,44 +21,6 @@ export function calcPace(distanceKm, totalSeconds) {
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
-export function getHyroxWeek(startDate) {
-  if (!startDate) return null
-  const start = new Date(startDate)
-  start.setHours(0, 0, 0, 0)
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  const diffDays = Math.floor((now - start) / (1000 * 60 * 60 * 24))
-  const week = Math.floor(diffDays / 7) + 1
-  return Math.max(1, Math.min(16, week))
-}
-
-export function getHyroxPhase(week) {
-  if (!week) return null
-  return HYROX_PHASES.find(p => week >= p.startWeek && week <= p.endWeek) || null
-}
-
-export function getWeekKmTarget(week) {
-  const phase = getHyroxPhase(week)
-  return phase ? phase.kmTarget : 0
-}
-
-export function getTodaysHyroxSession() {
-  const dow = new Date().getDay()
-  return WEEKLY_SCHEDULE[dow] || null
-}
-
-export function getWeekDateRange() {
-  const now = new Date()
-  const day = now.getDay()
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - ((day + 6) % 7))
-  monday.setHours(0, 0, 0, 0)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  sunday.setHours(23, 59, 59, 999)
-  return { start: monday, end: sunday }
-}
-
 export function formatDate(isoString) {
   const d = new Date(isoString)
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -74,12 +35,6 @@ export function isToday(isoString) {
   const d = new Date(isoString)
   const now = new Date()
   return d.toDateString() === now.toDateString()
-}
-
-export function isThisWeek(isoString) {
-  const { start, end } = getWeekDateRange()
-  const d = new Date(isoString)
-  return d >= start && d <= end
 }
 
 // ── BB helpers ───────────────────────────────────────────────────────────────
@@ -134,27 +89,6 @@ export function calcSessionVolume(exercises) {
   }, 0)
 }
 
-// ── HYROX helpers ─────────────────────────────────────────────────────────────
-
-export function getWeeklyKm(sessions) {
-  let total = 0
-
-  sessions
-    .filter(s => s.mode === 'hyrox' && isThisWeek(s.date))
-    .forEach(s => {
-      const d = s.data
-      if (!d) return
-      if (d.distance) total += parseFloat(d.distance) || 0
-      if (d.totalRunDistance) total += parseFloat(d.totalRunDistance) || 0
-    })
-
-  return Math.round(total * 10) / 10
-}
-
-export function getWeeklyHyroxSessions(sessions) {
-  return sessions.filter(s => s.mode === 'hyrox' && isThisWeek(s.date))
-}
-
 // ── Sound ──────────────────────────────────────────────────────────────────
 
 export function playBeep() {
@@ -173,43 +107,6 @@ export function playBeep() {
   } catch (e) {
     // AudioContext not available
   }
-}
-
-// ── Progressive overload ────────────────────────────────────────────────────
-// Hypertrophy target: 8–12 rep range. Suggest weight increase when top of range hit.
-
-export function getProgressiveOverloadSuggestion(lastSessionEx) {
-  if (!lastSessionEx) return { weight: '', hint: null }
-
-  const lastWorkingSets = (lastSessionEx.sets || [])
-    .filter(s => s.type !== 'warmup' && ((s.reps || 0) > 0 || (s.weight || 0) > 0))
-
-  if (!lastWorkingSets.length) return { weight: '', hint: null }
-
-  // Use heaviest working set as reference
-  const bestSet = lastWorkingSets.reduce((best, s) =>
-    (parseFloat(s.weight) || 0) >= (parseFloat(best.weight) || 0) ? s : best
-  , lastWorkingSets[0])
-
-  const lastWeight = parseFloat(bestSet.weight) || 0
-  const lastReps   = parseInt(bestSet.reps)   || 0
-
-  if (!lastWeight) return { weight: '', hint: null }
-
-  let suggestedWeight = lastWeight
-  let hint = null
-
-  if (lastReps >= 12) {
-    suggestedWeight = lastWeight + 5
-    hint = `↑ +5 lbs — you hit ${lastReps} reps last time`
-  } else if (lastReps >= 10) {
-    suggestedWeight = lastWeight + 2.5
-    hint = `↑ +2.5 lbs — you hit ${lastReps} reps last time`
-  } else if (lastReps > 0) {
-    hint = `Same weight — aim for ${lastReps + 1}+ reps (8–12 range)`
-  }
-
-  return { weight: String(suggestedWeight), hint }
 }
 
 // ── Streaks ─────────────────────────────────────────────────────────────────

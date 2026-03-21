@@ -13,13 +13,13 @@ const NAV_LINKS = [
 export default function HamburgerMenu() {
   const loc       = useLocation()
   const navigate  = useNavigate()
-  const { settings, updateSettings, exportData } = useStore()
+  const { settings, exportData } = useStore()
   const theme     = getTheme(settings.accentColor)
   const [open, setOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
 
-  // Hide entirely on logging sub-routes (BbLogger / HyroxLogger have their own nav)
-  const isLogging = loc.pathname.startsWith('/log/bb/') || loc.pathname.startsWith('/log/hyrox/')
+  // Hide entirely on logging sub-routes (BbLogger has its own nav)
+  const isLogging = loc.pathname.startsWith('/log/bb/')
   if (isLogging) return null
 
   const close = () => setOpen(false)
@@ -64,29 +64,6 @@ export default function HamburgerMenu() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
-              {/* Mode toggle */}
-              <div>
-                <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-2">Mode</p>
-                <div className="flex bg-gray-800 rounded-xl p-1 gap-1">
-                  <button
-                    onClick={() => updateSettings({ activeMode: 'bb' })}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                      settings.activeMode === 'bb' ? `${theme.bg} text-white` : 'text-gray-400'
-                    }`}
-                  >
-                    🏋️ BB
-                  </button>
-                  <button
-                    onClick={() => updateSettings({ activeMode: 'hyrox' })}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                      settings.activeMode === 'hyrox' ? `${theme.bg} text-white` : 'text-gray-400'
-                    }`}
-                  >
-                    🏃 HYROX
-                  </button>
-                </div>
-              </div>
-
               {/* Navigation */}
               <div>
                 <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-2">Navigate</p>

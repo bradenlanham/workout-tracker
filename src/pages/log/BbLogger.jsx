@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../data/exercises'
 import {
-  getLastBbSession, getExercisePRs, getProgressiveOverloadSuggestion,
+  getLastBbSession, getExercisePRs,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 
@@ -16,15 +16,6 @@ const WORKOUT_COLORS = {
   push2:  '#a855f7',
   legs2:  '#14b8a6',
   custom: '#6b7280',
-}
-
-const WARMUP_TIPS = {
-  push:   'Light cable flies or band pull-aparts to warm the shoulder joint before loading.',
-  legs1:  'Bodyweight squats and leg swings before adding weight.',
-  pull:   'Band pull-aparts and arm circles before heavy rows or pulldowns.',
-  push2:  'Light lateral raises and face pulls before going heavy on shoulders.',
-  legs2:  'A light set of leg curls before loading up the hamstrings.',
-  custom: 'Always include at least one warm-up set before your working sets.',
 }
 
 // ── Binder clip SVG ────────────────────────────────────────────────────────────
@@ -181,7 +172,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme }) {
         inputMode="decimal"
         value={set.weight}
         onChange={e => onChange({ ...set, weight: e.target.value })}
-        placeholder="lbs"
+        placeholder={set.prevWeight || 'lbs'}
         className="w-20 min-w-0 bg-gray-700 text-white rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
@@ -191,7 +182,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme }) {
         inputMode="numeric"
         value={set.reps}
         onChange={e => onChange({ ...set, reps: e.target.value })}
-        placeholder="reps"
+        placeholder={set.prevReps || 'reps'}
         className="w-16 min-w-0 bg-gray-700 text-white rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
@@ -217,15 +208,16 @@ function ExerciseItem({
 }) {
   const [expanded, setExpanded] = useState(false)
 
-  const suggestion = getProgressiveOverloadSuggestion(lastSessionEx)
-
   const addSet = () => {
+    const prevSet = lastSessionEx?.sets?.[exercise.sets.length]
     onUpdate({
       ...exercise,
       sets: [...exercise.sets, {
-        type:   'working',
-        reps:   '',
-        weight: suggestion.weight,
+        type:       'working',
+        reps:       '',
+        weight:     '',
+        prevWeight: prevSet?.weight ? String(prevSet.weight) : '',
+        prevReps:   prevSet?.reps   ? String(prevSet.reps)   : '',
       }],
     })
   }
@@ -255,6 +247,15 @@ function ExerciseItem({
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
   const prevSets   = lastSessionEx?.sets || []
+
+  const lastExNotes = (() => {
+    const prev = [...allSessions]
+      .filter(s => s.mode === 'bb' && s.data?.exercises?.some(e => e.name === exercise.name))
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+    if (!prev.length) return null
+    const ex = prev[0].data.exercises.find(e => e.name === exercise.name)
+    return ex?.notes || null
+  })()
 
   return (
     <div className={`bg-gray-800 rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''}`}>
@@ -375,9 +376,6 @@ function ExerciseItem({
               <div className="flex items-center gap-2">
                 <p className="text-xs text-gray-600 uppercase tracking-widest font-semibold shrink-0">Last</p>
                 <div className="flex-1 h-px bg-gray-700" />
-                {suggestion.hint && (
-                  <p className={`text-xs font-semibold shrink-0 ${theme.text}`}>{suggestion.hint}</p>
-                )}
               </div>
               {prevSets.map((s, i) => <PrevSetRow key={i} set={s} />)}
               <div className="flex items-center gap-2">
@@ -415,6 +413,9 @@ function ExerciseItem({
             placeholder="Notes for this exercise…"
             className="w-full bg-gray-700 rounded-xl px-3 py-2.5 text-sm text-gray-300 placeholder-gray-600"
           />
+          {lastExNotes && (
+            <p className="text-xs text-gray-500 mt-1 italic">Last time: {lastExNotes}</p>
+          )}
 
           {!exercise.done ? (
             <button
@@ -879,7 +880,7 @@ export default function BbLogger() {
   if (customPending.length) renderGroups.push({ label: 'Added', exercises: customPending })
 
   return (
-    <div className="pb-40 min-h-screen">
+    <div className="pb-40 min-h-screen bg-gray-900">
 
       {/* ── Clipboard header (sticky) ────────────────────────────────────── */}
       <div
@@ -919,15 +920,6 @@ export default function BbLogger() {
           {savedSession && (
             <p className="text-xs text-white/60 mt-0.5">Resumed from saved session</p>
           )}
-        </div>
-      </div>
-
-      {/* ── Warmup tip ───────────────────────────────────────────────────── */}
-      <div style={{ backgroundColor: wColor }} className="px-5 pb-4">
-        <div className="bg-black/20 rounded-xl px-4 py-3">
-          <p className="text-sm text-white/80 leading-relaxed">
-            💡 {WARMUP_TIPS[type] || WARMUP_TIPS.custom}
-          </p>
         </div>
       </div>
 

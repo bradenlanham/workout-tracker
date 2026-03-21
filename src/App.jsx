@@ -7,7 +7,6 @@ import History from './pages/History'
 import Progress from './pages/Progress'
 import Guide from './pages/Guide'
 import BbLogger from './pages/log/BbLogger'
-import HyroxLogger from './pages/log/HyroxLogger'
 import TemplateEditor from './pages/TemplateEditor'
 import SplitEditor from './pages/SplitEditor'
 
@@ -20,7 +19,6 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/log" element={<Log />} />
           <Route path="/log/bb/:type" element={<BbLogger />} />
-          <Route path="/log/hyrox/:type" element={<HyroxLogger />} />
           <Route path="/history" element={<History />} />
           <Route path="/progress" element={<Progress />} />
           <Route path="/guide" element={<Guide />} />

@@ -7,9 +7,7 @@ const useStore = create(
     (set, get) => ({
       sessions: [],
       settings: {
-        hyroxStartDate: null,
         restTimerDuration: 90,
-        activeMode: 'bb',
         accentColor: 'violet',
       },
       // In-progress workout session — survives app backgrounding / page reload
