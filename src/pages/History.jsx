@@ -156,7 +156,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   return (
     <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto" onClick={onClose}>
       <div className="min-h-screen flex items-end">
-        <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5 pb-10" onClick={e => e.stopPropagation()}>
+        <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5 pb-10" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top, 1.25rem))' }} onClick={e => e.stopPropagation()}>
 
           <div className="flex items-start justify-between mb-4">
             <div>
