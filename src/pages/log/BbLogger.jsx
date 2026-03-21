@@ -980,7 +980,7 @@ export default function BbLogger() {
       </div>
 
       {/* ── Sticky footer ────────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-4 py-4 safe-bottom z-40">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-3 pt-3 safe-bottom z-40">
         {loggedSets === 0 ? (
           <p className="text-center text-sm text-c-muted py-1">Log at least one set to save</p>
         ) : (
