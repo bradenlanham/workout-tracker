@@ -775,7 +775,6 @@ export default function BbLogger() {
       type,
       exercises,
       sessionNotes,
-      startTimestamp: startTimestamp.current,
     })
   }, [exercises, sessionNotes]) // eslint-disable-line
 
@@ -886,7 +885,7 @@ export default function BbLogger() {
       <div
         className="sticky top-0 z-30"
         style={{
-          backgroundColor: wColor,
+          backgroundColor: theme.hex,
           paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
         }}
       >

@@ -5,25 +5,25 @@
 /* ── Background theme CSS variables ─────────────────────────────────────────── */
 :root {
   /* Obsidian (dark) – default */
-  --bg-base:     #111827;
-  --bg-card:     #1f2937;
-  --bg-item:     #374151;
-  --bg-item-dim: rgba(55, 65, 81, 0.5);
-  --bg-hover:    #1f2937;
-  --text-primary:   #f9fafb;
-  --text-secondary: #d1d5db;
-  --text-dim:       #9ca3af;
-  --text-muted:     #6b7280;
-  --text-faint:     #4b5563;
-  --border-base:   #374151;
-  --border-subtle: #1f2937;
-  --cell-empty:    #1f2937;
-  --cell-future:   #111827;
-  --cell-no-grade: #374151;
-  --chart-grid:    #374151;
-  --chart-tooltip-bg:     #1f2937;
-  --chart-tooltip-border: #374151;
-  --chart-tooltip-text:   #f9fafb;
+  --bg-base:     #121212;
+  --bg-card:     #1E1E1E;
+  --bg-item:     #262626;
+  --bg-item-dim: rgba(38, 38, 38, 0.5);
+  --bg-hover:    #1E1E1E;
+  --text-primary:   #EBEBEB;
+  --text-secondary: #C8C8C8;
+  --text-dim:       #A0A0A0;
+  --text-muted:     #707070;
+  --text-faint:     #555555;
+  --border-base:   #383838;
+  --border-subtle: #2A2A2A;
+  --cell-empty:    #1E1E1E;
+  --cell-future:   #121212;
+  --cell-no-grade: #303030;
+  --chart-grid:    #383838;
+  --chart-tooltip-bg:     #1E1E1E;
+  --chart-tooltip-border: #383838;
+  --chart-tooltip-text:   #EBEBEB;
 }
 
 [data-theme="daylight"] {
