@@ -85,7 +85,8 @@ export function isThisWeek(isoString) {
 // ── BB helpers ───────────────────────────────────────────────────────────────
 
 export function getNextBbWorkout(sessions, customSequence) {
-  const sequence = (customSequence && customSequence.length) ? customSequence : BB_WORKOUT_SEQUENCE
+  const full = (customSequence && customSequence.length) ? customSequence : BB_WORKOUT_SEQUENCE
+  const sequence = full.filter(t => t !== 'rest') // skip rest days — they're rotation markers only
   const bbSessions = sessions.filter(s => s.mode === 'bb' && s.type !== 'custom' && !s.type?.startsWith('tpl_'))
   if (!bbSessions.length) return sequence[0]
   const sorted = [...bbSessions].sort((a, b) => new Date(b.date) - new Date(a.date))

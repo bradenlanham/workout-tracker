@@ -158,7 +158,7 @@ export default function Log() {
                 </button>
               </div>
               <div className="space-y-2">
-                {effectiveSequence.map(type => (
+                {effectiveSequence.filter(t => t !== 'rest').map(type => (
                   <button
                     key={type}
                     onClick={() => navigate(`/log/bb/${type}`)}

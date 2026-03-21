@@ -129,6 +129,15 @@ export default function HamburgerMenu() {
                 <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-2">More</p>
                 <div className="space-y-1">
                   <button
+                    onClick={() => go('/split')}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors ${
+                      loc.pathname === '/split' ? `${theme.bgSubtle} ${theme.text}` : 'text-gray-300 hover:bg-gray-800'
+                    }`}
+                  >
+                    <span className="text-lg w-6 text-center">📅</span>
+                    <span className="font-semibold">Manage Split</span>
+                  </button>
+                  <button
                     onClick={() => { exportData(); close() }}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-300 hover:bg-gray-800 text-left"
                   >

@@ -9,6 +9,7 @@ import Guide from './pages/Guide'
 import BbLogger from './pages/log/BbLogger'
 import HyroxLogger from './pages/log/HyroxLogger'
 import TemplateEditor from './pages/TemplateEditor'
+import SplitEditor from './pages/SplitEditor'
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/guide" element={<Guide />} />
           <Route path="/templates/new" element={<TemplateEditor />} />
           <Route path="/templates/:id" element={<TemplateEditor />} />
+          <Route path="/split" element={<SplitEditor />} />
         </Routes>
         <HamburgerMenu />
         <RestTimer />
