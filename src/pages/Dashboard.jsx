@@ -26,24 +26,24 @@ export default function Dashboard() {
 
       {/* ── Greeting ──────────────────────────────────────────────────────────── */}
       <div className="px-4 pt-16 pb-5">
-        <p className="text-gray-500 text-sm font-medium">{timeGreeting} 👋</p>
+        <p className="text-c-muted text-sm font-medium">{timeGreeting} 👋</p>
         <h1 className="text-3xl font-bold mt-0.5">Ready to train?</h1>
       </div>
 
       {/* ── Stat badges ───────────────────────────────────────────────────────── */}
       <div className="px-4 flex gap-3 mb-5">
-        <div className="flex-1 bg-gray-800 rounded-2xl p-4 flex items-center gap-3">
+        <div className="flex-1 bg-card rounded-2xl p-4 flex items-center gap-3">
           <span className="text-2xl">🔥</span>
           <div>
             <p className="text-xl font-bold leading-none">{streak}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Day streak</p>
+            <p className="text-xs text-c-muted mt-0.5">Day streak</p>
           </div>
         </div>
-        <div className="flex-1 bg-gray-800 rounded-2xl p-4 flex items-center gap-3">
+        <div className="flex-1 bg-card rounded-2xl p-4 flex items-center gap-3">
           <span className="text-2xl">💪</span>
           <div>
             <p className={`text-xl font-bold leading-none ${theme.text}`}>{totalSessions}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Sessions total</p>
+            <p className="text-xs text-c-muted mt-0.5">Sessions total</p>
           </div>
         </div>
       </div>
@@ -70,19 +70,19 @@ export default function Dashboard() {
       {/* ── Recent sessions ───────────────────────────────────────────────────── */}
       {recentSessions.length > 0 && (
         <div className="px-4">
-          <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-3">Recent</p>
+          <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-3">Recent</p>
           <div className="space-y-2">
             {recentSessions.map(s => {
               const sessionName = `${BB_WORKOUT_EMOJI[s.type] || '🏋️'} ${BB_WORKOUT_NAMES[s.type] || s.type}`
               return (
-                <div key={s.id} className="flex items-center justify-between bg-gray-800 rounded-xl px-4 py-3">
+                <div key={s.id} className="flex items-center justify-between bg-card rounded-xl px-4 py-3">
                   <div>
                     <p className="font-semibold text-sm">{sessionName}</p>
-                    <p className="text-xs text-gray-500">{formatDate(s.date)}</p>
+                    <p className="text-xs text-c-muted">{formatDate(s.date)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {s.grade && (
-                      <span className="text-xs font-bold bg-gray-700 px-2 py-0.5 rounded-lg">{s.grade}</span>
+                      <span className="text-xs font-bold bg-item px-2 py-0.5 rounded-lg">{s.grade}</span>
                     )}
                     {s.data?.exercises?.some(e => e.sets?.some(st => st.isNewPR)) && (
                       <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">PR</span>
@@ -98,7 +98,7 @@ export default function Dashboard() {
       {recentSessions.length === 0 && (
         <div className="px-4 text-center py-10">
           <p className="text-5xl mb-3">🏋️</p>
-          <p className="text-gray-500">No sessions yet — log your first workout!</p>
+          <p className="text-c-muted">No sessions yet — log your first workout!</p>
         </div>
       )}
 

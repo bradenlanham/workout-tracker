@@ -13,7 +13,7 @@ const NAV_LINKS = [
 export default function HamburgerMenu() {
   const loc       = useLocation()
   const navigate  = useNavigate()
-  const { settings, exportData } = useStore()
+  const { settings, updateSettings, exportData } = useStore()
   const theme     = getTheme(settings.accentColor)
   const [open, setOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
@@ -32,12 +32,12 @@ export default function HamburgerMenu() {
       <button
         onClick={() => setOpen(true)}
         style={{ top: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))', right: '1rem' }}
-        className="fixed z-40 w-10 h-10 flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-800"
+        className="fixed z-40 w-10 h-10 flex flex-col items-center justify-center gap-1.5 rounded-xl bg-card"
         aria-label="Open menu"
       >
-        <span className="w-5 h-0.5 bg-gray-300 rounded-full" />
-        <span className="w-5 h-0.5 bg-gray-300 rounded-full" />
-        <span className="w-3.5 h-0.5 bg-gray-300 rounded-full self-start ml-[5px]" />
+        <span className="w-5 h-0.5 bg-c-secondary rounded-full" />
+        <span className="w-5 h-0.5 bg-c-secondary rounded-full" />
+        <span className="w-3.5 h-0.5 bg-c-secondary rounded-full self-start ml-[5px]" />
       </button>
 
       {/* ── Slide-in menu ───────────────────────────────────────────────────── */}
@@ -50,13 +50,13 @@ export default function HamburgerMenu() {
           />
 
           {/* Panel */}
-          <div className="fixed top-0 right-0 h-full w-72 max-w-[85vw] bg-gray-900 z-50 flex flex-col shadow-2xl"
+          <div className="fixed top-0 right-0 h-full w-72 max-w-[85vw] bg-card z-50 flex flex-col shadow-2xl"
             style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top, 1.5rem))', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))' }}
           >
             {/* Close */}
-            <div className="flex items-center justify-between px-5 pb-5 border-b border-gray-800">
+            <div className="flex items-center justify-between px-5 pb-5 border-b border-c-base">
               <span className="text-lg font-bold">Menu</span>
-              <button onClick={close} className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-800 text-gray-400">
+              <button onClick={close} className="w-9 h-9 flex items-center justify-center rounded-xl bg-item text-c-dim">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -66,14 +66,14 @@ export default function HamburgerMenu() {
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
               {/* Navigation */}
               <div>
-                <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-2">Navigate</p>
+                <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Navigate</p>
                 <div className="space-y-1">
                   {NAV_LINKS.map(link => (
                     <button
                       key={link.to}
                       onClick={() => go(link.to)}
                       className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors ${
-                        loc.pathname === link.to ? `${theme.bgSubtle} ${theme.text}` : 'text-gray-300 hover:bg-gray-800'
+                        loc.pathname === link.to ? `${theme.bgSubtle} ${theme.text}` : 'text-c-secondary hover:bg-hover'
                       }`}
                     >
                       <span className="text-lg w-6 text-center">{link.emoji}</span>
@@ -83,9 +83,36 @@ export default function HamburgerMenu() {
                 </div>
               </div>
 
-              {/* Theme */}
+              {/* Background Theme */}
               <div>
-                <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-2">Accent Colour</p>
+                <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Theme</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => updateSettings({ backgroundTheme: 'obsidian' })}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                      settings.backgroundTheme !== 'daylight'
+                        ? `${theme.bg} text-white`
+                        : 'bg-item text-c-secondary'
+                    }`}
+                  >
+                    🌑 Obsidian
+                  </button>
+                  <button
+                    onClick={() => updateSettings({ backgroundTheme: 'daylight' })}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                      settings.backgroundTheme === 'daylight'
+                        ? `${theme.bg} text-white`
+                        : 'bg-item text-c-secondary'
+                    }`}
+                  >
+                    ☀️ Daylight
+                  </button>
+                </div>
+              </div>
+
+              {/* Accent Colour */}
+              <div>
+                <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Accent Colour</p>
                 <div className="flex gap-2 flex-wrap">
                   {Object.values(THEMES).map(t => (
                     <button
@@ -93,7 +120,7 @@ export default function HamburgerMenu() {
                       onClick={() => updateSettings({ accentColor: t.id })}
                       title={t.name}
                       className={`w-9 h-9 rounded-full transition-all ${
-                        settings.accentColor === t.id ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-900' : ''
+                        settings.accentColor === t.id ? 'ring-2 ring-white ring-offset-2 ring-offset-card' : ''
                       }`}
                       style={{ backgroundColor: t.hex }}
                     />
@@ -103,12 +130,12 @@ export default function HamburgerMenu() {
 
               {/* Actions */}
               <div>
-                <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-2">More</p>
+                <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">More</p>
                 <div className="space-y-1">
                   <button
                     onClick={() => go('/split')}
                     className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors ${
-                      loc.pathname === '/split' ? `${theme.bgSubtle} ${theme.text}` : 'text-gray-300 hover:bg-gray-800'
+                      loc.pathname === '/split' ? `${theme.bgSubtle} ${theme.text}` : 'text-c-secondary hover:bg-hover'
                     }`}
                   >
                     <span className="text-lg w-6 text-center">📅</span>
@@ -116,20 +143,20 @@ export default function HamburgerMenu() {
                   </button>
                   <button
                     onClick={() => { exportData(); close() }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-300 hover:bg-gray-800 text-left"
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
                   >
                     <span className="text-lg w-6 text-center">💾</span>
                     <span className="font-semibold">Export Data</span>
                   </button>
                   <button
                     onClick={() => setShowInfo(v => !v)}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-300 hover:bg-gray-800 text-left"
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
                   >
                     <span className="text-lg w-6 text-center">ⓘ</span>
                     <span className="font-semibold">How Tracking Works</span>
                   </button>
                   {showInfo && (
-                    <div className="bg-gray-800 rounded-xl p-4 text-sm text-gray-400 space-y-2 mt-1">
+                    <div className="bg-item rounded-xl p-4 text-sm text-c-dim space-y-2 mt-1">
                       <p>📅 Sessions save to today's date automatically.</p>
                       <p>🔄 Your split (Push → Legs → Pull…) advances after each logged session.</p>
                       <p>🔥 Streak = consecutive calendar days with a session.</p>

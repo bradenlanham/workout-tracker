@@ -14,8 +14,13 @@ const GRADE_COLORS = {
 }
 const GRADE_ORDER = { 'A+': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4 }
 
-function CalendarHeatmap({ sessions, onSelectSession, themeHex }) {
+function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme }) {
   const WEEKS = 13   // ~3 months
+
+  const isDaylight = backgroundTheme === 'daylight'
+  const cellEmpty   = isDaylight ? '#e0e0e0' : '#1f2937'
+  const cellFuture  = isDaylight ? '#f5f5f5' : '#111827'
+  const cellNoGrade = isDaylight ? '#b8b8b8' : '#374151'
 
   // Build the grid starting from Monday of the oldest week
   const today    = useMemo(() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d }, [])
@@ -61,12 +66,12 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex }) {
   }, [gridStart, sessionsByDate, today])
 
   const getCellColor = (cell) => {
-    if (cell.inFuture)           return '#111827'
-    if (!cell.daySessions.length) return '#1f2937'
+    if (cell.inFuture)           return cellFuture
+    if (!cell.daySessions.length) return cellEmpty
     const best = [...cell.daySessions]
       .filter(s => s.grade && GRADE_ORDER[s.grade] !== undefined)
       .sort((a, b) => GRADE_ORDER[a.grade] - GRADE_ORDER[b.grade])[0]
-    if (!best) return '#374151'                        // session but no grade
+    if (!best) return cellNoGrade                      // session but no grade
     if (best.grade === 'A+') return themeHex
     return GRADE_COLORS[best.grade]
   }
@@ -74,15 +79,15 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex }) {
   const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
   return (
-    <div className="bg-gray-800 rounded-2xl p-4 mb-5">
-      <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest mb-3">Activity</p>
+    <div className="bg-card rounded-2xl p-4 mb-5">
+      <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-3">Activity</p>
 
       <div className="flex gap-1">
         {/* Day-of-week labels */}
         <div className="flex flex-col gap-1 shrink-0 mr-0.5">
           {DOW.map((label, i) => (
             <div key={i} className="h-5 w-4 flex items-center justify-center">
-              <span className="text-xs text-gray-600">{label}</span>
+              <span className="text-xs text-c-faint">{label}</span>
             </div>
           ))}
         </div>
@@ -100,7 +105,7 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex }) {
                   (cell.daySessions.length > 0 ? ` · ${cell.daySessions.length} session${cell.daySessions.length > 1 ? 's' : ''}` : '')
                 }
                 className={`h-5 w-full rounded-sm transition-opacity ${
-                  cell.isToday ? 'ring-1 ring-white/50 ring-offset-1 ring-offset-gray-800' : ''
+                  cell.isToday ? 'ring-1 ring-white/50 ring-offset-1 ring-offset-card' : ''
                 }`}
                 style={{ backgroundColor: getCellColor(cell) }}
               />
@@ -111,18 +116,18 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex }) {
 
       {/* Grade legend */}
       <div className="flex items-center gap-x-3 gap-y-1.5 mt-3 flex-wrap">
-        <span className="text-xs text-gray-600">Grade:</span>
+        <span className="text-xs text-c-faint">Grade:</span>
         {[
           { label: 'A+', color: themeHex },
           { label: 'A',  color: '#10b981' },
           { label: 'B',  color: '#f59e0b' },
           { label: 'C',  color: '#ef4444' },
           { label: 'D',  color: '#7f1d1d' },
-          { label: '—',  color: '#374151' },
+          { label: '—',  color: cellNoGrade },
         ].map(({ label, color }) => (
           <div key={label} className="flex items-center gap-1">
             <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-            <span className="text-xs text-gray-500">{label}</span>
+            <span className="text-xs text-c-muted">{label}</span>
           </div>
         ))}
       </div>
@@ -134,8 +139,8 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex }) {
 
 function Stat({ label, value }) {
   return (
-    <div className="bg-gray-700/50 rounded-xl p-3 text-center">
-      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">{label}</p>
+    <div className="bg-item-dim rounded-xl p-3 text-center">
+      <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1">{label}</p>
       <p className="text-lg font-bold">{value}</p>
     </div>
   )
@@ -144,29 +149,30 @@ function Stat({ label, value }) {
 function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const d        = session.data || {}
+  const isBb     = session.mode === 'bb'
   const sessionName  = BB_WORKOUT_NAMES[session.type] || session.type
   const sessionEmoji = BB_WORKOUT_EMOJI[session.type] || '🏋️'
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto" onClick={onClose}>
       <div className="min-h-screen flex items-end">
-        <div className="bg-gray-800 w-full max-w-lg mx-auto rounded-t-3xl p-5 pb-10" onClick={e => e.stopPropagation()}>
+        <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5 pb-10" onClick={e => e.stopPropagation()}>
 
           <div className="flex items-start justify-between mb-4">
             <div>
               <h2 className="text-xl font-bold">{sessionEmoji} {sessionName}</h2>
-              <p className="text-sm text-gray-400">{formatDate(session.date)} · {formatTime(session.date)}</p>
-              {session.duration && <p className="text-xs text-gray-500">{session.duration} min session</p>}
+              <p className="text-sm text-c-dim">{formatDate(session.date)} · {formatTime(session.date)}</p>
+              {session.duration && <p className="text-xs text-c-muted">{session.duration} min session</p>}
               <div className="flex items-center gap-2 mt-1">
                 {session.grade && (
-                  <span className="text-xs font-bold bg-gray-700 px-2 py-0.5 rounded-lg">{session.grade}</span>
+                  <span className="text-xs font-bold bg-item px-2 py-0.5 rounded-lg">{session.grade}</span>
                 )}
                 {session.completedCardio === true && (
                   <span className="text-xs text-emerald-400 font-semibold">Cardio ✓</span>
                 )}
               </div>
             </div>
-            <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-700 text-gray-400 shrink-0">
+            <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-xl bg-item text-c-dim shrink-0">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -177,11 +183,11 @@ function SessionDetail({ session, onClose, onDelete }) {
           {isBb && d.exercises && (
             <div className="space-y-3">
               {d.exercises.map((ex, i) => (
-                <div key={i} className="bg-gray-700/50 rounded-2xl p-3">
+                <div key={i} className="bg-item-dim rounded-2xl p-3">
                   <p className="font-semibold mb-2">{ex.name}</p>
                   <div className="space-y-1">
                     {ex.sets.map((s, si) => (
-                      <div key={si} className="flex items-center gap-2 text-sm text-gray-300">
+                      <div key={si} className="flex items-center gap-2 text-sm text-c-secondary">
                         <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
                           s.type === 'warmup' ? 'bg-amber-500/30 text-amber-400' : 'bg-blue-500/30 text-blue-400'
                         }`}>
@@ -192,23 +198,23 @@ function SessionDetail({ session, onClose, onDelete }) {
                       </div>
                     ))}
                   </div>
-                  {ex.notes && <p className="text-xs text-gray-500 mt-2 italic">{ex.notes}</p>}
+                  {ex.notes && <p className="text-xs text-c-muted mt-2 italic">{ex.notes}</p>}
                 </div>
               ))}
             </div>
           )}
 
           {session.notes && (
-            <div className="mt-4 bg-gray-700/30 rounded-xl p-3">
-              <p className="text-xs text-gray-500 font-semibold mb-1">NOTES</p>
-              <p className="text-sm text-gray-300">{session.notes}</p>
+            <div className="mt-4 bg-item-dim rounded-xl p-3">
+              <p className="text-xs text-c-muted font-semibold mb-1">NOTES</p>
+              <p className="text-sm text-c-secondary">{session.notes}</p>
             </div>
           )}
 
           <div className="mt-6">
             {confirmDelete ? (
               <div className="flex gap-3">
-                <button onClick={() => setConfirmDelete(false)} className="flex-1 bg-gray-700 text-gray-300 py-3 rounded-2xl font-semibold">
+                <button onClick={() => setConfirmDelete(false)} className="flex-1 bg-item text-c-secondary py-3 rounded-2xl font-semibold">
                   Cancel
                 </button>
                 <button onClick={() => { onDelete(session.id); onClose() }} className="flex-1 bg-red-500 text-white py-3 rounded-2xl font-bold">
@@ -230,22 +236,21 @@ function SessionDetail({ session, onClose, onDelete }) {
 
 // ── Session card ───────────────────────────────────────────────────────────────
 
-function SessionCard({ session, onClick }) {
+function SessionCard({ session, onClick, themeHex }) {
   const d    = session.data || {}
 
   const name  = BB_WORKOUT_NAMES[session.type] || session.type
   const emoji = BB_WORKOUT_EMOJI[session.type] || '🏋️'
-  const accentColor = '#3B82F6'
 
   const subtitle = `${d.exercises?.filter(e => e.sets.some(s => s.reps)).length || 0} exercises · ${d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0} sets`
 
   const hasPR = d.exercises?.some(e => e.sets.some(s => s.isNewPR))
 
   return (
-    <button onClick={onClick} className="w-full bg-gray-800 rounded-2xl p-4 flex items-center gap-4 text-left">
+    <button onClick={onClick} className="w-full bg-card rounded-2xl p-4 flex items-center gap-4 text-left">
       <div
         className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
-        style={{ backgroundColor: `${accentColor}22`, border: `1px solid ${accentColor}33` }}
+        style={{ backgroundColor: `${themeHex}22`, border: `1px solid ${themeHex}33` }}
       >
         {emoji}
       </div>
@@ -254,14 +259,14 @@ function SessionCard({ session, onClick }) {
           <p className="font-semibold truncate">{name}</p>
           {hasPR && <span className="text-xs text-amber-400 shrink-0">🏆 PR</span>}
         </div>
-        <p className="text-sm text-gray-400 truncate">{subtitle}</p>
-        <p className="text-xs text-gray-600">
+        <p className="text-sm text-c-dim truncate">{subtitle}</p>
+        <p className="text-xs text-c-faint">
           {formatTime(session.date)}
           {session.duration ? ` · ${session.duration}min` : ''}
           {session.grade    ? ` · ${session.grade}`       : ''}
         </p>
       </div>
-      <svg className="w-4 h-4 text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-4 h-4 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
       </svg>
     </button>
@@ -278,6 +283,7 @@ const FILTER_OPTIONS = [
 export default function History() {
   const { sessions, settings, deleteSession } = useStore()
   const theme = getTheme(settings.accentColor)
+  const backgroundTheme = settings.backgroundTheme
 
   const [filter,   setFilter]   = useState('all')
   const [selected, setSelected] = useState(null)
@@ -299,7 +305,7 @@ export default function History() {
     <div className="pb-10 min-h-screen">
 
       {/* Sticky header */}
-      <div className="sticky top-0 bg-gray-900 z-30 px-4 pt-12 pb-4">
+      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-4">
         <h1 className="text-2xl font-bold mb-4">History</h1>
         <div className="flex gap-2">
           {FILTER_OPTIONS.map(f => (
@@ -307,7 +313,7 @@ export default function History() {
               key={f.id}
               onClick={() => setFilter(f.id)}
               className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
-                filter === f.id ? `${theme.bg} text-white` : 'bg-gray-800 text-gray-400'
+                filter === f.id ? `${theme.bg} text-white` : 'bg-card text-c-dim'
               }`}
             >
               {f.label}
@@ -324,6 +330,7 @@ export default function History() {
             sessions={sessions}
             onSelectSession={id => setSelected(id)}
             themeHex={theme.hex}
+            backgroundTheme={backgroundTheme}
           />
         </div>
 
@@ -332,18 +339,18 @@ export default function History() {
           {Object.keys(groups).length === 0 && (
             <div className="text-center py-16">
               <p className="text-4xl mb-3">📋</p>
-              <p className="text-gray-400 font-medium">No sessions logged yet</p>
-              <p className="text-gray-600 text-sm mt-1">Start logging from the Train screen</p>
+              <p className="text-c-dim font-medium">No sessions logged yet</p>
+              <p className="text-c-faint text-sm mt-1">Start logging from the Train screen</p>
             </div>
           )}
           {Object.entries(groups).map(([dateKey, daySessions]) => (
             <div key={dateKey}>
-              <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">
+              <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-2">
                 {formatDate(daySessions[0].date)}
               </p>
               <div className="space-y-2">
                 {daySessions.map(s => (
-                  <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} />
+                  <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} themeHex={theme.hex} />
                 ))}
               </div>
             </div>

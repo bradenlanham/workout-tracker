@@ -68,6 +68,28 @@ export const THEMES = {
     ring: 'ring-cyan-500/50',
     hex: '#06B6D4',
   },
+  red: {
+    id: 'red',
+    name: 'True Red',
+    bg: 'bg-red-600',
+    bgHover: 'hover:bg-red-500',
+    bgSubtle: 'bg-red-600/20',
+    text: 'text-red-500',
+    border: 'border-red-600/40',
+    ring: 'ring-red-600/50',
+    hex: '#DC2626',
+  },
+  pink: {
+    id: 'pink',
+    name: 'Electric Pink',
+    bg: 'bg-[#FF1493]',
+    bgHover: 'hover:bg-[#e0117f]',
+    bgSubtle: 'bg-[#FF1493]/20',
+    text: 'text-[#FF1493]',
+    border: 'border-[#FF1493]/40',
+    ring: 'ring-[#FF1493]/50',
+    hex: '#FF1493',
+  },
 }
 
 export function getTheme(id) {

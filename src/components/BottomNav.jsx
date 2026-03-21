@@ -51,7 +51,7 @@ export default function BottomNav() {
   if (isLogging) return null
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-gray-800 border-t border-gray-700 safe-bottom z-40">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-card border-t border-c-base safe-bottom z-40">
       <div className="flex">
         {tabs.map(tab => {
           const active = location.pathname.startsWith(tab.to)
@@ -60,11 +60,11 @@ export default function BottomNav() {
               key={tab.to}
               to={tab.to}
               className={`flex-1 flex flex-col items-center justify-center py-3 pt-3 gap-1 transition-colors ${
-                active ? theme.text : 'text-gray-500'
+                active ? theme.text : 'text-c-muted'
               }`}
             >
               {tab.icon(active)}
-              <span className={`text-xs font-medium ${active ? theme.text : 'text-gray-500'}`}>
+              <span className={`text-xs font-medium ${active ? theme.text : 'text-c-muted'}`}>
                 {tab.label}
               </span>
             </NavLink>

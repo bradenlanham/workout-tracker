@@ -60,26 +60,26 @@ export default function Guide() {
   return (
     <div className="min-h-screen pb-10">
       {/* Header */}
-      <div className="sticky top-0 bg-gray-900 z-30 px-4 pt-12 pb-4">
+      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-4">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="w-10 h-10 flex items-center justify-center rounded-xl bg-gray-800 shrink-0"
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-card shrink-0"
           >
-            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-5 h-5 text-c-dim" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <div>
             <h1 className="text-xl font-bold">Training Guide</h1>
-            <p className="text-xs text-gray-500">Principles for hypertrophy</p>
+            <p className="text-xs text-c-muted">Principles for hypertrophy</p>
           </div>
         </div>
       </div>
 
       <div className="px-4 space-y-4 pt-2">
         {SECTIONS.map((section) => (
-          <div key={section.title} className="bg-gray-800 rounded-2xl p-5">
+          <div key={section.title} className="bg-card rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
               <span className="text-2xl">{section.emoji}</span>
               <h2 className="text-base font-bold">{section.title}</h2>
@@ -89,8 +89,8 @@ export default function Guide() {
             {section.items && (
               <ul className="space-y-2">
                 {section.items.map((item, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-gray-300">
-                    <span className="text-gray-600 shrink-0 mt-0.5">•</span>
+                  <li key={i} className="flex gap-2 text-sm text-c-secondary">
+                    <span className="text-c-faint shrink-0 mt-0.5">•</span>
                     <span>{item}</span>
                   </li>
                 ))}
@@ -102,11 +102,11 @@ export default function Guide() {
               <div className="space-y-4">
                 {section.subsections.map((sub) => (
                   <div key={sub.label}>
-                    <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">{sub.label}</p>
+                    <p className="text-xs text-c-dim font-semibold uppercase tracking-wide mb-2">{sub.label}</p>
                     <ul className="space-y-1.5">
                       {sub.items.map((item, i) => (
-                        <li key={i} className="flex gap-2 text-sm text-gray-300">
-                          <span className="text-gray-600 shrink-0 mt-0.5">•</span>
+                        <li key={i} className="flex gap-2 text-sm text-c-secondary">
+                          <span className="text-c-faint shrink-0 mt-0.5">•</span>
                           <span>{item}</span>
                         </li>
                       ))}

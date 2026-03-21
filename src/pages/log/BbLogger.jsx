@@ -65,15 +65,15 @@ function SetTypeBtn({ value, onChange, theme }) {
 function PrevSetRow({ set }) {
   return (
     <div className="flex items-center gap-2 opacity-35 pointer-events-none select-none">
-      <div className="w-14 h-9 rounded-lg bg-gray-700 text-gray-400 text-xs font-bold flex items-center justify-center shrink-0">
+      <div className="w-14 h-9 rounded-lg bg-item text-c-dim text-xs font-bold flex items-center justify-center shrink-0">
         {set.type === 'warmup' ? 'Warm' : 'Work'}
       </div>
       {/* Weight first */}
-      <div className="w-20 h-9 rounded-lg bg-gray-700/60 text-gray-400 text-sm font-semibold flex items-center justify-center">
+      <div className="w-20 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
         {set.weight ? `${set.weight}` : '—'}
       </div>
       {/* Reps second */}
-      <div className="w-16 h-9 rounded-lg bg-gray-700/60 text-gray-400 text-sm font-semibold flex items-center justify-center">
+      <div className="w-16 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
         {set.reps || '—'}
       </div>
       <div className="flex-1 text-center text-sm">
@@ -100,48 +100,48 @@ function PlateCalc({ exercise, onUpdate }) {
   }
 
   return (
-    <div className="bg-gray-700/50 rounded-xl p-3 mb-3">
+    <div className="bg-item-dim rounded-xl p-3 mb-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-bold text-amber-400 uppercase tracking-wide">Plate Calculator</p>
-        <p className="text-base font-bold text-white">{total} lbs</p>
+        <p className="text-base font-bold">{total} lbs</p>
       </div>
       <div className="flex gap-2 items-end">
         <div className="flex-1">
-          <p className="text-xs text-gray-500 mb-1">Plates/side</p>
+          <p className="text-xs text-c-muted mb-1">Plates/side</p>
           <input
             type="number"
             inputMode="decimal"
             value={platesPerSide}
             onChange={e => onUpdate({ ...exercise, platesPerSide: parseFloat(e.target.value) || 0 })}
-            className="w-full bg-gray-700 text-white rounded-lg px-2 py-2 text-center text-base font-semibold"
+            className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-base font-semibold"
             min={0}
             step={0.5}
           />
         </div>
         <div className="flex-1">
-          <p className="text-xs text-gray-500 mb-1">Plate wt (lbs)</p>
+          <p className="text-xs text-c-muted mb-1">Plate wt (lbs)</p>
           <input
             type="number"
             inputMode="decimal"
             value={plateWeight}
             onChange={e => onUpdate({ ...exercise, plateWeight: parseFloat(e.target.value) || 0 })}
-            className="w-full bg-gray-700 text-white rounded-lg px-2 py-2 text-center text-base font-semibold"
+            className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-base font-semibold"
             min={0}
           />
         </div>
         <div className="flex-1">
-          <p className="text-xs text-gray-500 mb-1">Bar (lbs)</p>
+          <p className="text-xs text-c-muted mb-1">Bar (lbs)</p>
           <input
             type="number"
             inputMode="decimal"
             value={barWeight}
             onChange={e => onUpdate({ ...exercise, barWeight: parseFloat(e.target.value) || 0 })}
-            className="w-full bg-gray-700 text-white rounded-lg px-2 py-2 text-center text-base font-semibold"
+            className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-base font-semibold"
             min={0}
           />
         </div>
       </div>
-      <p className="text-xs text-gray-500 mt-1.5 text-center">
+      <p className="text-xs text-c-muted mt-1.5 text-center">
         {platesPerSide} × {plateWeight} × 2 + {barWeight} = {total} lbs
       </p>
       <button
@@ -173,7 +173,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme }) {
         value={set.weight}
         onChange={e => onChange({ ...set, weight: e.target.value })}
         placeholder={set.prevWeight || 'lbs'}
-        className="w-20 min-w-0 bg-gray-700 text-white rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
+        className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
       {/* Reps SECOND */}
@@ -183,14 +183,14 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme }) {
         value={set.reps}
         onChange={e => onChange({ ...set, reps: e.target.value })}
         placeholder={set.prevReps || 'reps'}
-        className="w-16 min-w-0 bg-gray-700 text-white rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
+        className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
       <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
       <button
         type="button"
         onClick={onDelete}
-        className="w-8 h-10 flex items-center justify-center rounded-lg bg-gray-700 text-gray-500 shrink-0"
+        className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -258,13 +258,13 @@ function ExerciseItem({
   })()
 
   return (
-    <div className={`bg-gray-800 rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''}`}>
+    <div className={`bg-card rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''}`}>
 
-      {/* ── Collapsed header ──────────────────────────────────────────── */}
+      {/* ── Collapsed header ──────────────────────────────────────── */}
       <div className="flex items-center">
         {/* Drag handle — left, only in reorder mode */}
         {reorderMode && !exercise.done && (
-          <div className="pl-3 pr-1 shrink-0 text-gray-500">
+          <div className="pl-3 pr-1 shrink-0 text-c-muted">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
@@ -282,7 +282,7 @@ function ExerciseItem({
               {hasPR && !exercise.done && <span className="text-amber-400 text-sm">🏆</span>}
             </div>
             {!expanded && !exercise.done && lastTopSet && (
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-c-muted mt-0.5">
                 Last: {lastTopSet.weight ? `${lastTopSet.weight} lbs` : ''}
                 {lastTopSet.weight && lastTopSet.reps ? ' × ' : ''}
                 {lastTopSet.reps ? `${lastTopSet.reps} reps` : ''}
@@ -303,7 +303,7 @@ function ExerciseItem({
             )}
           </div>
           <svg
-            className={`w-5 h-5 text-gray-400 transition-transform shrink-0 ml-2 ${expanded ? 'rotate-180' : ''}`}
+            className={`w-5 h-5 text-c-dim transition-transform shrink-0 ml-2 ${expanded ? 'rotate-180' : ''}`}
             fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -318,7 +318,7 @@ function ExerciseItem({
               onClick={onMoveUp}
               disabled={isFirst}
               className={`w-10 h-10 flex items-center justify-center rounded-xl text-lg font-bold transition-colors ${
-                isFirst ? 'opacity-20 text-gray-600' : 'bg-gray-700 text-gray-200 active:bg-gray-600'
+                isFirst ? 'opacity-20 text-c-faint' : 'bg-item text-c-secondary active:bg-hover'
               }`}
             >
               ↑
@@ -328,7 +328,7 @@ function ExerciseItem({
               onClick={onMoveDown}
               disabled={isLast}
               className={`w-10 h-10 flex items-center justify-center rounded-xl text-lg font-bold transition-colors ${
-                isLast ? 'opacity-20 text-gray-600' : 'bg-gray-700 text-gray-200 active:bg-gray-600'
+                isLast ? 'opacity-20 text-c-faint' : 'bg-item text-c-secondary active:bg-hover'
               }`}
             >
               ↓
@@ -349,7 +349,7 @@ function ExerciseItem({
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 exercise.plateMode
                   ? 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
-                  : 'bg-gray-700 text-gray-400'
+                  : 'bg-item text-c-dim'
               }`}
             >
               <span>🏋️</span> Plate Calc
@@ -363,9 +363,9 @@ function ExerciseItem({
 
           {/* Column headers — weight first, reps second */}
           <div className="flex items-center gap-2">
-            <div className="w-14 text-center text-xs text-gray-500">Type</div>
-            <div className="w-20 text-center text-xs text-gray-500">Lbs</div>
-            <div className="w-16 text-center text-xs text-gray-500">Reps</div>
+            <div className="w-14 text-center text-xs text-c-muted">Type</div>
+            <div className="w-20 text-center text-xs text-c-muted">Lbs</div>
+            <div className="w-16 text-center text-xs text-c-muted">Reps</div>
             <div className="flex-1" />
             <div className="w-8" />
           </div>
@@ -374,13 +374,13 @@ function ExerciseItem({
           {prevSets.length > 0 && (
             <>
               <div className="flex items-center gap-2">
-                <p className="text-xs text-gray-600 uppercase tracking-widest font-semibold shrink-0">Last</p>
-                <div className="flex-1 h-px bg-gray-700" />
+                <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Last</p>
+                <div className="flex-1 h-px bg-item" />
               </div>
               {prevSets.map((s, i) => <PrevSetRow key={i} set={s} />)}
               <div className="flex items-center gap-2">
-                <p className="text-xs text-gray-600 uppercase tracking-widest font-semibold shrink-0">Today</p>
-                <div className="flex-1 h-px bg-gray-700" />
+                <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Today</p>
+                <div className="flex-1 h-px bg-item" />
               </div>
             </>
           )}
@@ -401,7 +401,7 @@ function ExerciseItem({
           <button
             type="button"
             onClick={addSet}
-            className="w-full py-2.5 rounded-xl bg-gray-700 text-gray-300 text-sm font-semibold flex items-center justify-center gap-2"
+            className="w-full py-2.5 rounded-xl bg-item text-c-secondary text-sm font-semibold flex items-center justify-center gap-2"
           >
             <span className="text-lg leading-none">+</span> Add Set
           </button>
@@ -411,10 +411,10 @@ function ExerciseItem({
             value={exercise.notes}
             onChange={e => onUpdate({ ...exercise, notes: e.target.value })}
             placeholder="Notes for this exercise…"
-            className="w-full bg-gray-700 rounded-xl px-3 py-2.5 text-sm text-gray-300 placeholder-gray-600"
+            className="w-full bg-item rounded-xl px-3 py-2.5 text-sm text-c-secondary placeholder-gray-400"
           />
           {lastExNotes && (
-            <p className="text-xs text-gray-500 mt-1 italic">Last time: {lastExNotes}</p>
+            <p className="text-xs text-c-muted mt-1 italic">Last time: {lastExNotes}</p>
           )}
 
           {!exercise.done ? (
@@ -429,7 +429,7 @@ function ExerciseItem({
             <button
               type="button"
               onClick={() => onUpdate({ ...exercise, done: false })}
-              className="w-full py-2.5 rounded-xl bg-gray-700 text-gray-500 text-sm font-semibold"
+              className="w-full py-2.5 rounded-xl bg-item text-c-muted text-sm font-semibold"
             >
               Undo completion
             </button>
@@ -444,7 +444,7 @@ function ExerciseItem({
 
 function GroupLabel({ label, isCompleted, onReorder, isReordering }) {
   return (
-    <div className={`flex items-center gap-2 px-1 pt-2 pb-1 ${isCompleted ? 'text-emerald-400' : 'text-gray-500'}`}>
+    <div className={`flex items-center gap-2 px-1 pt-2 pb-1 ${isCompleted ? 'text-emerald-400' : 'text-c-muted'}`}>
       <span className="text-xs font-bold uppercase tracking-widest">{label}</span>
       <div className="flex-1 h-px bg-current opacity-20" />
       {!isCompleted && onReorder && (
@@ -458,7 +458,7 @@ function GroupLabel({ label, isCompleted, onReorder, isReordering }) {
         ) : (
           <button
             onClick={onReorder}
-            className="text-xs text-gray-500 underline shrink-0"
+            className="text-xs text-c-muted underline shrink-0"
           >
             Reorder
           </button>
@@ -485,7 +485,7 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end" onClick={onClose}>
-      <div className="bg-gray-800 w-full max-w-lg mx-auto rounded-t-3xl p-5" onClick={e => e.stopPropagation()}>
+      <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5" onClick={e => e.stopPropagation()}>
         <h3 className="font-bold text-lg mb-3">Add Exercise</h3>
         <input
           autoFocus
@@ -493,7 +493,7 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Type exercise name…"
-          className="w-full bg-gray-700 text-white rounded-xl px-4 py-3 text-base mb-3"
+          className="w-full bg-item text-c-primary rounded-xl px-4 py-3 text-base mb-3"
           onKeyDown={e => {
             if (e.key === 'Enter' && query.trim()) { onAdd(query.trim()); onClose() }
           }}
@@ -511,13 +511,13 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
             <button
               key={name}
               onClick={() => { onAdd(name); onClose() }}
-              className="w-full text-left px-4 py-3 rounded-xl bg-gray-700 text-gray-200 text-base"
+              className="w-full text-left px-4 py-3 rounded-xl bg-item text-c-secondary text-base"
             >
               {name}
             </button>
           ))}
         </div>
-        <button onClick={onClose} className="w-full mt-3 py-3 rounded-xl bg-gray-700 text-gray-400 font-semibold">
+        <button onClick={onClose} className="w-full mt-3 py-3 rounded-xl bg-item text-c-dim font-semibold">
           Cancel
         </button>
       </div>
@@ -532,7 +532,7 @@ const GRADES = ['D', 'C', 'B', 'A', 'A+']
 const CARDIO_TYPES = ['Running', 'Cycling', 'Elliptical', 'StairMaster', 'Rowing', 'Jump Rope', 'Swimming', 'Other']
 
 function gradeStyle(g, theme, selected) {
-  if (!selected) return 'bg-gray-700 text-gray-400'
+  if (!selected) return 'bg-item text-c-dim'
   if (g === 'A+') return `${theme.bg} text-white`
   if (g === 'A')  return 'bg-emerald-500 text-white'
   if (g === 'B')  return 'bg-amber-500 text-white'
@@ -564,14 +564,14 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-5 overflow-y-auto py-10">
-      <div className="bg-gray-800 rounded-3xl p-6 w-full max-w-sm">
+      <div className="bg-card rounded-3xl p-6 w-full max-w-sm">
         <h3 className="text-xl font-bold mb-1">Finish Session?</h3>
-        <p className="text-gray-400 text-sm mb-5">
+        <p className="text-c-dim text-sm mb-5">
           {loggedSets} sets · {exerciseCount} exercises{elapsed ? ` · ${elapsed}` : ''}
         </p>
 
         {/* Grade */}
-        <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Rate this session</p>
+        <p className="text-xs text-c-dim font-semibold uppercase tracking-wide mb-2">Rate this session</p>
         <div className="flex gap-1.5 mb-5">
           {GRADES.map(g => (
             <button
@@ -585,12 +585,12 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
         </div>
 
         {/* Cardio */}
-        <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Cardio</p>
+        <p className="text-xs text-c-dim font-semibold uppercase tracking-wide mb-2">Cardio</p>
         <div className="flex gap-2 mb-3">
           <button
             onClick={() => setCardioCompleted(cardioCompleted === true ? null : true)}
             className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
-              cardioCompleted === true ? 'bg-emerald-500 text-white' : 'bg-gray-700 text-gray-400'
+              cardioCompleted === true ? 'bg-emerald-500 text-white' : 'bg-item text-c-dim'
             }`}
           >
             ✓ Yes
@@ -598,7 +598,7 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
           <button
             onClick={() => setCardioCompleted(cardioCompleted === false ? null : false)}
             className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
-              cardioCompleted === false ? 'bg-gray-600 text-gray-200' : 'bg-gray-700 text-gray-400'
+              cardioCompleted === false ? 'bg-hover text-c-secondary' : 'bg-item text-c-dim'
             }`}
           >
             ✗ No
@@ -607,10 +607,10 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
 
         {/* Cardio details — only shown when yes is selected */}
         {cardioCompleted === true && (
-          <div className="bg-gray-700/50 rounded-2xl p-3 mb-3 space-y-2">
+          <div className="bg-item-dim rounded-2xl p-3 mb-3 space-y-2">
             {/* Type selector */}
             <div>
-              <p className="text-xs text-gray-500 mb-1">Type</p>
+              <p className="text-xs text-c-muted mb-1">Type</p>
               <div className="flex flex-wrap gap-1.5">
                 {CARDIO_TYPES.map(t => (
                   <button
@@ -618,7 +618,7 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
                     type="button"
                     onClick={() => setCardioType(t)}
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                      cardioType === t ? `${theme.bg} text-white` : 'bg-gray-700 text-gray-400'
+                      cardioType === t ? `${theme.bg} text-white` : 'bg-item text-c-dim'
                     }`}
                   >
                     {t}
@@ -629,39 +629,39 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
 
             <div className="flex gap-2">
               <div className="flex-1">
-                <p className="text-xs text-gray-500 mb-1">Duration (min)</p>
+                <p className="text-xs text-c-muted mb-1">Duration (min)</p>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={cardioDuration}
                   onChange={e => setCardioDuration(e.target.value)}
                   placeholder="30"
-                  className="w-full bg-gray-700 text-white rounded-lg px-2 py-2 text-center text-sm font-semibold"
+                  className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-sm font-semibold"
                   min={1}
                 />
               </div>
               <div className="flex-1">
-                <p className="text-xs text-gray-500 mb-1">Avg HR (bpm)</p>
+                <p className="text-xs text-c-muted mb-1">Avg HR (bpm)</p>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={cardioHR}
                   onChange={e => setCardioHR(e.target.value)}
                   placeholder="optional"
-                  className="w-full bg-gray-700 text-white rounded-lg px-2 py-2 text-center text-sm font-semibold"
+                  className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-sm font-semibold"
                   min={1}
                 />
               </div>
             </div>
 
             <div>
-              <p className="text-xs text-gray-500 mb-1">Notes</p>
+              <p className="text-xs text-c-muted mb-1">Notes</p>
               <input
                 type="text"
                 value={cardioNotes}
                 onChange={e => setCardioNotes(e.target.value)}
                 placeholder="e.g. Zone 2, felt good…"
-                className="w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm"
+                className="w-full bg-item text-c-primary rounded-lg px-3 py-2 text-sm"
               />
             </div>
           </div>
@@ -670,7 +670,7 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
         <div className="flex gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 bg-gray-700 text-gray-300 py-3.5 rounded-2xl font-semibold"
+            className="flex-1 bg-item text-c-secondary py-3.5 rounded-2xl font-semibold"
           >
             Keep Going
           </button>
@@ -880,7 +880,7 @@ export default function BbLogger() {
   if (customPending.length) renderGroups.push({ label: 'Added', exercises: customPending })
 
   return (
-    <div className="pb-40 min-h-screen bg-gray-900">
+    <div className="pb-40 min-h-screen bg-base">
 
       {/* ── Clipboard header (sticky) ────────────────────────────────────── */}
       <div
@@ -962,28 +962,28 @@ export default function BbLogger() {
         {/* Add exercise */}
         <button
           onClick={() => setShowAddPanel(true)}
-          className="w-full py-4 mt-2 rounded-2xl border-2 border-dashed border-gray-700 text-gray-500 font-semibold flex items-center justify-center gap-2"
+          className="w-full py-4 mt-2 rounded-2xl border-2 border-dashed border-c-base text-c-muted font-semibold flex items-center justify-center gap-2"
         >
           <span className="text-xl">+</span> Add Exercise
         </button>
 
         {/* Session notes */}
-        <div className="bg-gray-800 rounded-2xl p-4">
-          <p className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wide">Session Notes</p>
+        <div className="bg-card rounded-2xl p-4">
+          <p className="text-xs text-c-muted mb-2 font-semibold uppercase tracking-wide">Session Notes</p>
           <textarea
             value={sessionNotes}
             onChange={e => setSessionNotes(e.target.value)}
             placeholder="How did the session go? Any notes…"
             rows={3}
-            className="w-full bg-gray-700 text-gray-200 rounded-xl px-3 py-2.5 text-sm placeholder-gray-600 resize-none"
+            className="w-full bg-item text-c-secondary rounded-xl px-3 py-2.5 text-sm placeholder-gray-400 resize-none"
           />
         </div>
       </div>
 
       {/* ── Sticky footer ────────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-gray-900/95 backdrop-blur border-t border-gray-800 px-4 py-4 safe-bottom z-40">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-4 py-4 safe-bottom z-40">
         {loggedSets === 0 ? (
-          <p className="text-center text-sm text-gray-500 py-1">Log at least one set to save</p>
+          <p className="text-center text-sm text-c-muted py-1">Log at least one set to save</p>
         ) : (
           <button
             onClick={() => setShowConfirm(true)}

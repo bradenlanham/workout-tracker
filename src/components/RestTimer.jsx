@@ -102,19 +102,19 @@ export default function RestTimer() {
   return (
     <div className="fixed bottom-16 right-3 z-50 flex flex-col items-end gap-2">
       {expanded && (
-        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-4 shadow-xl w-52">
-          <p className="text-xs text-gray-400 mb-2 font-medium">REST DURATION</p>
+        <div className="bg-card border border-c-base rounded-2xl p-4 shadow-xl w-52">
+          <p className="text-xs text-c-dim mb-2 font-medium">REST DURATION</p>
           <div className="flex gap-2 items-center">
             <input
               type="number"
               inputMode="numeric"
               value={customDuration}
               onChange={e => setCustomDuration(e.target.value)}
-              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white text-center text-lg font-bold"
+              className="flex-1 bg-item rounded-lg px-3 py-2 text-c-primary text-center text-lg font-bold"
               min={10}
               max={600}
             />
-            <span className="text-gray-400 text-sm">sec</span>
+            <span className="text-c-dim text-sm">sec</span>
           </div>
           <div className="flex gap-2 mt-3">
             {[60, 90, 120, 180].map(d => (
@@ -122,7 +122,7 @@ export default function RestTimer() {
                 key={d}
                 onClick={() => setCustomDuration(d)}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  customDuration == d ? 'bg-blue-500 text-white' : 'bg-gray-700 text-gray-300'
+                  customDuration == d ? 'bg-blue-500 text-white' : 'bg-item text-c-secondary'
                 }`}
               >
                 {d}s
@@ -141,7 +141,7 @@ export default function RestTimer() {
       <div className="flex items-center gap-2">
         <button
           onClick={() => setExpanded(v => !v)}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-700 text-gray-300 shadow"
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-item text-c-secondary shadow"
           aria-label="Timer settings"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -159,7 +159,7 @@ export default function RestTimer() {
               ? 'bg-amber-500 text-white'
               : isRunning
               ? 'bg-blue-500 text-white'
-              : 'bg-gray-700 text-gray-200'
+              : 'bg-item text-c-secondary'
           }`}
         >
           {/* Progress ring */}

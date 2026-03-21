@@ -2,14 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Background theme CSS variables ─────────────────────────────────────────── */
+:root {
+  /* Obsidian (dark) – default */
+  --bg-base:     #111827;
+  --bg-card:     #1f2937;
+  --bg-item:     #374151;
+  --bg-item-dim: rgba(55, 65, 81, 0.5);
+  --bg-hover:    #1f2937;
+  --text-primary:   #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-dim:       #9ca3af;
+  --text-muted:     #6b7280;
+  --text-faint:     #4b5563;
+  --border-base:   #374151;
+  --border-subtle: #1f2937;
+  --cell-empty:    #1f2937;
+  --cell-future:   #111827;
+  --cell-no-grade: #374151;
+  --chart-grid:    #374151;
+  --chart-tooltip-bg:     #1f2937;
+  --chart-tooltip-border: #374151;
+  --chart-tooltip-text:   #f9fafb;
+}
+
+[data-theme="daylight"] {
+  --bg-base:     #f5f5f5;
+  --bg-card:     #ffffff;
+  --bg-item:     #eeeeee;
+  --bg-item-dim: rgba(200, 200, 200, 0.6);
+  --bg-hover:    #e8e8e8;
+  --text-primary:   #1a1a1a;
+  --text-secondary: #2d2d2d;
+  --text-dim:       #555555;
+  --text-muted:     #777777;
+  --text-faint:     #aaaaaa;
+  --border-base:   #d0d0d0;
+  --border-subtle: #e8e8e8;
+  --cell-empty:    #e0e0e0;
+  --cell-future:   #f5f5f5;
+  --cell-no-grade: #b8b8b8;
+  --chart-grid:    #e0e0e0;
+  --chart-tooltip-bg:     #ffffff;
+  --chart-tooltip-border: #d0d0d0;
+  --chart-tooltip-text:   #1a1a1a;
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
     box-sizing: border-box;
   }
   body {
-    background-color: #111827;
-    color: #f9fafb;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overscroll-behavior: none;
   }
@@ -26,4 +72,25 @@
   .pb-nav {
     padding-bottom: calc(5rem + max(10px, env(safe-area-inset-bottom, 10px)));
   }
+
+  /* ── Theme-aware surface classes ─────────────────────────── */
+  .bg-base     { background-color: var(--bg-base); }
+  .bg-card     { background-color: var(--bg-card); }
+  .bg-item     { background-color: var(--bg-item); }
+  .bg-item-dim { background-color: var(--bg-item-dim); }
+  .hover\:bg-hover:hover { background-color: var(--bg-hover); }
+
+  /* ── Theme-aware text classes ────────────────────────────── */
+  .text-c-primary   { color: var(--text-primary); }
+  .text-c-secondary { color: var(--text-secondary); }
+  .text-c-dim       { color: var(--text-dim); }
+  .text-c-muted     { color: var(--text-muted); }
+  .text-c-faint     { color: var(--text-faint); }
+
+  /* ── Theme-aware border classes ──────────────────────────── */
+  .border-c-base   { border-color: var(--border-base); }
+  .border-c-subtle { border-color: var(--border-subtle); }
+
+  /* ── Ring offset matching card surface ───────────────────── */
+  .ring-offset-card { --tw-ring-offset-color: var(--bg-card); }
 }

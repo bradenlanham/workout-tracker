@@ -6,7 +6,7 @@ import { getNextBbWorkout } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE } from '../data/exercises'
 
 function SectionHeader({ children }) {
-  return <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">{children}</p>
+  return <p className="text-xs text-c-muted font-semibold uppercase tracking-wider mb-2">{children}</p>
 }
 
 // ── Split reorder modal ────────────────────────────────────────────────────────
@@ -26,23 +26,23 @@ function SplitModal({ sequence, onSave, onClose, theme }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end" onClick={onClose}>
-      <div className="bg-gray-800 w-full max-w-lg mx-auto rounded-t-3xl p-5" onClick={e => e.stopPropagation()}>
+      <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">Split Order</h3>
-          <button onClick={reset} className="text-xs text-gray-400 underline">Reset to default</button>
+          <button onClick={reset} className="text-xs text-c-dim underline">Reset to default</button>
         </div>
-        <p className="text-xs text-gray-500 mb-3">Drag or use arrows to set the rotation order.</p>
+        <p className="text-xs text-c-muted mb-3">Drag or use arrows to set the rotation order.</p>
         <div className="space-y-2 mb-4">
           {order.map((type, idx) => (
-            <div key={type} className="flex items-center gap-3 bg-gray-700 rounded-xl px-4 py-3">
+            <div key={type} className="flex items-center gap-3 bg-item rounded-xl px-4 py-3">
               <span className="text-lg">{BB_WORKOUT_EMOJI[type]}</span>
               <span className="flex-1 font-medium text-sm">{BB_WORKOUT_NAMES[type]}</span>
               <div className="flex gap-1">
                 <button
                   onClick={() => move(idx, 'up')}
                   disabled={idx === 0}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 ${
-                    idx === 0 ? 'opacity-20' : 'bg-gray-600'
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-c-dim ${
+                    idx === 0 ? 'opacity-20' : 'bg-item'
                   }`}
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -52,8 +52,8 @@ function SplitModal({ sequence, onSave, onClose, theme }) {
                 <button
                   onClick={() => move(idx, 'down')}
                   disabled={idx === order.length - 1}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 ${
-                    idx === order.length - 1 ? 'opacity-20' : 'bg-gray-600'
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-c-dim ${
+                    idx === order.length - 1 ? 'opacity-20' : 'bg-item'
                   }`}
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -65,7 +65,7 @@ function SplitModal({ sequence, onSave, onClose, theme }) {
           ))}
         </div>
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 bg-gray-700 text-gray-300 py-3 rounded-xl font-semibold">
+          <button onClick={onClose} className="flex-1 bg-item text-c-secondary py-3 rounded-xl font-semibold">
             Cancel
           </button>
           <button
@@ -96,7 +96,7 @@ export default function Log() {
 
   return (
     <div className="pb-nav min-h-screen">
-      <div className="sticky top-0 bg-gray-900 z-30 px-4 pt-12 pb-4">
+      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-4">
         <h1 className="text-2xl font-bold mb-4">Log Session</h1>
       </div>
 
@@ -124,7 +124,7 @@ export default function Log() {
             <SectionHeader>All Workouts</SectionHeader>
             <button
               onClick={() => setShowSplit(true)}
-              className="text-xs text-gray-500 underline"
+              className="text-xs text-c-muted underline"
             >
               Edit split order
             </button>
@@ -134,7 +134,7 @@ export default function Log() {
               <button
                 key={type}
                 onClick={() => navigate(`/log/bb/${type}`)}
-                className={`w-full flex items-center justify-between bg-gray-800 rounded-xl p-4 transition-colors ${
+                className={`w-full flex items-center justify-between bg-card rounded-xl p-4 transition-colors ${
                   type === nextBb ? `ring-1 ${theme.ring}` : ''
                 }`}
               >
@@ -147,7 +147,7 @@ export default function Log() {
                     )}
                   </div>
                 </div>
-                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <svg className="w-5 h-5 text-c-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
               </button>
@@ -155,13 +155,13 @@ export default function Log() {
             {/* Custom workout */}
             <button
               onClick={() => navigate('/log/bb/custom')}
-              className="w-full flex items-center justify-between bg-gray-800 rounded-xl p-4"
+              className="w-full flex items-center justify-between bg-card rounded-xl p-4"
             >
               <div className="flex items-center gap-3">
                 <span className="text-2xl">✏️</span>
                 <p className="font-semibold">{BB_WORKOUT_NAMES.custom}</p>
               </div>
-              <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <svg className="w-5 h-5 text-c-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
@@ -177,19 +177,19 @@ export default function Log() {
                 <div key={tpl.id} className="flex gap-2">
                   <button
                     onClick={() => navigate(`/log/bb/tpl_${tpl.id}`)}
-                    className="flex-1 flex items-center justify-between bg-gray-800 rounded-xl p-4"
+                    className="flex-1 flex items-center justify-between bg-card rounded-xl p-4"
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{tpl.emoji}</span>
                       <p className="font-semibold">{tpl.name}</p>
                     </div>
-                    <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <svg className="w-5 h-5 text-c-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                   </button>
                   <button
                     onClick={() => navigate(`/templates/${tpl.id}`)}
-                    className="w-12 flex items-center justify-center bg-gray-800 rounded-xl text-gray-500"
+                    className="w-12 flex items-center justify-center bg-card rounded-xl text-c-muted"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -204,7 +204,7 @@ export default function Log() {
         {/* Create template button */}
         <button
           onClick={() => navigate('/templates/new')}
-          className="w-full py-4 rounded-2xl border-2 border-dashed border-gray-700 text-gray-500 font-semibold flex items-center justify-center gap-2"
+          className="w-full py-4 rounded-2xl border-2 border-dashed border-c-base text-c-muted font-semibold flex items-center justify-center gap-2"
         >
           <span className="text-xl">+</span> Create Template
         </button>

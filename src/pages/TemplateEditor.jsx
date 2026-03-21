@@ -16,7 +16,7 @@ function AddExerciseInline({ onAdd, onCancel }) {
         value={name}
         onChange={e => setName(e.target.value)}
         placeholder="Exercise name…"
-        className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm"
+        className="flex-1 bg-item text-c-primary rounded-lg px-3 py-2 text-sm"
         onKeyDown={e => {
           if (e.key === 'Enter' && name.trim()) { onAdd(name.trim()); setName('') }
           if (e.key === 'Escape') onCancel()
@@ -32,7 +32,7 @@ function AddExerciseInline({ onAdd, onCancel }) {
       <button
         type="button"
         onClick={onCancel}
-        className="px-3 py-2 bg-gray-700 text-gray-400 rounded-lg text-sm"
+        className="px-3 py-2 bg-item text-c-dim rounded-lg text-sm"
       >
         Cancel
       </button>
@@ -119,13 +119,13 @@ export default function TemplateEditor() {
     <div className="min-h-screen pb-32">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="sticky top-0 bg-gray-900 z-30 px-4 pt-12 pb-4 border-b border-gray-800">
+      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-4 border-b border-c-subtle">
         <div className="flex items-center gap-3 mb-4">
           <button
             onClick={() => navigate(-1)}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-800"
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-card"
           >
-            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-5 h-5 text-c-dim" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
@@ -148,17 +148,17 @@ export default function TemplateEditor() {
             <button
               type="button"
               onClick={() => setShowEmoji(v => !v)}
-              className="w-14 h-14 bg-gray-800 rounded-2xl flex items-center justify-center text-3xl border border-gray-700"
+              className="w-14 h-14 bg-card rounded-2xl flex items-center justify-center text-3xl border border-c-base"
             >
               {emoji}
             </button>
             {showEmoji && (
-              <div className="absolute top-16 left-0 z-50 bg-gray-800 border border-gray-700 rounded-2xl p-3 grid grid-cols-6 gap-2 w-52 shadow-xl">
+              <div className="absolute top-16 left-0 z-50 bg-card border border-c-base rounded-2xl p-3 grid grid-cols-6 gap-2 w-52 shadow-xl">
                 {EMOJI_OPTIONS.map(e => (
                   <button
                     key={e}
                     onClick={() => { setEmoji(e); setShowEmoji(false) }}
-                    className="text-2xl w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700"
+                    className="text-2xl w-8 h-8 flex items-center justify-center rounded-lg hover:bg-hover"
                   >
                     {e}
                   </button>
@@ -171,7 +171,7 @@ export default function TemplateEditor() {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Template name…"
-            className="flex-1 bg-gray-800 text-white rounded-2xl px-4 py-4 text-lg font-semibold border border-gray-700 placeholder-gray-600"
+            className="flex-1 bg-card text-c-primary rounded-2xl px-4 py-4 text-lg font-semibold border border-c-base placeholder-gray-400"
           />
         </div>
       </div>
@@ -180,13 +180,13 @@ export default function TemplateEditor() {
       <div className="px-4 pt-4 space-y-4">
 
         {groups.map((group, gi) => (
-          <div key={gi} className="bg-gray-800 rounded-2xl overflow-hidden">
+          <div key={gi} className="bg-card rounded-2xl overflow-hidden">
             {/* Section header */}
-            <div className="flex items-center gap-2 p-3 border-b border-gray-700">
+            <div className="flex items-center gap-2 p-3 border-b border-c-base">
               <select
                 value={group.label}
                 onChange={e => updateGroupLabel(gi, e.target.value)}
-                className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold"
+                className="flex-1 bg-item text-c-primary rounded-lg px-3 py-2 text-sm font-semibold"
               >
                 {SECTION_LABELS.map(l => (
                   <option key={l} value={l}>{l}</option>
@@ -198,7 +198,7 @@ export default function TemplateEditor() {
               <button
                 type="button"
                 onClick={() => removeGroup(gi)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-700 text-gray-500"
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-item text-c-muted"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -209,15 +209,15 @@ export default function TemplateEditor() {
             {/* Exercise list */}
             <div className="p-3 space-y-1">
               {group.exercises.map((ex, ei) => (
-                <div key={ei} className="flex items-center gap-2 bg-gray-700 rounded-xl px-3 py-2.5">
-                  <span className="flex-1 text-sm font-medium text-gray-200">{ex}</span>
+                <div key={ei} className="flex items-center gap-2 bg-item rounded-xl px-3 py-2.5">
+                  <span className="flex-1 text-sm font-medium text-c-secondary">{ex}</span>
                   <div className="flex gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={() => moveExercise(gi, ei, 'up')}
                       disabled={ei === 0}
-                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 ${
-                        ei === 0 ? 'opacity-20' : 'bg-gray-600'
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-c-muted ${
+                        ei === 0 ? 'opacity-20' : 'bg-hover'
                       }`}
                     >
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -228,8 +228,8 @@ export default function TemplateEditor() {
                       type="button"
                       onClick={() => moveExercise(gi, ei, 'down')}
                       disabled={ei === group.exercises.length - 1}
-                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 ${
-                        ei === group.exercises.length - 1 ? 'opacity-20' : 'bg-gray-600'
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-c-muted ${
+                        ei === group.exercises.length - 1 ? 'opacity-20' : 'bg-hover'
                       }`}
                     >
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -239,7 +239,7 @@ export default function TemplateEditor() {
                     <button
                       type="button"
                       onClick={() => removeExercise(gi, ei)}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-600 text-gray-500"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-hover text-c-muted"
                     >
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -259,7 +259,7 @@ export default function TemplateEditor() {
                 <button
                   type="button"
                   onClick={() => setAddingEx(gi)}
-                  className="w-full py-2 rounded-xl border border-dashed border-gray-600 text-gray-500 text-sm font-medium flex items-center justify-center gap-1.5 mt-1"
+                  className="w-full py-2 rounded-xl border border-dashed border-c-base text-c-muted text-sm font-medium flex items-center justify-center gap-1.5 mt-1"
                 >
                   <span>+</span> Add exercise
                 </button>
@@ -272,19 +272,19 @@ export default function TemplateEditor() {
         <button
           type="button"
           onClick={addGroup}
-          className="w-full py-4 rounded-2xl border-2 border-dashed border-gray-700 text-gray-500 font-semibold flex items-center justify-center gap-2"
+          className="w-full py-4 rounded-2xl border-2 border-dashed border-c-base text-c-muted font-semibold flex items-center justify-center gap-2"
         >
           <span className="text-xl">+</span> Add Section
         </button>
       </div>
 
       {/* ── Footer save button ───────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-gray-900/95 backdrop-blur border-t border-gray-800 px-4 py-4 z-40">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-4 py-4 z-40">
         <button
           onClick={handleSave}
           disabled={!name.trim()}
           className={`w-full py-4 rounded-2xl font-bold text-lg transition-opacity ${
-            name.trim() ? `${theme.bg} text-white` : 'bg-gray-700 text-gray-500 opacity-50'
+            name.trim() ? `${theme.bg} text-white` : 'bg-item text-c-muted opacity-50'
           }`}
         >
           {existing ? 'Save Changes' : 'Create Template'}
