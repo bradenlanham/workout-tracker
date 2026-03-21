@@ -26,7 +26,7 @@ export default function Dashboard() {
 
       {/* ── Greeting ──────────────────────────────────────────────────────────── */}
       <div className="px-4 pt-16 pb-5">
-        <p className="text-c-muted text-sm font-medium">{timeGreeting} 👋</p>
+        <p className="text-c-muted text-sm font-medium">{timeGreeting}{settings.userName ? `, ${settings.userName}` : ''} 👋</p>
         <h1 className="text-3xl font-bold mt-0.5">Ready to train?</h1>
       </div>
 

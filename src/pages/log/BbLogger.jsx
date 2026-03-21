@@ -6,6 +6,7 @@ import {
   getLastBbSession, getExercisePRs,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
+import ShareCard from './ShareCard'
 
 // ── Per-workout-type accent color and warmup tip ───────────────────────────────
 
@@ -742,6 +743,8 @@ export default function BbLogger() {
   const [showAddPanel,   setShowAddPanel]   = useState(false)
   const [showConfirm,    setShowConfirm]    = useState(false)
   const [reorderSection, setReorderSection] = useState(null)
+  const [showSummary,    setShowSummary]    = useState(false)
+  const [summaryData,    setSummaryData]    = useState(null)
 
   // ── Session timer (timestamp-based — survives backgrounding) ─────────────
 
@@ -851,7 +854,41 @@ export default function BbLogger() {
     })
 
     clearActiveSession()
-    navigate('/dashboard')
+
+    // Build share card summary
+    const totalVolume = exerciseData.reduce((t, ex) =>
+      t + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0), 0)
+    const totalSets = exerciseData.reduce((t, ex) => t + ex.sets.length, 0)
+    const totalPRs = exerciseData.reduce((t, ex) => t + ex.sets.filter(s => s.isNewPR).length, 0)
+    const exerciseSummary = exerciseData.map(ex => {
+      const bestSet = ex.sets.reduce((best, set) => {
+        if (!best) return set
+        if (set.weight > best.weight) return set
+        if (set.weight === best.weight && set.reps > best.reps) return set
+        return best
+      }, null)
+      return { name: ex.name, bestSet, hasPR: ex.sets.some(s => s.isNewPR), notes: ex.notes }
+    })
+    const h = Math.floor(elapsedSeconds / 3600)
+    const m = Math.floor((elapsedSeconds % 3600) / 60)
+    const s = elapsedSeconds % 60
+    const durationStr = h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`
+    const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+
+    setSummaryData({
+      userName: settings.userName || '',
+      workoutName,
+      workoutEmoji,
+      dateStr,
+      durationStr,
+      totalVolume,
+      totalSets,
+      totalPRs,
+      exerciseSummary,
+      theme,
+    })
+    setShowConfirm(false)
+    setShowSummary(true)
   }
 
   // ── Render helpers ───────────────────────────────────────────────────────
@@ -1010,6 +1047,13 @@ export default function BbLogger() {
           onSave={saveSession}
           onCancel={() => setShowConfirm(false)}
           theme={theme}
+        />
+      )}
+
+      {showSummary && summaryData && (
+        <ShareCard
+          data={summaryData}
+          onDone={() => navigate('/dashboard')}
         />
       )}
     </div>

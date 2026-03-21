@@ -83,6 +83,18 @@ export default function HamburgerMenu() {
                 </div>
               </div>
 
+              {/* Your Name */}
+              <div>
+                <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Your Name</p>
+                <input
+                  type="text"
+                  value={settings.userName || ''}
+                  onChange={e => updateSettings({ userName: e.target.value })}
+                  placeholder="Your name"
+                  className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-sm placeholder-gray-500 focus:outline-none"
+                />
+              </div>
+
               {/* Background Theme */}
               <div>
                 <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Theme</p>

@@ -10,6 +10,7 @@ const useStore = create(
         restTimerDuration: 90,
         accentColor: 'violet',
         backgroundTheme: 'obsidian',
+        userName: '',
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
