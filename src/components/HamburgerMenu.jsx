@@ -61,14 +61,19 @@ export default function HamburgerMenu() {
         style={{
           top: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
           right: '1rem',
-          background: settings.backgroundTheme === 'daylight' ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.10)',
+          background: `${theme.hex}1a`,
+          border: `2px solid ${theme.hex}`,
+          borderRadius: '10px',
+          padding: '8px 10px',
+          minWidth: '44px',
+          minHeight: '44px',
         }}
-        className="fixed z-50 w-11 h-11 flex flex-col items-center justify-center gap-1.5 rounded-xl"
+        className="fixed z-50 flex flex-col items-center justify-center gap-1.5"
         aria-label="Open menu"
       >
-        <span className="w-5 h-0.5 bg-c-primary rounded-full" />
-        <span className="w-5 h-0.5 bg-c-primary rounded-full" />
-        <span className="w-3.5 h-0.5 bg-c-primary rounded-full self-start ml-[5px]" />
+        <span style={{ backgroundColor: theme.hex }} className="w-5 h-0.5 rounded-full" />
+        <span style={{ backgroundColor: theme.hex }} className="w-5 h-0.5 rounded-full" />
+        <span style={{ backgroundColor: theme.hex }} className="w-3.5 h-0.5 rounded-full self-start ml-[5px]" />
       </button>
 
       {/* ── Slide-in menu ───────────────────────────────────────────────────── */}
