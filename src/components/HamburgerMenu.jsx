@@ -63,7 +63,7 @@ export default function HamburgerMenu() {
           right: '1rem',
           background: settings.backgroundTheme === 'daylight' ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.10)',
         }}
-        className="fixed z-40 w-11 h-11 flex flex-col items-center justify-center gap-1.5 rounded-xl"
+        className="fixed z-50 w-11 h-11 flex flex-col items-center justify-center gap-1.5 rounded-xl"
         aria-label="Open menu"
       >
         <span className="w-5 h-0.5 bg-c-primary rounded-full" />

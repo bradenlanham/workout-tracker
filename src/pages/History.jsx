@@ -275,25 +275,18 @@ function SessionCard({ session, onClick, themeHex }) {
 
 // ── Main History ───────────────────────────────────────────────────────────────
 
-const FILTER_OPTIONS = [
-  { id: 'all', label: 'All'    },
-  { id: 'bb',  label: '🏋️ BB' },
-]
-
 export default function History() {
   const { sessions, settings, deleteSession } = useStore()
   const theme = getTheme(settings.accentColor)
   const backgroundTheme = settings.backgroundTheme
 
-  const [filter,   setFilter]   = useState('all')
   const [selected, setSelected] = useState(null)
 
-  const sorted   = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date))
-  const filtered = sorted.filter(s => filter === 'all' || s.mode === filter)
+  const sorted = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date))
 
   // Group by date string
   const groups = {}
-  filtered.forEach(s => {
+  sorted.forEach(s => {
     const key = new Date(s.date).toDateString()
     if (!groups[key]) groups[key] = []
     groups[key].push(s)
@@ -305,21 +298,8 @@ export default function History() {
     <div className="pb-10 min-h-screen">
 
       {/* Sticky header */}
-      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-4">
-        <h1 className="text-2xl font-bold mb-4">History</h1>
-        <div className="flex gap-2">
-          {FILTER_OPTIONS.map(f => (
-            <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
-                filter === f.id ? `${theme.bg} text-white` : 'bg-card text-c-dim'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-3">
+        <h1 className="text-2xl font-bold">History</h1>
       </div>
 
       <div className="px-4">

@@ -283,10 +283,8 @@ function ExerciseItem({
               {hasPR && !exercise.done && <span className="text-amber-400 text-sm">🏆</span>}
             </div>
             {!expanded && !exercise.done && lastTopSet && (
-              <p className="text-xs text-c-muted mt-0.5">
-                Last: {lastTopSet.weight ? `${lastTopSet.weight} lbs` : ''}
-                {lastTopSet.weight && lastTopSet.reps ? ' × ' : ''}
-                {lastTopSet.reps ? `${lastTopSet.reps} reps` : ''}
+              <p style={{ fontSize: 10 }} className="text-c-faint opacity-50 mt-0.5 leading-none">
+                Last: {lastTopSet.weight || '—'}{lastTopSet.reps ? `×${lastTopSet.reps}` : ''}
               </p>
             )}
             {!expanded && !exercise.done && topSet && (topSet.reps || topSet.weight) && (
