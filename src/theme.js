@@ -90,6 +90,28 @@ export const THEMES = {
     ring: 'ring-[#FF1493]/50',
     hex: '#FF1493',
   },
+  white: {
+    id: 'white',
+    name: 'White',
+    bg: 'bg-[#E8E8E8]',
+    bgHover: 'hover:bg-[#d0d0d0]',
+    bgSubtle: 'bg-[#E8E8E8]/20',
+    text: 'text-[#E8E8E8]',
+    border: 'border-[#E8E8E8]/40',
+    ring: 'ring-[#E8E8E8]/50',
+    hex: '#E8E8E8',
+  },
+  black: {
+    id: 'black',
+    name: 'Black',
+    bg: 'bg-[#2D2D2D]',
+    bgHover: 'hover:bg-[#3d3d3d]',
+    bgSubtle: 'bg-[#2D2D2D]/20',
+    text: 'text-[#2D2D2D]',
+    border: 'border-[#2D2D2D]/40',
+    ring: 'ring-[#2D2D2D]/50',
+    hex: '#2D2D2D',
+  },
 }
 
 export function getTheme(id) {
