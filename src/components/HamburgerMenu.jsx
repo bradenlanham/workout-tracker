@@ -17,6 +17,7 @@ export default function HamburgerMenu() {
   const theme     = getTheme(settings.accentColor)
   const [open, setOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
+  const [showDataSection, setShowDataSection] = useState(false)
 
   // Hide entirely on logging sub-routes (BbLogger has its own nav)
   const isLogging = loc.pathname.startsWith('/log/bb/')
@@ -56,13 +57,17 @@ export default function HamburgerMenu() {
       {/* ── Fixed hamburger trigger ─────────────────────────────────────────── */}
       <button
         onClick={() => setOpen(true)}
-        style={{ top: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))', right: '1rem' }}
-        className="fixed z-40 w-10 h-10 flex flex-col items-center justify-center gap-1.5 rounded-xl bg-card"
+        style={{
+          top: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
+          right: '1rem',
+          background: settings.backgroundTheme === 'daylight' ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.10)',
+        }}
+        className="fixed z-40 w-11 h-11 flex flex-col items-center justify-center gap-1.5 rounded-xl"
         aria-label="Open menu"
       >
-        <span className="w-5 h-0.5 bg-c-secondary rounded-full" />
-        <span className="w-5 h-0.5 bg-c-secondary rounded-full" />
-        <span className="w-3.5 h-0.5 bg-c-secondary rounded-full self-start ml-[5px]" />
+        <span className="w-5 h-0.5 bg-c-primary rounded-full" />
+        <span className="w-5 h-0.5 bg-c-primary rounded-full" />
+        <span className="w-3.5 h-0.5 bg-c-primary rounded-full self-start ml-[5px]" />
       </button>
 
       {/* ── Slide-in menu ───────────────────────────────────────────────────── */}
@@ -179,19 +184,31 @@ export default function HamburgerMenu() {
                     <span className="font-semibold">Manage Split</span>
                   </button>
                   <button
-                    onClick={() => { exportData(); close() }}
+                    onClick={() => setShowDataSection(v => !v)}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
                   >
-                    <span className="text-lg w-6 text-center">💾</span>
-                    <span className="font-semibold">Export Data</span>
+                    <span className="text-lg w-6 text-center">📁</span>
+                    <span className="font-semibold flex-1">Manage Data</span>
+                    <span className="text-sm">{showDataSection ? '▾' : '▸'}</span>
                   </button>
-                  <button
-                    onClick={handleImport}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
-                  >
-                    <span className="text-lg w-6 text-center">📂</span>
-                    <span className="font-semibold">Import Data</span>
-                  </button>
+                  {showDataSection && (
+                    <div style={{ paddingLeft: 16 }} className="space-y-1">
+                      <button
+                        onClick={() => { exportData(); close() }}
+                        className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
+                      >
+                        <span className="text-lg w-6 text-center">📤</span>
+                        <span className="font-semibold">Export Data</span>
+                      </button>
+                      <button
+                        onClick={handleImport}
+                        className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
+                      >
+                        <span className="text-lg w-6 text-center">📂</span>
+                        <span className="font-semibold">Import Data</span>
+                      </button>
+                    </div>
+                  )}
                   <button
                     onClick={() => setShowInfo(v => !v)}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
