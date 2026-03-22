@@ -185,7 +185,7 @@ export default function HamburgerMenu() {
                         onClick={() => updateSettings({ backgroundTheme: 'obsidian' })}
                         className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                           settings.backgroundTheme !== 'daylight'
-                            ? `${theme.bg} text-white`
+                            ? `${theme.bg} ${theme.textOnBg}`
                             : 'bg-item text-c-secondary'
                         }`}
                       >
@@ -195,7 +195,7 @@ export default function HamburgerMenu() {
                         onClick={() => updateSettings({ backgroundTheme: 'daylight' })}
                         className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                           settings.backgroundTheme === 'daylight'
-                            ? `${theme.bg} text-white`
+                            ? `${theme.bg} ${theme.textOnBg}`
                             : 'bg-item text-c-secondary'
                         }`}
                       >

@@ -49,7 +49,7 @@ const SET_TYPES = [
 function SetTypeBtn({ value, onChange, theme }) {
   const current = SET_TYPES.find(t => t.id === value) || SET_TYPES[0]
   const next    = SET_TYPES[(SET_TYPES.indexOf(current) + 1) % SET_TYPES.length]
-  const color   = current.id === 'working' ? `${theme.bg} text-white` : 'bg-amber-500 text-white'
+  const color   = current.id === 'working' ? `${theme.bg} ${theme.textOnBg}` : 'bg-amber-500 text-white'
   return (
     <button
       type="button"
@@ -501,7 +501,7 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
           {query.trim() && (
             <button
               onClick={() => { onAdd(query.trim()); onClose() }}
-              className={`w-full text-left px-4 py-3 rounded-xl ${theme.bg} text-white font-semibold`}
+              className={`w-full text-left px-4 py-3 rounded-xl ${theme.bg} ${theme.textOnBg} font-semibold`}
             >
               + Add "{query.trim()}"
             </button>
@@ -532,7 +532,7 @@ const CARDIO_TYPES = ['Running', 'Cycling', 'Elliptical', 'StairMaster', 'Rowing
 
 function gradeStyle(g, theme, selected) {
   if (!selected) return 'bg-item text-c-dim'
-  if (g === 'A+') return `${theme.bg} text-white`
+  if (g === 'A+') return `${theme.bg} ${theme.textOnBg}`
   if (g === 'A')  return 'bg-emerald-500 text-white'
   if (g === 'B')  return 'bg-amber-500 text-white'
   if (g === 'C')  return 'bg-red-500 text-white'
@@ -617,7 +617,7 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
                     type="button"
                     onClick={() => setCardioType(t)}
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                      cardioType === t ? `${theme.bg} text-white` : 'bg-item text-c-dim'
+                      cardioType === t ? `${theme.bg} ${theme.textOnBg}` : 'bg-item text-c-dim'
                     }`}
                   >
                     {t}
@@ -675,7 +675,7 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
           </button>
           <button
             onClick={handleSave}
-            className={`flex-1 ${theme.bg} text-white py-3.5 rounded-2xl font-bold`}
+            className={`flex-1 ${theme.bg} ${theme.textOnBg} py-3.5 rounded-2xl font-bold`}
           >
             Save
           </button>
@@ -926,6 +926,7 @@ export default function BbLogger() {
         style={{
           backgroundColor: theme.hex,
           paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
+          color: theme.contrastText,
         }}
       >
         <div className="flex justify-center pb-1">
@@ -941,7 +942,7 @@ export default function BbLogger() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <span className="text-sm font-semibold text-white/70">
+          <span className={`text-sm font-semibold ${theme.textOnBgMuted}`}>
             {loggedSets} set{loggedSets !== 1 ? 's' : ''} logged
           </span>
           <div className="bg-black/25 rounded-full px-3 py-1.5">
@@ -952,11 +953,11 @@ export default function BbLogger() {
         </div>
 
         <div className="px-5 pb-4">
-          <h1 className="text-2xl font-bold text-white leading-tight">
+          <h1 className={`text-2xl font-bold ${theme.textOnBg} leading-tight`}>
             {workoutEmoji} {workoutName}
           </h1>
           {savedSession && (
-            <p className="text-xs text-white/60 mt-0.5">Resumed from saved session</p>
+            <p className={`text-xs ${theme.textOnBgDim} mt-0.5`}>Resumed from saved session</p>
           )}
         </div>
       </div>
@@ -1025,7 +1026,7 @@ export default function BbLogger() {
         ) : (
           <button
             onClick={() => setShowConfirm(true)}
-            className={`w-full ${theme.bg} text-white py-4 rounded-2xl font-bold text-lg`}
+            className={`w-full ${theme.bg} ${theme.textOnBg} py-4 rounded-2xl font-bold text-lg`}
           >
             Finish Session · {loggedSets} sets
           </button>

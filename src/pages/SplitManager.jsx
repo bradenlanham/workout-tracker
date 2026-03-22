@@ -140,7 +140,7 @@ function SplitCard({ split, isActive, onActivate, onEdit, onCloneAndEdit, onDele
         {!isActive && (
           <button
             onClick={onActivate}
-            className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${theme.bg} text-white`}
+            className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${theme.bg} ${theme.textOnBg}`}
           >
             Set Active
           </button>

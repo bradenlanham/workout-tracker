@@ -155,7 +155,7 @@ export default function SplitEditor() {
           </button>
           <button
             onClick={save}
-            className={`flex-1 ${theme.bg} text-white py-3 rounded-2xl font-bold`}
+            className={`flex-1 ${theme.bg} ${theme.textOnBg} py-3 rounded-2xl font-bold`}
           >
             Save Split
           </button>

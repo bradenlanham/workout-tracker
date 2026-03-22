@@ -81,16 +81,16 @@ export default function Dashboard() {
       {/* ── Main CTA ──────────────────────────────────────────────────────────── */}
       <div className="px-4 mb-6">
         <div className={`${theme.bg} rounded-3xl p-6`}>
-          <p className="text-xs font-bold uppercase tracking-widest text-white/60 mb-2">Next Up</p>
-          <p className="text-3xl font-bold text-white leading-tight">
+          <p className={`text-xs font-bold uppercase tracking-widest ${theme.textOnBgDim} mb-2`}>Next Up</p>
+          <p className={`text-3xl font-bold ${theme.textOnBg} leading-tight`}>
             {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
           </p>
-          <p className="text-sm text-white/60 mt-1 mb-5">
+          <p className={`text-sm ${theme.textOnBgDim} mt-1 mb-5`}>
             {streak > 0 ? `${streak}-day streak 🔥` : 'Start your streak today!'}
           </p>
           <button
             onClick={() => navigate(`/log/bb/${nextBb}`)}
-            className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 text-white font-bold text-lg py-4 rounded-2xl transition-colors"
+            className={`w-full bg-black/20 hover:bg-black/30 active:bg-black/40 ${theme.textOnBg} font-bold text-lg py-4 rounded-2xl transition-colors`}
           >
             Start Session →
           </button>

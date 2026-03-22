@@ -98,7 +98,7 @@ function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
             key={t}
             onClick={() => setTab(t)}
             className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              tab === t ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+              tab === t ? `${theme.bg} ${theme.textOnBg}` : 'bg-item text-c-secondary'
             }`}
           >
             {t}
@@ -153,7 +153,7 @@ function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
             <button
               onClick={handleAddCustom}
               disabled={!customInput.trim()}
-              className={`px-4 py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-40 ${theme.bg}`}
+              className={`px-4 py-3 rounded-xl font-semibold text-sm ${theme.textOnBg} disabled:opacity-40 ${theme.bg}`}
             >
               Add
             </button>
@@ -364,7 +364,7 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
                 />
                 <button
                   onClick={handleAddSection}
-                  className={`px-4 py-3 rounded-xl font-semibold text-sm text-white ${theme.bg}`}
+                  className={`px-4 py-3 rounded-xl font-semibold text-sm ${theme.textOnBg} ${theme.bg}`}
                 >
                   Add
                 </button>
@@ -388,7 +388,7 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
           <button
             onClick={handleSave}
             disabled={!name.trim()}
-            className={`w-full py-4 rounded-2xl font-bold text-white text-base transition-all disabled:opacity-40 ${theme.bg}`}
+            className={`w-full py-4 rounded-2xl font-bold ${theme.textOnBg} text-base transition-all disabled:opacity-40 ${theme.bg}`}
           >
             Save Workout
           </button>
@@ -446,7 +446,7 @@ function Step1({ name, setName, emoji, setEmoji, onBack, onContinue, theme }) {
         <button
           onClick={onContinue}
           disabled={!name.trim()}
-          className={`w-full py-4 rounded-2xl font-bold text-white text-base transition-all disabled:opacity-40 ${theme.bg}`}
+          className={`w-full py-4 rounded-2xl font-bold ${theme.textOnBg} text-base transition-all disabled:opacity-40 ${theme.bg}`}
         >
           Continue
         </button>
@@ -534,7 +534,7 @@ function Step2({ workouts, onAddWorkout, onEditWorkout, onRemoveWorkout, onMoveW
         <button
           onClick={onContinue}
           disabled={workouts.length === 0}
-          className={`w-full py-4 rounded-2xl font-bold text-white text-base transition-all disabled:opacity-40 ${theme.bg}`}
+          className={`w-full py-4 rounded-2xl font-bold ${theme.textOnBg} text-base transition-all disabled:opacity-40 ${theme.bg}`}
         >
           Continue
         </button>
@@ -655,7 +655,7 @@ function Step3({ workouts, rotation, setRotation, onContinue, onBack, theme }) {
         <button
           onClick={onContinue}
           disabled={rotation.length === 0}
-          className={`w-full py-4 rounded-2xl font-bold text-white text-base transition-all disabled:opacity-40 ${theme.bg}`}
+          className={`w-full py-4 rounded-2xl font-bold ${theme.textOnBg} text-base transition-all disabled:opacity-40 ${theme.bg}`}
         >
           Continue
         </button>
@@ -740,7 +740,7 @@ function Step4({ splitName, splitEmoji, workouts, rotation, isEdit, onSave, onBa
 
         <button
           onClick={() => onSave(makeActive)}
-          className={`w-full py-4 rounded-2xl font-bold text-white text-base ${theme.bg}`}
+          className={`w-full py-4 rounded-2xl font-bold ${theme.textOnBg} text-base ${theme.bg}`}
         >
           {isEdit ? 'Save Changes' : 'Save Split'}
         </button>
