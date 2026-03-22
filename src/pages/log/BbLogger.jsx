@@ -695,7 +695,7 @@ export default function BbLogger() {
   const {
     sessions, settings, addSession,
     activeSession, saveActiveSession, clearActiveSession,
-    customTemplates,
+    customTemplates, splits, activeSplitId,
   } = useStore()
   const theme = getTheme(settings.accentColor)
 
@@ -705,17 +705,21 @@ export default function BbLogger() {
   const templateId = isCustomTemplate ? type.slice(4) : null
   const customTemplate = templateId ? customTemplates.find(t => t.id === templateId) : null
 
+  // Active split workout definition (falls back to hardcoded data for compat)
+  const activeSplit = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
+  const activeSplitWorkout = activeSplit?.workouts?.find(w => w.id === type) || null
+
   const workoutName  = isCustomTemplate
     ? (customTemplate?.name || 'Custom Workout')
-    : (BB_WORKOUT_NAMES[type] || 'Custom Workout')
+    : (activeSplitWorkout?.name || BB_WORKOUT_NAMES[type] || 'Custom Workout')
 
   const workoutEmoji = isCustomTemplate
     ? (customTemplate?.emoji || '✏️')
-    : (BB_WORKOUT_EMOJI[type] || '✏️')
+    : (activeSplitWorkout?.emoji || BB_WORKOUT_EMOJI[type] || '✏️')
 
   const groups = isCustomTemplate
     ? (customTemplate?.groups || [])
-    : (BB_EXERCISE_GROUPS[type] || [])
+    : (activeSplitWorkout?.sections || BB_EXERCISE_GROUPS[type] || [])
 
   const wColor = isCustomTemplate ? '#6b7280' : (WORKOUT_COLORS[type] || WORKOUT_COLORS.custom)
 

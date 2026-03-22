@@ -5,7 +5,8 @@ import { THEMES, getTheme } from '../theme'
 
 const NAV_LINKS = [
   { to: '/log',      label: 'Log Workout', emoji: '➕' },
-  { to: '/history',  label: 'History',     emoji: '📋' },
+  { to: '/splits',   label: 'My Splits',   emoji: '📋' },
+  { to: '/history',  label: 'History',     emoji: '🗂️' },
   { to: '/progress', label: 'Progress',    emoji: '📈' },
   { to: '/guide',    label: 'Guide',       emoji: '📖' },
 ]

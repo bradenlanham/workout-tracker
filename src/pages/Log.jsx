@@ -24,6 +24,9 @@ function SplitModal({ sequence, onSave, onClose, theme }) {
 
   const reset = () => setOrder([...BB_WORKOUT_SEQUENCE])
 
+  const getName  = (type) => type === 'rest' ? 'Rest Day'   : BB_WORKOUT_NAMES[type]  || type
+  const getEmoji = (type) => type === 'rest' ? '😴'         : BB_WORKOUT_EMOJI[type]  || '🏋️'
+
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end" onClick={onClose}>
       <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5" onClick={e => e.stopPropagation()}>
@@ -31,12 +34,12 @@ function SplitModal({ sequence, onSave, onClose, theme }) {
           <h3 className="font-bold text-lg">Split Order</h3>
           <button onClick={reset} className="text-xs text-c-dim underline">Reset to default</button>
         </div>
-        <p className="text-xs text-c-muted mb-3">Drag or use arrows to set the rotation order.</p>
+        <p className="text-xs text-c-muted mb-3">Use arrows to set the rotation order.</p>
         <div className="space-y-2 mb-4">
           {order.map((type, idx) => (
-            <div key={type} className="flex items-center gap-3 bg-item rounded-xl px-4 py-3">
-              <span className="text-lg">{BB_WORKOUT_EMOJI[type]}</span>
-              <span className="flex-1 font-medium text-sm">{BB_WORKOUT_NAMES[type]}</span>
+            <div key={`${type}-${idx}`} className="flex items-center gap-3 bg-item rounded-xl px-4 py-3">
+              <span className="text-lg">{getEmoji(type)}</span>
+              <span className="flex-1 font-medium text-sm">{getName(type)}</span>
               <div className="flex gap-1">
                 <button
                   onClick={() => move(idx, 'up')}
@@ -84,15 +87,31 @@ function SplitModal({ sequence, onSave, onClose, theme }) {
 
 export default function Log() {
   const navigate = useNavigate()
-  const { sessions, settings, customTemplates, workoutSequence, updateWorkoutSequence } = useStore()
+  const {
+    sessions, settings, customTemplates,
+    splits, activeSplitId,
+    workoutSequence, updateWorkoutSequence,
+  } = useStore()
   const theme = getTheme(settings.accentColor)
   const [showSplit, setShowSplit] = useState(false)
 
-  const effectiveSequence = (workoutSequence && workoutSequence.length)
-    ? workoutSequence
-    : BB_WORKOUT_SEQUENCE
+  // ── Active split ───────────────────────────────────────────────────────────
+  const activeSplit = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
+  const rotation = activeSplit?.rotation || (workoutSequence && workoutSequence.length ? workoutSequence : BB_WORKOUT_SEQUENCE)
 
-  const nextBb = getNextBbWorkout(sessions, effectiveSequence)
+  const nextBb = getNextBbWorkout(sessions, rotation)
+
+  // Workout list: from active split's workouts, or fall back to rotation keys
+  const workoutList = activeSplit?.workouts || rotation
+    .filter(t => t !== 'rest')
+    .map(t => ({ id: t, name: BB_WORKOUT_NAMES[t] || t, emoji: BB_WORKOUT_EMOJI[t] || '🏋️' }))
+
+  const getWorkoutName  = (wId) => activeSplit?.workouts?.find(w => w.id === wId)?.name  || BB_WORKOUT_NAMES[wId]  || wId
+  const getWorkoutEmoji = (wId) => activeSplit?.workouts?.find(w => w.id === wId)?.emoji || BB_WORKOUT_EMOJI[wId] || '🏋️'
+
+  // Sequence for the split reorder modal (uses built-in rotation incl. rest days)
+  const effectiveSequence = activeSplit?.rotation ||
+    (workoutSequence && workoutSequence.length ? workoutSequence : BB_WORKOUT_SEQUENCE)
 
   return (
     <div className="pb-nav min-h-screen">
@@ -110,7 +129,7 @@ export default function Log() {
           >
             <div className="text-left">
               <p className="text-xs font-semibold opacity-80 mb-0.5">NEXT WORKOUT</p>
-              <p className="text-2xl font-bold">{BB_WORKOUT_EMOJI[nextBb]} {BB_WORKOUT_NAMES[nextBb]}</p>
+              <p className="text-2xl font-bold">{getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}</p>
             </div>
             <svg className="w-7 h-7 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -118,7 +137,7 @@ export default function Log() {
           </button>
         </div>
 
-        {/* Built-in workouts + split reorder */}
+        {/* Active split workouts */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <SectionHeader>All Workouts</SectionHeader>
@@ -129,20 +148,25 @@ export default function Log() {
               Edit split order
             </button>
           </div>
+          {activeSplit && (
+            <p className="text-xs text-c-muted mb-2 -mt-1">
+              {activeSplit.emoji} {activeSplit.name}
+            </p>
+          )}
           <div className="space-y-2">
-            {effectiveSequence.filter(t => t !== 'rest').map(type => (
+            {workoutList.map(w => (
               <button
-                key={type}
-                onClick={() => navigate(`/log/bb/${type}`)}
+                key={w.id}
+                onClick={() => navigate(`/log/bb/${w.id}`)}
                 className={`w-full flex items-center justify-between bg-card rounded-xl p-4 transition-colors ${
-                  type === nextBb ? `ring-1 ${theme.ring}` : ''
+                  w.id === nextBb ? `ring-1 ${theme.ring}` : ''
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{BB_WORKOUT_EMOJI[type]}</span>
+                  <span className="text-2xl">{w.emoji}</span>
                   <div className="text-left">
-                    <p className="font-semibold">{BB_WORKOUT_NAMES[type]}</p>
-                    {type === nextBb && (
+                    <p className="font-semibold">{w.name}</p>
+                    {w.id === nextBb && (
                       <p className={`text-xs ${theme.text}`}>Suggested next</p>
                     )}
                   </div>

@@ -2,12 +2,12 @@ import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { getNextBbWorkout, formatDate, getWorkoutStreak } from '../utils/helpers'
-import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../data/exercises'
+import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE } from '../data/exercises'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { sessions, settings } = useStore()
-  const theme    = getTheme(settings.accentColor)
+  const { sessions, settings, splits, activeSplitId } = useStore()
+  const theme = getTheme(settings.accentColor)
 
   const streak        = getWorkoutStreak(sessions)
   const totalSessions = sessions.length
@@ -15,7 +15,20 @@ export default function Dashboard() {
   const hour = new Date().getHours()
   const timeGreeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
-  const nextBb = getNextBbWorkout(sessions)
+  // ── Active split helpers ───────────────────────────────────────────────────
+  const activeSplit = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
+  const rotation = activeSplit?.rotation || BB_WORKOUT_SEQUENCE
+
+  const nextBb = getNextBbWorkout(sessions, rotation)
+
+  const getWorkoutName = (wId) => {
+    const w = activeSplit?.workouts?.find(w => w.id === wId)
+    return w?.name || BB_WORKOUT_NAMES[wId] || wId
+  }
+  const getWorkoutEmoji = (wId) => {
+    const w = activeSplit?.workouts?.find(w => w.id === wId)
+    return w?.emoji || BB_WORKOUT_EMOJI[wId] || '🏋️'
+  }
 
   const recentSessions = [...sessions]
     .sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -51,9 +64,14 @@ export default function Dashboard() {
       {/* ── Main CTA ──────────────────────────────────────────────────────────── */}
       <div className="px-4 mb-6">
         <div className={`${theme.bg} rounded-3xl p-6`}>
+          {activeSplit && (
+            <p className="text-xs font-bold uppercase tracking-widest text-white/50 mb-0.5">
+              {activeSplit.emoji} {activeSplit.name}
+            </p>
+          )}
           <p className="text-xs font-bold uppercase tracking-widest text-white/60 mb-2">Next Up</p>
           <p className="text-3xl font-bold text-white leading-tight">
-            {BB_WORKOUT_EMOJI[nextBb]} {BB_WORKOUT_NAMES[nextBb]}
+            {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
           </p>
           <p className="text-sm text-white/60 mt-1 mb-5">
             {streak > 0 ? `${streak}-day streak 🔥` : 'Start your streak today!'}
@@ -73,7 +91,7 @@ export default function Dashboard() {
           <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-3">Recent</p>
           <div className="space-y-2">
             {recentSessions.map(s => {
-              const sessionName = `${BB_WORKOUT_EMOJI[s.type] || '🏋️'} ${BB_WORKOUT_NAMES[s.type] || s.type}`
+              const sessionName = `${getWorkoutEmoji(s.type)} ${getWorkoutName(s.type)}`
               return (
                 <div key={s.id} className="flex items-center justify-between bg-card rounded-xl px-4 py-3">
                   <div>
