@@ -13,7 +13,7 @@ const NAV_LINKS = [
 export default function HamburgerMenu() {
   const loc       = useLocation()
   const navigate  = useNavigate()
-  const { settings, updateSettings, exportData } = useStore()
+  const { settings, updateSettings, exportData, importData } = useStore()
   const theme     = getTheme(settings.accentColor)
   const [open, setOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
@@ -23,6 +23,31 @@ export default function HamburgerMenu() {
   if (isLogging) return null
 
   const close = () => setOpen(false)
+
+  const handleImport = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = (e) => {
+      const file = e.target.files[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const json = event.target.result
+        if (!window.confirm('This will replace your current data with the backup. Continue?')) return
+        const ok = importData(json)
+        if (ok) {
+          const count = (() => { try { return JSON.parse(json).sessions?.length ?? 0 } catch { return 0 } })()
+          alert(`Data restored! ${count} session${count !== 1 ? 's' : ''} imported.`)
+          close()
+        } else {
+          alert('Invalid backup file. Please select a file exported from this app.')
+        }
+      }
+      reader.readAsText(file)
+    }
+    input.click()
+  }
 
   const go = (path) => { navigate(path); close() }
 
@@ -159,6 +184,13 @@ export default function HamburgerMenu() {
                   >
                     <span className="text-lg w-6 text-center">💾</span>
                     <span className="font-semibold">Export Data</span>
+                  </button>
+                  <button
+                    onClick={handleImport}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-c-secondary hover:bg-hover text-left"
+                  >
+                    <span className="text-lg w-6 text-center">📂</span>
+                    <span className="font-semibold">Import Data</span>
                   </button>
                   <button
                     onClick={() => setShowInfo(v => !v)}
