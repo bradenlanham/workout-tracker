@@ -265,7 +265,7 @@ export default function SplitManager() {
         className="sticky top-0 bg-base z-30 px-4 pb-4"
         style={{ paddingTop: 'max(3rem, env(safe-area-inset-top, 3rem))' }}
       >
-        <div className="flex items-center gap-3 mb-1 pr-14">
+        <div className="flex items-center gap-3 mb-1" style={{ paddingRight: '3.5rem' }}>
           <button
             onClick={() => navigate(-1)}
             className="w-9 h-9 flex items-center justify-center rounded-xl bg-card text-c-dim shrink-0"

@@ -932,7 +932,7 @@ export default function BbLogger() {
           <ClipGraphic />
         </div>
 
-        <div className="flex items-center justify-between px-4 pr-16 pb-2">
+        <div className="flex items-center justify-between px-4 pb-2" style={{ paddingRight: '4rem' }}>
           <button
             onClick={() => navigate(-1)}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-black/25"

@@ -120,7 +120,7 @@ export default function TemplateEditor() {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-4 border-b border-c-subtle">
-        <div className="flex items-center gap-3 mb-4 pr-14">
+        <div className="flex items-center gap-3 mb-4" style={{ paddingRight: '3.5rem' }}>
           <button
             onClick={() => navigate(-1)}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-card"
