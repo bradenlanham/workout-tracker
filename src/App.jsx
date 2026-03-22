@@ -12,6 +12,7 @@ import BbLogger from './pages/log/BbLogger'
 import TemplateEditor from './pages/TemplateEditor'
 import SplitEditor from './pages/SplitEditor'
 import SplitManager from './pages/SplitManager'
+import SplitBuilder from './pages/SplitBuilder'
 
 function ThemedApp() {
   const { settings, initSplits } = useStore()
@@ -40,6 +41,8 @@ function ThemedApp() {
         <Route path="/templates/:id" element={<TemplateEditor />} />
         <Route path="/split" element={<SplitEditor />} />
         <Route path="/splits" element={<SplitManager />} />
+        <Route path="/splits/new" element={<SplitBuilder />} />
+        <Route path="/splits/edit/:id" element={<SplitBuilder />} />
       </Routes>
       <HamburgerMenu />
       <RestTimer />
