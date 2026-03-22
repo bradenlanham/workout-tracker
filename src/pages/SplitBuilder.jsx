@@ -172,7 +172,13 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
   const [emoji, setEmoji] = useState(workout?.emoji || '💪')
   const [sections, setSections] = useState(
     workout?.sections?.length
-      ? workout.sections.map(s => ({ ...s, exercises: [...s.exercises] }))
+      ? workout.sections.map(s => ({
+          ...s,
+          // Normalize exercises to strings — imported workouts may have {name, note} objects
+          exercises: (s.exercises || []).map(ex =>
+            typeof ex === 'string' ? ex : (ex?.name || '')
+          ).filter(Boolean),
+        }))
       : DEFAULT_SECTION_LABELS.map(label => ({ label, exercises: [] }))
   )
   const [pickerSection, setPickerSection] = useState(null)
@@ -764,7 +770,16 @@ export default function SplitBuilder() {
     existingSplit?.workouts
       ? existingSplit.workouts.map(w => ({
           ...w,
-          sections: w.sections.map(s => ({ ...s, exercises: [...s.exercises] })),
+          // Ensure workouts have name/emoji defaults in case they're missing (e.g. imported splits)
+          name: w.name || 'Workout',
+          emoji: w.emoji || '🏋️',
+          sections: (w.sections || []).map(s => ({
+            ...s,
+            // Normalize exercises: imported splits may store {name, note} objects — flatten to strings
+            exercises: (s.exercises || []).map(ex =>
+              typeof ex === 'string' ? ex : (ex?.name || '')
+            ).filter(Boolean),
+          })),
         }))
       : []
   )
