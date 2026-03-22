@@ -339,8 +339,8 @@ export default function History() {
           {Object.keys(groups).length === 0 && (
             <div className="text-center py-16">
               <p className="text-4xl mb-3">📋</p>
-              <p className="text-c-dim font-medium">No sessions logged yet</p>
-              <p className="text-c-faint text-sm mt-1">Start logging from the Train screen</p>
+              <p className="text-c-dim font-medium">No workouts yet</p>
+              <p className="text-c-faint text-sm mt-1">Start a session to see your workouts here</p>
             </div>
           )}
           {Object.entries(groups).map(([dateKey, daySessions]) => (

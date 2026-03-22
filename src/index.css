@@ -93,4 +93,17 @@
 
   /* ── Ring offset matching card surface ───────────────────── */
   .ring-offset-card { --tw-ring-offset-color: var(--bg-card); }
+
+  /* ── Entrance animations ──────────────────────────────────── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideInFromRight {
+    from { opacity: 0; transform: translateX(24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .animate-slide-in {
+    animation: slideInFromRight 0.28s ease both;
+  }
 }

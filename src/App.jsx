@@ -13,9 +13,10 @@ import TemplateEditor from './pages/TemplateEditor'
 import SplitEditor from './pages/SplitEditor'
 import SplitManager from './pages/SplitManager'
 import SplitBuilder from './pages/SplitBuilder'
+import Welcome from './pages/Welcome'
 
 function ThemedApp() {
-  const { settings, initSplits } = useStore()
+  const { settings, initSplits, sessions, hasCompletedOnboarding } = useStore()
 
   useEffect(() => {
     const theme = settings.backgroundTheme === 'daylight' ? 'daylight' : 'obsidian'
@@ -27,10 +28,14 @@ function ThemedApp() {
     initSplits()
   }, []) // eslint-disable-line
 
+  // Show welcome screen for new users who haven't completed onboarding
+  const isNewUser = !hasCompletedOnboarding && sessions.length === 0
+
   return (
     <div className="min-h-screen bg-base text-c-primary max-w-lg mx-auto relative">
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<Navigate to={isNewUser ? '/welcome' : '/dashboard'} replace />} />
+        <Route path="/welcome" element={isNewUser ? <Welcome /> : <Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/log" element={<Log />} />
         <Route path="/log/bb/:type" element={<BbLogger />} />

@@ -167,6 +167,7 @@ function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
 // ── Workout Builder ────────────────────────────────────────────────────────────
 
 function WorkoutBuilder({ workout, onSave, onBack, theme }) {
+  const { sessions } = useStore()
   const [name, setName] = useState(workout?.name || '')
   const [emoji, setEmoji] = useState(workout?.emoji || '💪')
   const [sections, setSections] = useState(
@@ -179,6 +180,10 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
   const [newSectionLabel, setNewSectionLabel] = useState('')
 
   const allAdded = sections.flatMap(s => s.exercises)
+
+  // Check if any logged session has notes for a given exercise name
+  const hasSessionNotes = (exName) =>
+    sessions.some(s => s.data?.exercises?.some(e => e.name === exName && e.notes?.trim()))
 
   const moveExercise = (sIdx, eIdx, dir) => {
     setSections(prev => {
@@ -231,7 +236,7 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
 
   return (
     <>
-      <div className="min-h-screen pb-36">
+      <div className="min-h-screen pb-36 animate-slide-in">
         <div
           className="sticky top-0 bg-base z-30 px-4 pb-4"
           style={{ paddingTop: 'max(3rem, env(safe-area-inset-top, 3rem))' }}
@@ -301,6 +306,9 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
                     {sec.exercises.map((exName, eIdx) => (
                       <div key={eIdx} className="flex items-center gap-2 bg-item rounded-xl px-3 py-2.5">
                         <span className="flex-1 text-sm min-w-0">{exName}</span>
+                        {hasSessionNotes(exName) && (
+                          <span title="Has notes from previous sessions" className="text-sm leading-none opacity-60">ℹ️</span>
+                        )}
                         <div className="flex items-center gap-0.5 shrink-0">
                           <button
                             onClick={() => moveExercise(sIdx, eIdx, -1)}

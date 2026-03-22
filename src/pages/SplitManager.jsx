@@ -69,11 +69,25 @@ function SplitCard({ split, isActive, onActivate, onEdit, onCloneAndEdit, onDele
   const workoutCount = split.workouts?.length || 0
   const rotationLength = split.rotation?.length || 0
 
+  // Build rotation preview: up to 5 emoji + "..." if longer
+  const rotationPreview = split.rotation
+    ? (() => {
+        const preview = split.rotation.slice(0, 5).map(id => {
+          if (id === 'rest') return '😴'
+          const w = split.workouts?.find(w => w.id === id)
+          return w?.emoji || '🏋️'
+        })
+        if (split.rotation.length > 5) preview.push('…')
+        return preview
+      })()
+    : []
+
   return (
     <div
-      className={`bg-card rounded-2xl p-4 transition-all ${
-        isActive ? `ring-2 ${theme.ring}` : ''
+      className={`bg-card rounded-2xl p-4 transition-all overflow-hidden ${
+        isActive ? '' : 'active:bg-hover'
       }`}
+      style={isActive ? { borderLeft: `4px solid ${theme.hex}` } : { borderLeft: '4px solid transparent' }}
     >
       {/* Header row */}
       <div className="flex items-start gap-3 mb-3">
@@ -97,6 +111,18 @@ function SplitCard({ split, isActive, onActivate, onEdit, onCloneAndEdit, onDele
           </p>
         </div>
       </div>
+
+      {/* Rotation preview as emoji chips */}
+      {rotationPreview.length > 0 && (
+        <div className="flex items-center gap-1 mb-3">
+          {rotationPreview.map((em, i) => (
+            <span key={i} className="text-base leading-none">{em}</span>
+          ))}
+          {rotationPreview.length > 1 && (
+            <span className="text-xs text-c-faint ml-0.5">rotation</span>
+          )}
+        </div>
+      )}
 
       {/* Workout chips */}
       {split.workouts && split.workouts.length > 0 && (
@@ -280,6 +306,14 @@ export default function SplitManager() {
           <div className="text-center py-16">
             <p className="text-4xl mb-3">🏋️</p>
             <p className="text-c-muted text-sm">No splits yet.</p>
+          </div>
+        )}
+
+        {/* Hint when only the built-in split exists */}
+        {splits.length === 1 && splits[0]?.isBuiltIn && (
+          <div className="bg-card rounded-2xl px-4 py-4 text-sm text-c-muted flex items-start gap-3">
+            <span className="text-xl leading-none mt-0.5">💡</span>
+            <p>You're using BamBam's Blueprint. Create your own split or import one from a coach or friend!</p>
           </div>
         )}
 

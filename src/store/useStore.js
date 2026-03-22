@@ -40,6 +40,8 @@ const useStore = create(
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
+      // First-launch onboarding flag — once true, Welcome screen is never shown again
+      hasCompletedOnboarding: false,
       // User-created workout templates
       customTemplates: [],
       // BB workout rotation order — null means use default BB_WORKOUT_SEQUENCE
@@ -69,6 +71,8 @@ const useStore = create(
       },
 
       // ── Split CRUD ────────────────────────────────────────────────────────
+
+      completeOnboarding: () => set({ hasCompletedOnboarding: true }),
 
       setActiveSplit: (id) => set({ activeSplitId: id }),
 
@@ -241,6 +245,10 @@ const useStore = create(
         splits: persisted.splits || current.splits,
         exerciseLibrary: persisted.exerciseLibrary || current.exerciseLibrary,
         activeSplitId: persisted.activeSplitId ?? current.activeSplitId,
+        // Existing users who already have sessions are treated as onboarded
+        hasCompletedOnboarding: persisted.hasCompletedOnboarding
+          || (persisted.sessions && persisted.sessions.length > 0)
+          || false,
       }),
     }
   )

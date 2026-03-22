@@ -61,14 +61,26 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Active split label ────────────────────────────────────────────────── */}
+      {activeSplit && (
+        <div className="px-4 mb-3 flex items-center gap-2">
+          <p className="text-xs text-c-muted">
+            Training: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
+          </p>
+          {splits.length > 1 && (
+            <button
+              onClick={() => navigate('/splits')}
+              className={`text-xs font-semibold ${theme.text} ml-1`}
+            >
+              Switch
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Main CTA ──────────────────────────────────────────────────────────── */}
       <div className="px-4 mb-6">
         <div className={`${theme.bg} rounded-3xl p-6`}>
-          {activeSplit && (
-            <p className="text-xs font-bold uppercase tracking-widest text-white/50 mb-0.5">
-              {activeSplit.emoji} {activeSplit.name}
-            </p>
-          )}
           <p className="text-xs font-bold uppercase tracking-widest text-white/60 mb-2">Next Up</p>
           <p className="text-3xl font-bold text-white leading-tight">
             {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
