@@ -46,9 +46,10 @@ export default function BottomNav() {
   const { settings } = useStore()
   const theme = getTheme(settings.accentColor)
 
-  // Hide nav when in a logging sub-route
+  // Hide nav when in a logging sub-route or on welcome screen
   const isLogging = location.pathname.startsWith('/log/bb/')
-  if (isLogging) return null
+  const isWelcome = location.pathname === '/welcome'
+  if (isLogging || isWelcome) return null
 
   return (
     <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-card border-t border-c-base safe-bottom z-40">

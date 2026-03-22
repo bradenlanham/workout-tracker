@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import useStore from './store/useStore'
 import HamburgerMenu from './components/HamburgerMenu'
+import BottomNav from './components/BottomNav'
 import RestTimer from './components/RestTimer'
 import Dashboard from './pages/Dashboard'
 import Log from './pages/Log'
@@ -50,6 +51,7 @@ function ThemedApp() {
         <Route path="/splits/edit/:id" element={<SplitBuilder />} />
       </Routes>
       <HamburgerMenu />
+      <BottomNav />
       <RestTimer />
     </div>
   )

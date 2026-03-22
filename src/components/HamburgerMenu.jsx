@@ -99,7 +99,7 @@ export default function HamburgerMenu() {
               )}
               {subScreen && (
                 <span className="text-base font-bold absolute left-1/2 -translate-x-1/2">
-                  {subScreen === 'settings' ? 'Settings' : 'Info'}
+                  {subScreen === 'settings' ? 'Settings' : subScreen === 'info' ? 'Info' : 'Progress'}
                 </span>
               )}
               <button
@@ -120,6 +120,11 @@ export default function HamburgerMenu() {
                 <>
                   <button className={rowClass} style={rowStyle} onClick={() => go('/splits')}>
                     <span>My Splits</span>
+                    <span className="text-c-dim">→</span>
+                  </button>
+
+                  <button className={rowClass} style={rowStyle} onClick={() => setSubScreen('progress')}>
+                    <span>Progress</span>
                     <span className="text-c-dim">→</span>
                   </button>
 
@@ -229,6 +234,21 @@ export default function HamburgerMenu() {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* ── Progress sub-screen ─────────────────────────────────────── */}
+              {subScreen === 'progress' && (
+                <>
+                  <button className={rowClass} style={rowStyle} onClick={() => go('/history')}>
+                    <span>History</span>
+                    <span className="text-c-dim">→</span>
+                  </button>
+
+                  <div className={rowClass} style={{ ...rowStyle, cursor: 'default' }}>
+                    <span>Stats</span>
+                    <span className="text-c-muted text-sm">Coming soon</span>
+                  </div>
+                </>
               )}
 
               {/* ── Info sub-screen ─────────────────────────────────────────── */}
