@@ -133,9 +133,9 @@ export const THEMES = {
     ring: 'ring-[#E8E8E8]/50',
     hex: '#E8E8E8',
     contrastText: '#1A1A1A',
-    textOnBg: 'text-[#1A1A1A]',
-    textOnBgMuted: 'text-[#1A1A1A]/70',
-    textOnBgDim: 'text-[#1A1A1A]/60',
+    textOnBg: 'text-white',
+    textOnBgMuted: 'text-white/70',
+    textOnBgDim: 'text-white/60',
   },
   black: {
     id: 'black',

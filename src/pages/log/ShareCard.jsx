@@ -107,7 +107,8 @@ export default function ShareCard({ data, onDone }) {
         <div className="text-center">
           <button
             onClick={onDone}
-            className={`${theme.bg} ${theme.textOnBg} font-bold py-4 px-14 rounded-2xl text-base`}
+            className={`${theme.bg} text-white font-bold py-4 px-14 rounded-2xl text-base`}
+            style={{ color: theme.contrastText }}
           >
             Done
           </button>

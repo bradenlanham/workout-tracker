@@ -80,17 +80,17 @@ export default function Dashboard() {
 
       {/* ── Main CTA ──────────────────────────────────────────────────────────── */}
       <div className="px-4 mb-6">
-        <div className={`${theme.bg} rounded-3xl p-6`}>
-          <p className={`text-xs font-bold uppercase tracking-widest ${theme.textOnBgDim} mb-2`}>Next Up</p>
-          <p className={`text-3xl font-bold ${theme.textOnBg} leading-tight`}>
+        <div className={`${theme.bg} rounded-3xl p-6`} style={{ color: theme.contrastText }}>
+          <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>Next Up</p>
+          <p className="text-3xl font-bold leading-tight">
             {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
           </p>
-          <p className={`text-sm ${theme.textOnBgDim} mt-1 mb-5`}>
+          <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
             {streak > 0 ? `${streak}-day streak 🔥` : 'Start your streak today!'}
           </p>
           <button
             onClick={() => navigate(`/log/bb/${nextBb}`)}
-            className={`w-full bg-black/20 hover:bg-black/30 active:bg-black/40 ${theme.textOnBg} font-bold text-lg py-4 rounded-2xl transition-colors`}
+            className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
           >
             Start Session →
           </button>

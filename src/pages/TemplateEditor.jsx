@@ -284,8 +284,9 @@ export default function TemplateEditor() {
           onClick={handleSave}
           disabled={!name.trim()}
           className={`w-full py-4 rounded-2xl font-bold text-lg transition-opacity ${
-            name.trim() ? `${theme.bg} ${theme.textOnBg}` : 'bg-item text-c-muted opacity-50'
+            name.trim() ? `${theme.bg} text-white` : 'bg-item text-c-muted opacity-50'
           }`}
+          style={name.trim() ? { color: theme.contrastText } : undefined}
         >
           {existing ? 'Save Changes' : 'Create Template'}
         </button>

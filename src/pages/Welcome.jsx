@@ -94,24 +94,25 @@ export default function Welcome() {
           <button
             key={card.title}
             onClick={card.action}
-            style={{ animation: 'fadeInUp 0.5s ease both', animationDelay: `${0.1 + i * 0.08}s` }}
+            style={{ animation: 'fadeInUp 0.5s ease both', animationDelay: `${0.1 + i * 0.08}s`, ...(card.accent ? { color: theme.contrastText } : {}) }}
             className={`w-full text-left rounded-2xl p-5 flex items-start gap-4 transition-all active:scale-[0.98] ${
               card.accent
-                ? `${theme.bg} ${theme.textOnBg} shadow-lg`
+                ? `${theme.bg} shadow-lg`
                 : 'bg-card hover:bg-hover'
             }`}
           >
             <span className="text-3xl leading-none mt-0.5 shrink-0">{card.emoji}</span>
             <div className="min-w-0">
-              <p className={`font-bold text-base leading-tight mb-1 ${card.accent ? theme.textOnBg : 'text-c-primary'}`}>
+              <p className={`font-bold text-base leading-tight mb-1 ${card.accent ? '' : 'text-c-primary'}`}>
                 {card.title}
               </p>
-              <p className={`text-sm leading-snug ${card.accent ? theme.textOnBgMuted : 'text-c-muted'}`}>
+              <p className={`text-sm leading-snug ${card.accent ? '' : 'text-c-muted'}`} style={card.accent ? { opacity: 0.7 } : undefined}>
                 {card.subtitle}
               </p>
             </div>
             <svg
-              className={`w-5 h-5 shrink-0 mt-1 ${card.accent ? theme.textOnBgMuted : 'text-c-muted'}`}
+              className={`w-5 h-5 shrink-0 mt-1 ${card.accent ? '' : 'text-c-muted'}`}
+              style={card.accent ? { opacity: 0.7 } : undefined}
               fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

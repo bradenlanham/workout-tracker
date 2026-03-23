@@ -73,7 +73,8 @@ function SplitModal({ sequence, onSave, onClose, theme }) {
           </button>
           <button
             onClick={() => { onSave(order); onClose() }}
-            className={`flex-1 ${theme.bg} ${theme.textOnBg} py-3 rounded-xl font-semibold`}
+            className={`flex-1 ${theme.bg} text-white py-3 rounded-xl font-semibold`}
+            style={{ color: theme.contrastText }}
           >
             Save Order
           </button>
@@ -125,7 +126,8 @@ export default function Log() {
           <SectionHeader>Quick Start</SectionHeader>
           <button
             onClick={() => navigate(`/log/bb/${nextBb}`)}
-            className={`w-full ${theme.bg} ${theme.bgHover} ${theme.textOnBg} rounded-2xl p-5 flex items-center justify-between transition-colors`}
+            className={`w-full ${theme.bg} ${theme.bgHover} text-white rounded-2xl p-5 flex items-center justify-between transition-colors`}
+            style={{ color: theme.contrastText }}
           >
             <div className="text-left">
               <p className="text-xs font-semibold opacity-80 mb-0.5">NEXT WORKOUT</p>
