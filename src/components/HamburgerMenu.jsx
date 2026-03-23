@@ -211,6 +211,28 @@ export default function HamburgerMenu() {
                     </div>
                   </div>
 
+                  {/* Auto-start rest timer */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">Auto-start rest timer</p>
+                      <p className="text-xs text-c-dim mt-0.5">Start countdown after logging a set</p>
+                    </div>
+                    <button
+                      onClick={() => updateSettings({ autoStartRest: !settings.autoStartRest })}
+                      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                        settings.autoStartRest ? theme.bg : 'bg-item'
+                      }`}
+                      style={settings.autoStartRest ? { backgroundColor: theme.hex } : undefined}
+                      aria-label="Toggle auto-start rest timer"
+                    >
+                      <span
+                        className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                          settings.autoStartRest ? 'translate-x-5' : 'translate-x-0.5'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
                   {/* Accent Color */}
                   <div>
                     <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Accent Color</p>

@@ -335,8 +335,10 @@ function ExerciseItem({
   isFirst, isLast, onMoveUp, onMoveDown, reorderMode,
 }) {
   const [expanded, setExpanded] = useState(false)
+  const { settings, setRestEndTimestamp } = useStore()
 
   const addSet = () => {
+    const lastSet = exercise.sets[exercise.sets.length - 1]
     const prevSet = lastSessionEx?.sets?.[exercise.sets.length]
     const newSet = {
       type:       'working',
@@ -351,6 +353,9 @@ function ExerciseItem({
       if (prevSet?.weight) newSet.weight = String(prevSet.weight)
     }
     onUpdate({ ...exercise, sets: [...exercise.sets, newSet] })
+    if (settings.autoStartRest && lastSet?.type === 'working' && (lastSet.reps || lastSet.weight)) {
+      setRestEndTimestamp(Date.now() + settings.restTimerDuration * 1000)
+    }
   }
 
   const updateSet = (i, newSet) => {

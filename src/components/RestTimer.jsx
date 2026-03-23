@@ -138,7 +138,14 @@ export default function RestTimer() {
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div
+        className="flex items-center gap-2"
+        style={{
+          transition: 'transform 0.3s ease',
+          transform: isRunning && timeLeft > 0 ? 'scale(1.5)' : 'scale(1)',
+          transformOrigin: 'bottom right',
+        }}
+      >
         <button
           onClick={() => setExpanded(v => !v)}
           className="w-10 h-10 flex items-center justify-center rounded-full bg-item text-c-secondary shadow"

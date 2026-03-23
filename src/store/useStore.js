@@ -37,6 +37,7 @@ const useStore = create(
         accentColor: 'violet',
         backgroundTheme: 'obsidian',
         userName: '',
+        autoStartRest: false,
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
