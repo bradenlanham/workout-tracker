@@ -335,6 +335,7 @@ function ExerciseItem({
   isFirst, isLast, onMoveUp, onMoveDown, reorderMode,
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [showPrev, setShowPrev] = useState(false)
   const { settings, setRestEndTimestamp } = useStore()
 
   const addSet = () => {
@@ -520,15 +521,22 @@ function ExerciseItem({
           {/* Previous session ghost rows */}
           {prevSets.length > 0 && (
             <>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Last</p>
-                <div className="flex-1 h-px bg-item" />
-              </div>
-              {prevSets.map((s, i) => <PrevSetRow key={i} set={s} />)}
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Today</p>
-                <div className="flex-1 h-px bg-item" />
-              </div>
+              <button
+                onClick={() => setShowPrev(v => !v)}
+                style={{ fontSize: 11, color: 'var(--text-muted)' }}
+                className="w-full text-left py-1 opacity-50 active:opacity-70"
+              >
+                Last session {showPrev ? '▾' : '▸'}
+              </button>
+              {showPrev && (
+                <>
+                  {prevSets.map((s, i) => <PrevSetRow key={i} set={s} />)}
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Today</p>
+                    <div className="flex-1 h-px bg-item" />
+                  </div>
+                </>
+              )}
             </>
           )}
 
