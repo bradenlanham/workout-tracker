@@ -19,6 +19,22 @@ const WORKOUT_COLORS = {
   custom: '#6b7280',
 }
 
+// ── Plate-loaded mode constants ────────────────────────────────────────────────
+
+const PLATE_OPTIONS = [45, 35, 25, 10, 5, 2.5]
+const BAR_CYCLE = [45, 0, 25]
+const CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨']
+const circled = n => n >= 1 && n <= 9 ? CIRCLED[n - 1] : `×${n}`
+const emptyPlates = () => ({ 45: 0, 35: 0, 25: 0, 10: 0, 5: 0, 2.5: 0 })
+const calcTotal = (plates, barWeight) =>
+  Object.entries(plates).reduce((s, [w, c]) => s + Number(w) * c * 2, 0) + barWeight
+const formatPlateBreakdown = (plates) =>
+  Object.entries(plates)
+    .filter(([, c]) => c > 0)
+    .sort(([a], [b]) => Number(b) - Number(a))
+    .map(([w, c]) => `${w}${circled(c)}`)
+    .join(' ')
+
 // ── Binder clip SVG ────────────────────────────────────────────────────────────
 
 function ClipGraphic() {
@@ -66,17 +82,24 @@ function SetTypeBtn({ value, onChange, theme }) {
 // ── Previous-session ghost row (non-interactive) ───────────────────────────────
 
 function PrevSetRow({ set }) {
+  const plateText = set.plates ? formatPlateBreakdown(set.plates) : null
   return (
     <div className="flex items-center gap-2 opacity-35 pointer-events-none select-none">
       <div className="w-14 h-9 rounded-lg bg-item text-c-dim text-xs font-bold flex items-center justify-center shrink-0">
         {set.type === 'warmup' ? 'Warm' : 'Work'}
       </div>
-      {/* Weight first */}
-      <div className="w-20 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
-        {set.weight ? `${set.weight}` : '—'}
-      </div>
-      {/* Reps second */}
-      <div className="w-16 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
+      {plateText ? (
+        <div className="flex-1 h-9 rounded-lg bg-item text-c-dim text-xs font-semibold flex items-center justify-center gap-1 px-2">
+          <span>{plateText}</span>
+          <span className="opacity-50">=</span>
+          <span>{set.weight}</span>
+        </div>
+      ) : (
+        <div className="w-20 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
+          {set.weight ? `${set.weight}` : '—'}
+        </div>
+      )}
+      <div className="w-16 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center shrink-0">
         {set.reps || '—'}
       </div>
       <div className="flex-1 text-center text-sm">
@@ -158,9 +181,111 @@ function PlateCalc({ exercise, onUpdate }) {
   )
 }
 
+// ── Plate-loaded set row ───────────────────────────────────────────────────────
+
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, theme }) {
+  const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
+  const plates    = set.plates    ?? emptyPlates()
+  const barWeight = set.barWeight ?? 45
+  const total     = calcTotal(plates, barWeight)
+  const r         = parseInt(set.reps) || 0
+  const isPR      = (total > maxWeight && total > 0) || (r > maxReps && r > 0)
+
+  const update = (newPlates, newBar) => {
+    const newTotal = calcTotal(newPlates, newBar)
+    onChange({ ...set, plates: newPlates, barWeight: newBar, weight: String(newTotal), plateLoaded: true })
+  }
+  const addPlate    = plate => update({ ...plates, [plate]: (plates[plate] || 0) + 1 }, barWeight)
+  const removePlate = plate => update({ ...plates, [plate]: Math.max(0, (plates[plate] || 0) - 1) }, barWeight)
+  const cycleBar    = () => {
+    const idx = BAR_CYCLE.indexOf(barWeight)
+    update(plates, BAR_CYCLE[(idx + 1) % BAR_CYCLE.length])
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} />
+        <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-sm font-bold min-w-0">
+          <span className="text-c-muted text-xs font-normal">Total</span>
+          <span>{total} lbs</span>
+          {isPR && <span className="text-xs">🏆</span>}
+        </div>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={set.reps}
+          onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total) })}
+          placeholder={set.prevReps || 'reps'}
+          className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
+          min={0}
+        />
+        <button
+          type="button"
+          onClick={onDelete}
+          className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button
+          type="button"
+          onClick={cycleBar}
+          className="h-8 px-2.5 rounded-lg bg-item text-c-secondary text-xs font-semibold shrink-0"
+        >
+          Bar:{barWeight === 0 ? '—' : barWeight}
+        </button>
+        {PLATE_OPTIONS.map(plate => {
+          const count = plates[plate] || 0
+          return (
+            <div key={plate} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => addPlate(plate)}
+                className={`h-8 px-2 rounded-lg text-xs font-bold transition-colors ${
+                  count > 0 ? `${theme.bg} text-white` : 'bg-item text-c-dim'
+                }`}
+                style={count > 0 ? { color: theme.contrastText } : {}}
+              >
+                {plate}{count > 0 ? ` ${circled(count)}` : ''}
+              </button>
+              {count > 0 && (
+                <button
+                  type="button"
+                  onClick={() => removePlate(plate)}
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-card border border-c-faint text-c-dim flex items-center justify-center"
+                  style={{ fontSize: '11px', lineHeight: 1 }}
+                >
+                  −
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme, plateLoaded }) {
+  if (plateLoaded) {
+    return (
+      <PlateSetRow
+        set={set}
+        exerciseName={exerciseName}
+        allSessions={allSessions}
+        onChange={onChange}
+        onDelete={onDelete}
+        theme={theme}
+      />
+    )
+  }
+
   const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
   const w   = parseFloat(set.weight) || 0
   const r   = parseInt(set.reps)     || 0
@@ -213,16 +338,19 @@ function ExerciseItem({
 
   const addSet = () => {
     const prevSet = lastSessionEx?.sets?.[exercise.sets.length]
-    onUpdate({
-      ...exercise,
-      sets: [...exercise.sets, {
-        type:       'working',
-        reps:       '',
-        weight:     '',
-        prevWeight: prevSet?.weight ? String(prevSet.weight) : '',
-        prevReps:   prevSet?.reps   ? String(prevSet.reps)   : '',
-      }],
-    })
+    const newSet = {
+      type:       'working',
+      reps:       '',
+      weight:     '',
+      prevWeight: prevSet?.weight ? String(prevSet.weight) : '',
+      prevReps:   prevSet?.reps   ? String(prevSet.reps)   : '',
+    }
+    if (exercise.plateLoaded) {
+      newSet.plates    = prevSet?.plates    ?? emptyPlates()
+      newSet.barWeight = prevSet?.barWeight ?? 45
+      if (prevSet?.weight) newSet.weight = String(prevSet.weight)
+    }
+    onUpdate({ ...exercise, sets: [...exercise.sets, newSet] })
   }
 
   const updateSet = (i, newSet) => {
@@ -286,7 +414,9 @@ function ExerciseItem({
             </div>
             {!expanded && !exercise.done && lastTopSet && (
               <p style={{ fontSize: 10 }} className="text-c-faint opacity-50 mt-0.5 leading-none">
-                Last: {lastTopSet.weight || '—'}{lastTopSet.reps ? `×${lastTopSet.reps}` : ''}
+                {lastTopSet.plates && formatPlateBreakdown(lastTopSet.plates)
+                  ? `Last: ${formatPlateBreakdown(lastTopSet.plates)} = ${lastTopSet.weight}`
+                  : `Last: ${lastTopSet.weight || '—'}${lastTopSet.reps ? `×${lastTopSet.reps}` : ''}`}
               </p>
             )}
             {!expanded && !exercise.done && topSet && (topSet.reps || topSet.weight) && (
@@ -342,8 +472,19 @@ function ExerciseItem({
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
 
-          {/* Plate calculator toggle */}
-          <div className="flex items-center justify-between">
+          {/* Plate mode toggles */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onUpdate({ ...exercise, plateLoaded: !exercise.plateLoaded })}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                exercise.plateLoaded
+                  ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
+                  : 'bg-item text-c-dim'
+              }`}
+            >
+              <span>🏋️</span> Plates
+            </button>
             <button
               type="button"
               onClick={() => onUpdate({ ...exercise, plateMode: !exercise.plateMode })}
@@ -353,7 +494,7 @@ function ExerciseItem({
                   : 'bg-item text-c-dim'
               }`}
             >
-              <span>🏋️</span> Plate Calc
+              <span>🧮</span> Calc
             </button>
           </div>
 
@@ -396,6 +537,7 @@ function ExerciseItem({
               onChange={newSet => updateSet(i, newSet)}
               onDelete={() => deleteSet(i)}
               theme={theme}
+              plateLoaded={exercise.plateLoaded}
             />
           ))}
 
