@@ -130,6 +130,12 @@ const useStore = create(
         set(state => ({ sessions: state.sessions.filter(s => s.id !== id) }))
       },
 
+      updateSession: (id, updates) => {
+        set(state => ({
+          sessions: state.sessions.map(s => s.id === id ? { ...s, ...updates } : s)
+        }))
+      },
+
       // ── Active session (in-progress workout) ──────────────────────────────────────────
 
       saveActiveSession: (session) => set({ activeSession: session }),

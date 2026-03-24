@@ -857,7 +857,7 @@ export default function BbLogger() {
   const { type }   = useParams()
   const navigate   = useNavigate()
   const {
-    sessions, settings, addSession,
+    sessions, settings, addSession, updateSession,
     activeSession, saveActiveSession, clearActiveSession,
     customTemplates, splits, activeSplitId,
   } = useStore()
@@ -913,6 +913,7 @@ export default function BbLogger() {
   const [reorderSection, setReorderSection] = useState(null)
   const [showSummary,    setShowSummary]    = useState(false)
   const [summaryData,    setSummaryData]    = useState(null)
+  const [savedSessionId, setSavedSessionId] = useState(null)
 
   // ── Session timer (timestamp-based — survives backgrounding) ─────────────
 
@@ -1009,7 +1010,7 @@ export default function BbLogger() {
       })
       .filter(Boolean)
 
-    addSession({
+    const savedSess = addSession({
       date:            new Date().toISOString(),
       mode:            'bb',
       type:            isCustomTemplate ? `tpl_${templateId}` : type,
@@ -1020,6 +1021,7 @@ export default function BbLogger() {
       notes:           sessionNotes,
       data:            { workoutType: type, exercises: exerciseData },
     })
+    setSavedSessionId(savedSess.id)
 
     clearActiveSession()
 
@@ -1223,6 +1225,8 @@ export default function BbLogger() {
         <ShareCard
           data={summaryData}
           onDone={() => navigate('/dashboard')}
+          sessionId={savedSessionId}
+          onUpdateSession={updateSession}
         />
       )}
     </div>

@@ -158,6 +158,16 @@ function SessionDetail({ session, onClose, onDelete }) {
       <div className="min-h-screen flex items-end">
         <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5 pb-10" style={{ paddingTop: 'max(1.25rem, env(safe-area-inset-top, 1.25rem))' }} onClick={e => e.stopPropagation()}>
 
+          {/* Selfie */}
+          {session.selfie && (
+            <img
+              src={session.selfie}
+              alt="Workout selfie"
+              className="w-full object-cover mb-4"
+              style={{ borderRadius: 12, maxHeight: 220 }}
+            />
+          )}
+
           <div className="flex items-start justify-between mb-4">
             <div>
               <h2 className="text-xl font-bold">{sessionEmoji} {sessionName}</h2>
