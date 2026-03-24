@@ -24,15 +24,17 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
     return 'text-red-400'
   }
 
-  // Best set per exercise: heaviest weight × reps, or most reps if bodyweight
-  const getBestSet = (sets) => {
-    const worked = sets.filter(s => s.reps)
-    if (!worked.length) return null
-    return worked.reduce((best, s) => {
-      const score = (s.weight || 0) * 1000 + (s.reps || 0)
-      const bScore = (best.weight || 0) * 1000 + (best.reps || 0)
-      return score > bScore ? s : best
-    }, worked[0])
+  // Working sets summary: count + heaviest set (by weight, then reps as tiebreak)
+  const getSetSummary = (sets) => {
+    const working = sets.filter(s => s.type === 'working' && (s.weight > 0 || s.reps > 0))
+    if (!working.length) return null
+    const best = working.reduce((b, s) => {
+      if (!b) return s
+      if (s.weight > b.weight) return s
+      if (s.weight === b.weight && s.reps > b.reps) return s
+      return b
+    }, null)
+    return { count: working.length, best }
   }
 
   function handleCapture(dataUrl) {
@@ -161,20 +163,25 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
                   </p>
                   <div className="space-y-0">
                     {exerciseSummary.map((ex, i) => {
-                      const best = getBestSet(ex.sets)
+                      const summary = getSetSummary(ex.sets)
                       return (
                         <div
                           key={i}
                           className={`flex items-center gap-2 py-1.5 ${i > 0 ? 'border-t border-c-base' : ''}`}
                         >
-                          <p className="text-sm font-semibold flex-1 truncate">{ex.name}</p>
-                          {best && (
-                            <p className="text-xs text-c-secondary shrink-0">
-                              {best.weight > 0
-                                ? `${best.weight} × ${best.reps}`
-                                : `${best.reps} reps`}
-                            </p>
-                          )}
+                          <p className="text-sm flex-1 truncate">
+                            <span className="font-semibold">{ex.name}</span>
+                            {summary && (
+                              <span className="text-c-secondary font-normal">
+                                {' '}—{' '}{summary.count} sets
+                                {summary.best && (
+                                  <> · {summary.best.weight > 0
+                                    ? `${summary.best.weight} × ${summary.best.reps}`
+                                    : `${summary.best.reps} reps`}</>
+                                )}
+                              </span>
+                            )}
+                          </p>
                           {ex.hasPR && (
                             <span className="shrink-0 text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full font-semibold">
                               PR
