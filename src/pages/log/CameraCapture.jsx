@@ -33,14 +33,32 @@ export default function CameraCapture({ onCapture, onCancel }) {
   function capture() {
     const video = videoRef.current
     if (!video) return
+    // Crop source to 3:4 portrait ratio
+    const srcW = video.videoWidth
+    const srcH = video.videoHeight
+    const dstAspect = 3 / 4
+    let sx, sy, sw, sh
+    if (srcW / srcH > dstAspect) {
+      // video wider than 3:4 — crop sides
+      sh = srcH
+      sw = sh * dstAspect
+      sx = (srcW - sw) / 2
+      sy = 0
+    } else {
+      // video taller than 3:4 — crop top/bottom
+      sw = srcW
+      sh = sw / dstAspect
+      sx = 0
+      sy = (srcH - sh) / 2
+    }
     const canvas = document.createElement('canvas')
     canvas.width = 400
-    canvas.height = 400 * (video.videoHeight / video.videoWidth)
+    canvas.height = Math.round(400 * 4 / 3)
     const ctx = canvas.getContext('2d')
     // Mirror horizontally to match live preview
     ctx.translate(canvas.width, 0)
     ctx.scale(-1, 1)
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
     const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
     stopStream()
     setPreview(dataUrl)

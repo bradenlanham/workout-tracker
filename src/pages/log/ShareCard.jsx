@@ -13,6 +13,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
 
   const formatVolume = (v) => {
     if (v === 0) return '—'
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k lbs'
     return v.toLocaleString() + ' lbs'
   }
 
@@ -62,7 +63,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
       )}
 
       <div
-        className="fixed inset-0 z-50 bg-base flex flex-col items-center overflow-y-auto"
+        className="fixed inset-0 z-[60] bg-base flex flex-col items-center overflow-y-auto"
         style={{
           paddingTop: 'max(1.5rem, env(safe-area-inset-top, 1.5rem))',
           paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))',
@@ -84,7 +85,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
                     src={selfie}
                     alt="Workout selfie"
                     className="w-full rounded-2xl"
-                    style={{ maxHeight: '280px', objectFit: 'contain', backgroundColor: 'rgba(0,0,0,0.2)' }}
+                    style={{ aspectRatio: '3/4', objectFit: 'cover' }}
                     onClick={() => setShowCamera(true)}
                   />
                   {/* Remove button */}
@@ -173,9 +174,9 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
                             <span className="font-semibold">{ex.name}</span>
                             {summary && (
                               <span className="text-c-secondary font-normal">
-                                {' '}—{' '}{summary.count} sets
+                                {' '}<span className="text-emerald-400">✓</span>{' '}{summary.count} sets
                                 {summary.best && (
-                                  <> · {summary.best.weight > 0
+                                  <> · Top Set: {summary.best.weight > 0
                                     ? `${summary.best.weight} × ${summary.best.reps}`
                                     : `${summary.best.reps} reps`}</>
                                 )}
