@@ -3,6 +3,7 @@ import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { formatDate, formatTime } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../data/exercises'
+import ShareCard from './log/ShareCard'
 // ── Calendar heatmap ───────────────────────────────────────────────────────────
 
 const GRADE_COLORS = {
@@ -137,6 +138,43 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme 
 
 // ── Session detail modal ───────────────────────────────────────────────────────
 
+function buildShareData(session, settings, theme) {
+  const exercises = session.data?.exercises || []
+  const totalVolume = exercises.reduce((t, ex) =>
+    t + ex.sets.reduce((s, set) => s + (set.reps || 0) * (set.weight || 0), 0), 0)
+  const totalSets = exercises.reduce((t, ex) =>
+    t + ex.sets.filter(s => s.reps || s.weight).length, 0)
+  const totalPRs = exercises.reduce((t, ex) =>
+    t + ex.sets.filter(s => s.isNewPR).length, 0)
+  const exerciseSummary = exercises.map(ex => ({
+    name: ex.name,
+    sets: ex.sets,
+    hasPR: ex.sets.some(s => s.isNewPR),
+    notes: ex.notes,
+  }))
+  const totalMinutes = session.duration || 0
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  const durationStr = h > 0 ? `${h}h ${m}m` : `${m}m`
+  const dateStr = new Date(session.date).toLocaleDateString('en-US', {
+    weekday: 'long', month: 'short', day: 'numeric',
+  })
+  return {
+    userName: settings.userName || '',
+    workoutName: BB_WORKOUT_NAMES[session.type] || session.type,
+    workoutEmoji: BB_WORKOUT_EMOJI[session.type] || '🏋️',
+    dateStr,
+    durationStr,
+    totalVolume,
+    totalSets,
+    totalPRs,
+    exerciseSummary,
+    grade: session.grade,
+    cardio: session.cardio || { completed: session.completedCardio || false },
+    theme,
+  }
+}
+
 function Stat({ label, value }) {
   return (
     <div className="bg-item-dim rounded-xl p-3 text-center">
@@ -148,10 +186,25 @@ function Stat({ label, value }) {
 
 function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showShareCard, setShowShareCard] = useState(false)
+  const { settings, updateSession } = useStore()
+  const theme = getTheme(settings.accentColor)
   const d        = session.data || {}
   const isBb     = session.mode === 'bb'
   const sessionName  = BB_WORKOUT_NAMES[session.type] || session.type
   const sessionEmoji = BB_WORKOUT_EMOJI[session.type] || '🏋️'
+
+  if (showShareCard) {
+    return (
+      <ShareCard
+        data={buildShareData(session, settings, theme)}
+        onDone={() => setShowShareCard(false)}
+        sessionId={session.id}
+        onUpdateSession={updateSession}
+        initialSelfie={session.selfie || null}
+      />
+    )
+  }
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto" onClick={onClose}>
@@ -221,7 +274,13 @@ function SessionDetail({ session, onClose, onDelete }) {
             </div>
           )}
 
-          <div className="mt-6">
+          <div className="mt-6 space-y-3">
+            <button
+              onClick={() => setShowShareCard(true)}
+              className="w-full py-3 rounded-2xl bg-item text-c-secondary font-semibold"
+            >
+              📋 View Share Card
+            </button>
             {confirmDelete ? (
               <div className="flex gap-3">
                 <button onClick={() => setConfirmDelete(false)} className="flex-1 bg-item text-c-secondary py-3 rounded-2xl font-semibold">

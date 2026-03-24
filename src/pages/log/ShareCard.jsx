@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import CameraCapture from './CameraCapture'
 
-export default function ShareCard({ data, onDone, sessionId, onUpdateSession }) {
+export default function ShareCard({ data, onDone, sessionId, onUpdateSession, initialSelfie }) {
   const {
     userName, workoutName, workoutEmoji, dateStr, durationStr,
     totalVolume, totalSets, totalPRs, exerciseSummary,
     grade, cardio, theme,
   } = data
 
-  const [selfie, setSelfie] = useState(null)
+  const [selfie, setSelfie] = useState(initialSelfie || null)
   const [showCamera, setShowCamera] = useState(false)
 
   const formatVolume = (v) => {
