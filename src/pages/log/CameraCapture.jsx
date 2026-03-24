@@ -6,8 +6,14 @@ export default function CameraCapture({ onCapture, onCancel }) {
   const [preview, setPreview] = useState(null) // captured dataURL
   const [error, setError] = useState(null)
 
+  // Start camera whenever we're in live-preview mode (preview === null)
   useEffect(() => {
+    if (preview !== null) return
     startCamera()
+  }, [preview])
+
+  // Stop stream on unmount
+  useEffect(() => {
     return () => stopStream()
   }, [])
 
@@ -19,6 +25,7 @@ export default function CameraCapture({ onCapture, onCancel }) {
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
+        await videoRef.current.play()
       }
     } catch (e) {
       setError('Camera access denied or not available.')
@@ -65,8 +72,8 @@ export default function CameraCapture({ onCapture, onCancel }) {
   }
 
   function retake() {
-    setPreview(null)
-    startCamera()
+    stopStream()
+    setPreview(null) // triggers useEffect to startCamera after re-render
   }
 
   function usePhoto() {

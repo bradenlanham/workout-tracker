@@ -168,25 +168,26 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
                       return (
                         <div
                           key={i}
-                          className={`flex items-center gap-2 py-1.5 ${i > 0 ? 'border-t border-c-base' : ''}`}
+                          className={`py-1.5 ${i > 0 ? 'border-t border-c-base' : ''}`}
                         >
-                          <p className="text-sm flex-1 truncate">
-                            <span className="font-semibold">{ex.name}</span>
-                            {summary && (
-                              <span className="text-c-secondary font-normal">
-                                {' '}<span className="text-emerald-400">✓</span>{' '}{summary.count} sets
-                                {summary.best && (
-                                  <> · Top Set: {summary.best.weight > 0
-                                    ? `${summary.best.weight} × ${summary.best.reps}`
-                                    : `${summary.best.reps} reps`}</>
-                                )}
-                              </span>
+                          {/* Line 1: name + PR badge */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+                            <span style={{ color: '#22C55E' }}>✓</span>
+                            <span style={{ fontWeight: 500 }}>{ex.name}</span>
+                            {ex.hasPR && (
+                              <span style={{ color: '#EAB308', fontSize: 10, marginLeft: 4 }}>PR</span>
                             )}
-                          </p>
-                          {ex.hasPR && (
-                            <span className="shrink-0 text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full font-semibold">
-                              PR
-                            </span>
+                          </div>
+                          {/* Line 2: set count + top set */}
+                          {summary && (
+                            <div className="text-c-muted" style={{ fontSize: 11, paddingLeft: 18 }}>
+                              {summary.count} sets
+                              {summary.best && (
+                                <> · Top Set: {summary.best.weight > 0
+                                  ? `${summary.best.weight} × ${summary.best.reps}`
+                                  : `${summary.best.reps} reps`}</>
+                              )}
+                            </div>
                           )}
                         </div>
                       )
