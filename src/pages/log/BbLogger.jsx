@@ -305,6 +305,7 @@ function ExerciseItem({
   const markDone = () => {
     onUpdate({ ...exercise, done: true, completedAt: Date.now() })
     setExpanded(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const hasPR = allSessions.length > 0 && exercise.sets.some(s => {
