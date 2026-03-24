@@ -216,8 +216,8 @@ function SessionDetail({ session, onClose, onDelete }) {
             <img
               src={session.selfie}
               alt="Workout selfie"
-              className="w-full object-cover mb-4"
-              style={{ borderRadius: 12, maxHeight: 220 }}
+              className="w-full mb-4"
+              style={{ borderRadius: 12, maxHeight: 280, objectFit: 'contain', backgroundColor: 'rgba(0,0,0,0.2)' }}
             />
           )}
 

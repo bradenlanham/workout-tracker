@@ -81,8 +81,8 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
                   <img
                     src={selfie}
                     alt="Workout selfie"
-                    className="w-full object-cover rounded-2xl"
-                    style={{ maxHeight: '200px' }}
+                    className="w-full rounded-2xl"
+                    style={{ maxHeight: '280px', objectFit: 'contain', backgroundColor: 'rgba(0,0,0,0.2)' }}
                     onClick={() => setShowCamera(true)}
                   />
                   {/* Remove button */}
