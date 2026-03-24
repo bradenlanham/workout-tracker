@@ -183,7 +183,7 @@ function PlateCalc({ exercise, onUpdate }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, theme }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme }) {
   const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
@@ -199,7 +199,9 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, theme
   const removePlate = plate => update({ ...plates, [plate]: Math.max(0, (plates[plate] || 0) - 1) }, barWeight)
   const cycleBar    = () => {
     const idx = BAR_CYCLE.indexOf(barWeight)
-    update(plates, BAR_CYCLE[(idx + 1) % BAR_CYCLE.length])
+    const newBar = BAR_CYCLE[(idx + 1) % BAR_CYCLE.length]
+    update(plates, newBar)
+    onBarChange?.(newBar)
   }
 
   return (
@@ -272,7 +274,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, theme
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme, plateLoaded }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded }) {
   if (plateLoaded) {
     return (
       <PlateSetRow
@@ -281,6 +283,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, theme, pla
         allSessions={allSessions}
         onChange={onChange}
         onDelete={onDelete}
+        onBarChange={onBarChange}
         theme={theme}
       />
     )
@@ -350,7 +353,7 @@ function ExerciseItem({
     }
     if (exercise.plateLoaded) {
       newSet.plates    = prevSet?.plates    ?? emptyPlates()
-      newSet.barWeight = prevSet?.barWeight ?? 45
+      newSet.barWeight = exercise.barDefault ?? prevSet?.barWeight ?? 45
       if (prevSet?.weight) newSet.weight = String(prevSet.weight)
     }
     onUpdate({ ...exercise, sets: [...exercise.sets, newSet] })
@@ -549,6 +552,7 @@ function ExerciseItem({
               allSessions={allSessions}
               onChange={newSet => updateSet(i, newSet)}
               onDelete={() => deleteSet(i)}
+              onBarChange={newBar => onUpdate({ ...exercise, barDefault: newBar })}
               theme={theme}
               plateLoaded={exercise.plateLoaded}
             />
