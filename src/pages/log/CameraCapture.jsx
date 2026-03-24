@@ -36,6 +36,9 @@ export default function CameraCapture({ onCapture, onCancel }) {
       canvas.width = 400
       canvas.height = Math.round(400 * 4 / 3)
       const ctx = canvas.getContext('2d')
+      // Mirror horizontally so selfie matches the camera preview
+      ctx.translate(canvas.width, 0)
+      ctx.scale(-1, 1)
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
       const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
       setPreview(dataUrl)
