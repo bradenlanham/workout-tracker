@@ -1,12 +1,21 @@
 export default function ShareCard({ data, onDone }) {
   const {
     userName, workoutName, workoutEmoji, dateStr, durationStr,
-    totalVolume, totalSets, totalPRs, exerciseSummary, theme,
+    totalVolume, totalSets, totalPRs, exerciseSummary,
+    grade, cardio, theme,
   } = data
 
   const formatVolume = (v) => {
     if (v === 0) return '—'
     return v.toLocaleString() + ' lbs'
+  }
+
+  const gradeColor = (g) => {
+    if (g === 'A+') return theme.text
+    if (g === 'A')  return 'text-emerald-400'
+    if (g === 'B')  return 'text-blue-400'
+    if (g === 'C')  return 'text-yellow-400'
+    return 'text-red-400'
   }
 
   return (
@@ -44,21 +53,27 @@ export default function ShareCard({ data, onDone }) {
             </p>
 
             {/* ── Stats row ─────────────────────────────────────────────── */}
-            <div className="flex gap-2.5 mt-5">
-              <div className="flex-1 bg-item rounded-2xl px-3 py-3.5 text-center">
-                <p className={`text-lg font-bold leading-none ${theme.text}`}>
+            <div className="flex gap-2 mt-5">
+              <div className="flex-1 bg-item rounded-2xl px-2 py-3 text-center">
+                <p className={`text-base font-bold leading-none ${theme.text}`}>
                   {formatVolume(totalVolume)}
                 </p>
                 <p className="text-xs text-c-faint mt-1">volume</p>
               </div>
-              <div className="flex-1 bg-item rounded-2xl px-3 py-3.5 text-center">
+              <div className="flex-1 bg-item rounded-2xl px-2 py-3 text-center">
                 <p className={`text-2xl font-bold leading-none ${theme.text}`}>{totalSets}</p>
                 <p className="text-xs text-c-faint mt-1">sets</p>
               </div>
               {totalPRs > 0 && (
-                <div className="flex-1 bg-amber-500/10 rounded-2xl px-3 py-3.5 text-center">
+                <div className="flex-1 bg-amber-500/10 rounded-2xl px-2 py-3 text-center">
                   <p className="text-2xl font-bold leading-none text-amber-400">{totalPRs} 🏆</p>
-                  <p className="text-xs text-amber-500/60 mt-1">PRs hit</p>
+                  <p className="text-xs text-amber-500/60 mt-1">PRs</p>
+                </div>
+              )}
+              {grade && (
+                <div className="flex-1 bg-item rounded-2xl px-2 py-3 text-center">
+                  <p className={`text-2xl font-bold leading-none ${gradeColor(grade)}`}>{grade}</p>
+                  <p className="text-xs text-c-faint mt-1">grade</p>
                 </div>
               )}
             </div>
@@ -75,31 +90,61 @@ export default function ShareCard({ data, onDone }) {
                       key={i}
                       className={`py-2.5 ${i > 0 ? 'border-t border-c-base' : ''}`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <p className="text-sm font-semibold truncate">{ex.name}</p>
-                          {ex.hasPR && (
-                            <span className="shrink-0 text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full font-semibold">
-                              PR
-                            </span>
-                          )}
-                        </div>
-                        {ex.bestSet && (
-                          <p className="shrink-0 text-sm font-bold text-c-secondary">
-                            {ex.bestSet.weight > 0
-                              ? `${ex.bestSet.weight} × ${ex.bestSet.reps}`
-                              : `${ex.bestSet.reps} reps`}
-                          </p>
+                      {/* Exercise name + PR badge */}
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-sm font-semibold">{ex.name}</p>
+                        {ex.hasPR && (
+                          <span className="shrink-0 text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full font-semibold">
+                            PR
+                          </span>
                         )}
                       </div>
+                      {/* All sets */}
+                      <div className="space-y-0.5">
+                        {ex.sets.map((set, si) => (
+                          <div key={si} className="flex items-center gap-2">
+                            <span className="text-c-faint" style={{ fontSize: '11px', minWidth: '36px' }}>
+                              Set {si + 1}
+                            </span>
+                            <span className="font-semibold text-c-secondary" style={{ fontSize: '11px' }}>
+                              {set.weight > 0
+                                ? `${set.weight} × ${set.reps}`
+                                : `${set.reps} reps`}
+                            </span>
+                            {set.isNewPR && (
+                              <span className="text-amber-400" style={{ fontSize: '10px' }}>PR</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                       {ex.notes && (
-                        <p className="text-xs text-c-faint italic mt-0.5">{ex.notes}</p>
+                        <p className="text-xs text-c-faint italic mt-1">{ex.notes}</p>
                       )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {/* ── Cardio section ────────────────────────────────────────── */}
+            {cardio?.completed && (
+              <div className="mt-5 pt-4 border-t border-c-base">
+                <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-1.5">
+                  Cardio
+                </p>
+                <p className="text-sm font-semibold text-emerald-400">
+                  {[
+                    cardio.type,
+                    cardio.duration ? `${cardio.duration} min` : null,
+                    cardio.heartRate ? `${cardio.heartRate} bpm` : null,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+                {cardio.notes && (
+                  <p className="text-xs text-c-faint italic mt-0.5">{cardio.notes}</p>
+                )}
+              </div>
+            )}
+
           </div>
         </div>
 

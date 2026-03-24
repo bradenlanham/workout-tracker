@@ -1028,15 +1028,12 @@ export default function BbLogger() {
       t + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0), 0)
     const totalSets = exerciseData.reduce((t, ex) => t + ex.sets.length, 0)
     const totalPRs = exerciseData.reduce((t, ex) => t + ex.sets.filter(s => s.isNewPR).length, 0)
-    const exerciseSummary = exerciseData.map(ex => {
-      const bestSet = ex.sets.reduce((best, set) => {
-        if (!best) return set
-        if (set.weight > best.weight) return set
-        if (set.weight === best.weight && set.reps > best.reps) return set
-        return best
-      }, null)
-      return { name: ex.name, bestSet, hasPR: ex.sets.some(s => s.isNewPR), notes: ex.notes }
-    })
+    const exerciseSummary = exerciseData.map(ex => ({
+      name: ex.name,
+      sets: ex.sets,
+      hasPR: ex.sets.some(s => s.isNewPR),
+      notes: ex.notes,
+    }))
     const h = Math.floor(elapsedSeconds / 3600)
     const m = Math.floor((elapsedSeconds % 3600) / 60)
     const s = elapsedSeconds % 60
@@ -1053,6 +1050,8 @@ export default function BbLogger() {
       totalSets,
       totalPRs,
       exerciseSummary,
+      grade,
+      cardio,
       theme,
     })
     setShowConfirm(false)
