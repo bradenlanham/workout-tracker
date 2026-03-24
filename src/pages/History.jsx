@@ -146,12 +146,14 @@ function buildShareData(session, settings, theme) {
     t + ex.sets.filter(s => s.reps || s.weight).length, 0)
   const totalPRs = exercises.reduce((t, ex) =>
     t + ex.sets.filter(s => s.isNewPR).length, 0)
-  const exerciseSummary = exercises.map(ex => ({
-    name: ex.name,
-    sets: ex.sets,
-    hasPR: ex.sets.some(s => s.isNewPR),
-    notes: ex.notes,
-  }))
+  const exerciseSummary = [...exercises]
+    .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0))
+    .map(ex => ({
+      name: ex.name,
+      sets: ex.sets,
+      hasPR: ex.sets.some(s => s.isNewPR),
+      notes: ex.notes,
+    }))
   const totalMinutes = session.duration || 0
   const h = Math.floor(totalMinutes / 60)
   const m = totalMinutes % 60

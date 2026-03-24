@@ -21,11 +21,11 @@ const WORKOUT_COLORS = {
 
 // ── Plate-loaded mode constants ────────────────────────────────────────────────
 
-const PLATE_OPTIONS = [45, 35, 25, 10, 5, 2.5]
+const PLATE_OPTIONS = [100, 45, 35, 25, 10, 5, 2.5]
 const BAR_CYCLE = [45, 0, 25]
 const CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨']
 const circled = n => n >= 1 && n <= 9 ? CIRCLED[n - 1] : `×${n}`
-const emptyPlates = () => ({ 45: 0, 35: 0, 25: 0, 10: 0, 5: 0, 2.5: 0 })
+const emptyPlates = () => ({ 100: 0, 45: 0, 35: 0, 25: 0, 10: 0, 5: 0, 2.5: 0 })
 const calcTotal = (plates, barWeight) =>
   Object.entries(plates).reduce((s, [w, c]) => s + Number(w) * c * 2, 0) + barWeight
 const formatPlateBreakdown = (plates) =>
@@ -106,77 +106,6 @@ function PrevSetRow({ set }) {
         {set.isNewPR ? '🏆' : ''}
       </div>
       <div className="w-8 shrink-0" />
-    </div>
-  )
-}
-
-// ── Plate calculator (per-exercise) ───────────────────────────────────────────
-
-function PlateCalc({ exercise, onUpdate }) {
-  const { plateWeight = 45, barWeight = 45, platesPerSide = 2 } = exercise
-  const total = Math.round((platesPerSide * plateWeight * 2 + barWeight) * 10) / 10
-
-  const applyToSets = () => {
-    onUpdate({
-      ...exercise,
-      sets: exercise.sets.map(s =>
-        s.type === 'working' ? { ...s, weight: String(total) } : s
-      ),
-    })
-  }
-
-  return (
-    <div className="bg-item-dim rounded-xl p-3 mb-3">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-bold text-amber-400 uppercase tracking-wide">Plate Calculator</p>
-        <p className="text-base font-bold">{total} lbs</p>
-      </div>
-      <div className="flex gap-2 items-end">
-        <div className="flex-1">
-          <p className="text-xs text-c-muted mb-1">Plates/side</p>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={platesPerSide}
-            onChange={e => onUpdate({ ...exercise, platesPerSide: parseFloat(e.target.value) || 0 })}
-            className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-base font-semibold"
-            min={0}
-            step={0.5}
-          />
-        </div>
-        <div className="flex-1">
-          <p className="text-xs text-c-muted mb-1">Plate wt (lbs)</p>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={plateWeight}
-            onChange={e => onUpdate({ ...exercise, plateWeight: parseFloat(e.target.value) || 0 })}
-            className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-base font-semibold"
-            min={0}
-          />
-        </div>
-        <div className="flex-1">
-          <p className="text-xs text-c-muted mb-1">Bar (lbs)</p>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={barWeight}
-            onChange={e => onUpdate({ ...exercise, barWeight: parseFloat(e.target.value) || 0 })}
-            className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-base font-semibold"
-            min={0}
-          />
-        </div>
-      </div>
-      <p className="text-xs text-c-muted mt-1.5 text-center">
-        {platesPerSide} × {plateWeight} × 2 + {barWeight} = {total} lbs
-      </p>
-      <button
-        type="button"
-        onClick={applyToSets}
-        className="w-full mt-2 py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold"
-      >
-        Apply {total} lbs to working sets
-      </button>
     </div>
   )
 }
@@ -374,7 +303,7 @@ function ExerciseItem({
   }
 
   const markDone = () => {
-    onUpdate({ ...exercise, done: true })
+    onUpdate({ ...exercise, done: true, completedAt: Date.now() })
     setExpanded(false)
   }
 
@@ -481,7 +410,7 @@ function ExerciseItem({
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
 
-          {/* Plate mode toggles */}
+          {/* Plate mode toggles + Last session */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -494,23 +423,20 @@ function ExerciseItem({
             >
               <span>🏋️</span> Plates
             </button>
-            <button
-              type="button"
-              onClick={() => onUpdate({ ...exercise, plateMode: !exercise.plateMode })}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                exercise.plateMode
-                  ? 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
-                  : 'bg-item text-c-dim'
-              }`}
-            >
-              <span>🧮</span> Calc
-            </button>
+            {prevSets.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPrev(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ml-auto ${
+                  showPrev
+                    ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
+                    : 'bg-item text-c-dim'
+                }`}
+              >
+                <span>⏱️</span> Last Time
+              </button>
+            )}
           </div>
-
-          {/* Plate calculator panel */}
-          {exercise.plateMode && (
-            <PlateCalc exercise={exercise} onUpdate={onUpdate} />
-          )}
 
           {/* Column headers — weight first, reps second */}
           <div className="flex items-center gap-2">
@@ -522,24 +448,13 @@ function ExerciseItem({
           </div>
 
           {/* Previous session ghost rows */}
-          {prevSets.length > 0 && (
+          {prevSets.length > 0 && showPrev && (
             <>
-              <button
-                onClick={() => setShowPrev(v => !v)}
-                style={{ fontSize: 11, color: 'var(--text-muted)' }}
-                className="w-full text-left py-1 opacity-50 active:opacity-70"
-              >
-                Last session {showPrev ? '▾' : '▸'}
-              </button>
-              {showPrev && (
-                <>
-                  {prevSets.map((s, i) => <PrevSetRow key={i} set={s} />)}
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Today</p>
-                    <div className="flex-1 h-px bg-item" />
-                  </div>
-                </>
-              )}
+              {prevSets.map((s, i) => <PrevSetRow key={i} set={s} />)}
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Today</p>
+                <div className="flex-1 h-px bg-item" />
+              </div>
             </>
           )}
 
@@ -1004,6 +919,7 @@ export default function BbLogger() {
         return {
           name:  ex.name,
           notes: ex.notes,
+          completedAt: ex.completedAt || 0,
           sets: filledSets.map(s => {
             const { maxWeight, maxReps } = getExercisePRs(sessions, ex.name)
             const w = parseFloat(s.weight) || 0
@@ -1034,12 +950,14 @@ export default function BbLogger() {
       t + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0), 0)
     const totalSets = exerciseData.reduce((t, ex) => t + ex.sets.length, 0)
     const totalPRs = exerciseData.reduce((t, ex) => t + ex.sets.filter(s => s.isNewPR).length, 0)
-    const exerciseSummary = exerciseData.map(ex => ({
-      name: ex.name,
-      sets: ex.sets,
-      hasPR: ex.sets.some(s => s.isNewPR),
-      notes: ex.notes,
-    }))
+    const exerciseSummary = [...exerciseData]
+      .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0))
+      .map(ex => ({
+        name: ex.name,
+        sets: ex.sets,
+        hasPR: ex.sets.some(s => s.isNewPR),
+        notes: ex.notes,
+      }))
     const h = Math.floor(elapsedSeconds / 3600)
     const m = Math.floor((elapsedSeconds % 3600) / 60)
     const s = elapsedSeconds % 60

@@ -55,13 +55,6 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
 
   return (
     <>
-      {showCamera && (
-        <CameraCapture
-          onCapture={handleCapture}
-          onCancel={() => setShowCamera(false)}
-        />
-      )}
-
       <div
         className="fixed inset-0 z-[60] bg-base flex flex-col items-center overflow-y-auto"
         style={{
@@ -165,18 +158,22 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
                   <div className="space-y-0">
                     {exerciseSummary.map((ex, i) => {
                       const summary = getSetSummary(ex.sets)
+                      const exVolume = ex.sets.reduce((t, s) => t + (s.weight || 0) * (s.reps || 0), 0)
                       return (
                         <div
                           key={i}
                           className={`py-1.5 ${i > 0 ? 'border-t border-c-base' : ''}`}
                         >
-                          {/* Line 1: name + PR badge */}
+                          {/* Line 1: name + PR badge + volume */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
                             <span style={{ color: '#22C55E' }}>✓</span>
                             <span style={{ fontWeight: 500 }}>{ex.name}</span>
                             {ex.hasPR && (
                               <span style={{ color: '#EAB308', fontSize: 10, marginLeft: 4 }}>PR</span>
                             )}
+                            <span className="text-c-muted" style={{ marginLeft: 'auto', fontSize: 11 }}>
+                              {exVolume > 0 ? formatVolume(exVolume) : ''}
+                            </span>
                           </div>
                           {/* Line 2: set count + top set */}
                           {summary && (
@@ -232,6 +229,13 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
 
         </div>
       </div>
+
+      {showCamera && (
+        <CameraCapture
+          onCapture={handleCapture}
+          onCancel={() => setShowCamera(false)}
+        />
+      )}
     </>
   )
 }
