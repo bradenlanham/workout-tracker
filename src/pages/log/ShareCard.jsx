@@ -82,7 +82,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession }) 
                     src={selfie}
                     alt="Workout selfie"
                     className="w-full object-cover rounded-2xl"
-                    style={{ maxHeight: '150px' }}
+                    style={{ maxHeight: '200px' }}
                     onClick={() => setShowCamera(true)}
                   />
                   {/* Remove button */}
@@ -99,7 +99,12 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession }) 
               ) : (
                 <button
                   onClick={() => setShowCamera(true)}
-                  className="w-full mb-4 py-2.5 rounded-2xl border border-dashed border-c-muted/40 text-c-faint text-sm font-medium flex items-center justify-center gap-2 active:opacity-70 transition-opacity"
+                  className={`w-full mb-4 py-3.5 rounded-2xl border-2 ${theme.text} font-medium flex items-center justify-center gap-2 active:opacity-70 transition-opacity`}
+                  style={{
+                    borderColor: 'currentColor',
+                    fontSize: '14px',
+                    backgroundColor: 'color-mix(in srgb, currentColor 8%, transparent)',
+                  }}
                 >
                   📸 Add a selfie
                 </button>

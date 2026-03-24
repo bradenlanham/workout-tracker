@@ -14,7 +14,7 @@ export default function CameraCapture({ onCapture, onCancel }) {
   async function startCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+        video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } },
       })
       streamRef.current = stream
       if (videoRef.current) {
@@ -71,7 +71,7 @@ export default function CameraCapture({ onCapture, onCancel }) {
           {/* Live camera preview */}
           <div
             className="relative overflow-hidden rounded-2xl bg-black"
-            style={{ width: 'min(80vw, 360px)', height: 'min(80vw, 360px)' }}
+            style={{ width: 'min(80vw, 360px)', aspectRatio: '3/4' }}
           >
             <video
               ref={videoRef}
@@ -101,7 +101,7 @@ export default function CameraCapture({ onCapture, onCancel }) {
           {/* Preview captured image */}
           <div
             className="overflow-hidden rounded-2xl"
-            style={{ width: 'min(80vw, 360px)', height: 'min(80vw, 360px)' }}
+            style={{ width: 'min(80vw, 360px)', aspectRatio: '3/4' }}
           >
             <img src={preview} alt="Captured selfie" className="w-full h-full object-cover" />
           </div>
