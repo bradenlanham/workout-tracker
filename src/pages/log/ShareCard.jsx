@@ -26,16 +26,18 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
   }
 
   // Working sets summary: count + heaviest set (by weight, then reps as tiebreak)
+  // Drop sets are included in the count but excluded from top set
   const getSetSummary = (sets) => {
     const working = sets.filter(s => s.type === 'working' && (s.weight > 0 || s.reps > 0))
-    if (!working.length) return null
+    const drop    = sets.filter(s => s.type === 'drop'    && (s.weight > 0 || s.reps > 0))
+    if (!working.length && !drop.length) return null
     const best = working.reduce((b, s) => {
       if (!b) return s
       if (s.weight > b.weight) return s
       if (s.weight === b.weight && s.reps > b.reps) return s
       return b
     }, null)
-    return { count: working.length, best }
+    return { count: working.length + drop.length, best }
   }
 
   function handleCapture(dataUrl) {

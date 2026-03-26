@@ -60,12 +60,15 @@ function ClipGraphic() {
 const SET_TYPES = [
   { id: 'working', label: 'Work' },
   { id: 'warmup',  label: 'Warm' },
+  { id: 'drop',    label: 'Drop' },
 ]
 
 function SetTypeBtn({ value, onChange, theme }) {
   const current = SET_TYPES.find(t => t.id === value) || SET_TYPES[0]
   const next    = SET_TYPES[(SET_TYPES.indexOf(current) + 1) % SET_TYPES.length]
-  const color      = current.id === 'working' ? `${theme.bg} text-white` : 'bg-amber-500 text-white'
+  const color      = current.id === 'working' ? `${theme.bg} text-white`
+                   : current.id === 'warmup'  ? 'bg-amber-500 text-white'
+                   : 'bg-orange-500 text-white'
   const colorStyle = current.id === 'working' ? { color: theme.contrastText } : {}
   return (
     <button
@@ -86,7 +89,7 @@ function PrevSetRow({ set }) {
   return (
     <div className="flex items-center gap-2 opacity-35 pointer-events-none select-none">
       <div className="w-14 h-9 rounded-lg bg-item text-c-dim text-xs font-bold flex items-center justify-center shrink-0">
-        {set.type === 'warmup' ? 'Warm' : 'Work'}
+        {set.type === 'warmup' ? 'Warm' : set.type === 'drop' ? 'Drop' : 'Work'}
       </div>
       {plateText ? (
         <div className="flex-1 h-9 rounded-lg bg-item text-c-dim text-xs font-semibold flex items-center justify-center gap-1 px-2">
@@ -293,6 +296,14 @@ function ExerciseItem({
 
   const updateSet = (i, newSet) => {
     const sets = [...exercise.sets]
+    const oldSet = sets[i]
+    if (newSet.type === 'drop' && oldSet.type !== 'drop' && !newSet.weight) {
+      const prevWorking = sets.slice(0, i).reverse().find(s => s.type === 'working')
+      if (prevWorking && prevWorking.weight) {
+        const suggested = Math.round(parseFloat(prevWorking.weight) * 0.75 / 5) * 5
+        newSet = { ...newSet, weight: String(suggested || '') }
+      }
+    }
     sets[i] = newSet
     onUpdate({ ...exercise, sets })
   }
@@ -461,17 +472,18 @@ function ExerciseItem({
 
           {/* Active set rows */}
           {exercise.sets.map((set, i) => (
-            <SetRow
-              key={i}
-              set={set}
-              exerciseName={exercise.name}
-              allSessions={allSessions}
-              onChange={newSet => updateSet(i, newSet)}
-              onDelete={() => deleteSet(i)}
-              onBarChange={newBar => onUpdate({ ...exercise, barDefault: newBar })}
-              theme={theme}
-              plateLoaded={exercise.plateLoaded}
-            />
+            <div key={i} className={set.type === 'drop' ? 'pl-2 border-l-2 border-orange-500/50 rounded-sm' : ''}>
+              <SetRow
+                set={set}
+                exerciseName={exercise.name}
+                allSessions={allSessions}
+                onChange={newSet => updateSet(i, newSet)}
+                onDelete={() => deleteSet(i)}
+                onBarChange={newBar => onUpdate({ ...exercise, barDefault: newBar })}
+                theme={theme}
+                plateLoaded={exercise.plateLoaded}
+              />
+            </div>
           ))}
 
           <button

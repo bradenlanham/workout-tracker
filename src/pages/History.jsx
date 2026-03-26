@@ -254,9 +254,11 @@ function SessionDetail({ session, onClose, onDelete }) {
                     {ex.sets.map((s, si) => (
                       <div key={si} className="flex items-center gap-2 text-sm text-c-secondary">
                         <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                          s.type === 'warmup' ? 'bg-amber-500/30 text-amber-400' : 'bg-blue-500/30 text-blue-400'
+                          s.type === 'warmup' ? 'bg-amber-500/30 text-amber-400'
+                          : s.type === 'drop' ? 'bg-orange-500/30 text-orange-400'
+                          : 'bg-blue-500/30 text-blue-400'
                         }`}>
-                          {s.type === 'warmup' ? 'Warm' : 'Work'}
+                          {s.type === 'warmup' ? 'Warm' : s.type === 'drop' ? 'Drop' : 'Work'}
                         </span>
                         <span>{s.reps} reps × {s.weight} lbs</span>
                         {s.isNewPR && <span className="text-amber-400 text-xs">🏆 PR</span>}
