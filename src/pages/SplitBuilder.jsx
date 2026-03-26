@@ -639,6 +639,13 @@ function Step3({ workouts, rotation, setRotation, onContinue, onBack, theme }) {
             Add to rotation
           </p>
           <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setRotation(prev => [...prev, 'rest'])}
+              className="flex items-center gap-1.5 bg-slate-500/20 text-c-secondary text-sm px-3 py-2 rounded-xl font-medium hover:bg-slate-500/30 border border-slate-500/30 transition-colors"
+            >
+              <span>😴</span>
+              <span>Rest Day</span>
+            </button>
             {workouts.map(w => (
               <button
                 key={w.id}
@@ -649,12 +656,6 @@ function Step3({ workouts, rotation, setRotation, onContinue, onBack, theme }) {
                 <span className="max-w-[120px] truncate">{w.name}</span>
               </button>
             ))}
-            <button
-              onClick={() => setRotation(prev => [...prev, 'rest'])}
-              className="flex items-center gap-1.5 bg-item text-c-secondary text-sm px-3 py-2 rounded-xl font-medium hover:bg-hover transition-colors"
-            >
-              😴 Rest Day
-            </button>
           </div>
         </div>
 
