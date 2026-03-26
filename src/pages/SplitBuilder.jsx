@@ -842,7 +842,7 @@ export default function SplitBuilder() {
       emoji: splitEmoji,
       workouts,
       rotation,
-      isBuiltIn: false,
+      isBuiltIn: isEdit ? (existingSplit?.isBuiltIn ?? false) : false,
     }
     if (isEdit) {
       updateSplit(id, splitData)

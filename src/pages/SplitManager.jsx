@@ -65,7 +65,7 @@ function ImportError({ message, onDismiss }) {
 
 // ── Split card ─────────────────────────────────────────────────────────────────
 
-function SplitCard({ split, isActive, onActivate, onEdit, onCloneAndEdit, onDelete, onExport, theme }) {
+function SplitCard({ split, isActive, onActivate, onEdit, onDelete, onExport, theme }) {
   const workoutCount = split.workouts?.length || 0
   const rotationLength = split.rotation?.length || 0
 
@@ -153,31 +153,14 @@ function SplitCard({ split, isActive, onActivate, onEdit, onCloneAndEdit, onDele
           </div>
         )}
 
-        {split.isBuiltIn ? (
-          <>
-            <button
-              onClick={onEdit}
-              className="px-3 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-secondary transition-colors hover:bg-hover"
-              title="Edit rotation order"
-            >
-              Edit Order
-            </button>
-            <button
-              onClick={onCloneAndEdit}
-              className="px-3 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-secondary transition-colors hover:bg-hover"
-              title="Clone and open in editor"
-            >
-              Clone & Edit
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={onEdit}
-              className="px-4 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-secondary transition-colors hover:bg-hover"
-            >
-              Edit
-            </button>
+        <>
+          <button
+            onClick={onEdit}
+            className="px-4 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-secondary transition-colors hover:bg-hover"
+          >
+            Edit
+          </button>
+          {!split.isBuiltIn && (
             <button
               onClick={onExport}
               className="w-10 flex items-center justify-center rounded-xl bg-item text-c-secondary transition-colors hover:bg-hover"
@@ -187,6 +170,8 @@ function SplitCard({ split, isActive, onActivate, onEdit, onCloneAndEdit, onDele
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             </button>
+          )}
+          {!split.isBuiltIn && (
             <button
               onClick={onDelete}
               className="w-10 flex items-center justify-center rounded-xl bg-item text-red-400 transition-colors hover:bg-red-500/10"
@@ -195,8 +180,8 @@ function SplitCard({ split, isActive, onActivate, onEdit, onCloneAndEdit, onDele
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
-          </>
-        )}
+          )}
+        </>
       </div>
     </div>
   )
@@ -217,11 +202,7 @@ export default function SplitManager() {
   const importRef = useRef(null)
 
   const handleEdit = (split) => {
-    if (split.isBuiltIn) {
-      navigate('/split')
-    } else {
-      navigate(`/splits/edit/${split.id}`)
-    }
+    navigate(`/splits/edit/${split.id}`)
   }
 
   const handleCloneAndEdit = (id) => {
@@ -326,7 +307,6 @@ export default function SplitManager() {
             theme={theme}
             onActivate={() => setActiveSplit(split.id)}
             onEdit={() => handleEdit(split)}
-            onCloneAndEdit={() => handleCloneAndEdit(split.id)}
             onDelete={() => setConfirmDelete(split)}
             onExport={() => exportSplit(split)}
           />
