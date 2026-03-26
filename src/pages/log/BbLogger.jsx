@@ -133,7 +133,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     const idx = BAR_CYCLE.indexOf(barWeight)
     const newBar = BAR_CYCLE[(idx + 1) % BAR_CYCLE.length]
     update(plates, newBar)
-    onBarChange?.(newBar)
+    // barDefault is synced inside updateSet to avoid stale-closure overwrite
   }
 
   return (
@@ -297,15 +297,30 @@ function ExerciseItem({
   const updateSet = (i, newSet) => {
     const sets = [...exercise.sets]
     const oldSet = sets[i]
-    if (newSet.type === 'drop' && oldSet.type !== 'drop' && !newSet.weight) {
-      const prevWorking = sets.slice(0, i).reverse().find(s => s.type === 'working')
-      if (prevWorking && prevWorking.weight) {
-        const suggested = Math.round(parseFloat(prevWorking.weight) * 0.75 / 5) * 5
-        newSet = { ...newSet, weight: String(suggested || '') }
+    if (newSet.type === 'drop' && oldSet.type !== 'drop') {
+      if (exercise.plateLoaded) {
+        // Plate-loaded drop: clear plates, carry barDefault, leave weight as 75% hint
+        const prevWorking = sets.slice(0, i).reverse().find(s => s.type === 'working')
+        const prevTotal = prevWorking ? parseFloat(prevWorking.weight) : 0
+        const suggested = prevTotal > 0 ? Math.round(prevTotal * 0.75 / 5) * 5 : 0
+        const barWeight = exercise.barDefault ?? 45
+        newSet = { ...newSet, plates: emptyPlates(), barWeight, weight: String(suggested || barWeight) }
+      } else if (!newSet.weight) {
+        // Standard drop: suggest 75% of previous working set weight
+        const prevWorking = sets.slice(0, i).reverse().find(s => s.type === 'working')
+        if (prevWorking && prevWorking.weight) {
+          const suggested = Math.round(parseFloat(prevWorking.weight) * 0.75 / 5) * 5
+          newSet = { ...newSet, weight: String(suggested || '') }
+        }
       }
     }
     sets[i] = newSet
-    onUpdate({ ...exercise, sets })
+    // Sync barDefault when barWeight changes on a plate-loaded set (avoids stale closure from separate onBarChange call)
+    const patch = { ...exercise, sets }
+    if (exercise.plateLoaded && newSet.barWeight !== undefined) {
+      patch.barDefault = newSet.barWeight
+    }
+    onUpdate(patch)
   }
 
   const deleteSet = (i) => {
@@ -479,7 +494,6 @@ function ExerciseItem({
                 allSessions={allSessions}
                 onChange={newSet => updateSet(i, newSet)}
                 onDelete={() => deleteSet(i)}
-                onBarChange={newBar => onUpdate({ ...exercise, barDefault: newBar })}
                 theme={theme}
                 plateLoaded={exercise.plateLoaded}
               />
