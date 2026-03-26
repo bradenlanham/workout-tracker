@@ -59,8 +59,8 @@ function ClipGraphic() {
 
 const SET_TYPES = [
   { id: 'working', label: 'Work' },
-  { id: 'warmup',  label: 'Warm' },
   { id: 'drop',    label: 'Drop' },
+  { id: 'warmup',  label: 'Warm' },
 ]
 
 function SetTypeBtn({ value, onChange, theme }) {
