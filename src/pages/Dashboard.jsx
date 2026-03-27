@@ -367,44 +367,44 @@ export default function Dashboard() {
       {/* ── Main CTA ────────────────────────────────────────────────────────── */}
       <div className="px-4 mb-6">
         {isRestDay ? (
-          <div className="bg-card rounded-3xl p-6">
-            <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted">Today</p>
-            <p className="text-3xl font-bold leading-tight">Rest Day</p>
-            <p className="text-sm mt-2 text-c-muted">
+          <div className="bg-card rounded-3xl p-6 text-center">
+            <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted text-center">Today</p>
+            <p className="text-3xl font-bold leading-tight text-center">Rest Day</p>
+            <p className="text-sm mt-2 text-c-muted text-center">
               Recovery is part of the plan. Come back stronger tomorrow.
             </p>
-            <p className="text-sm mt-4 font-semibold text-c-dim">
+            <p className="text-sm mt-4 font-semibold text-c-dim text-center">
               Next workout: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
             </p>
           </div>
         ) : (
           <div className={`${theme.bg} rounded-3xl p-6 text-center`} style={{ color: theme.contrastText }}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
+            <p className="text-xs font-bold uppercase tracking-widest mb-2 text-center" style={{ opacity: 0.6 }}>
               {todayLogged ? 'Next in your split' : 'Next Up'}
             </p>
             <div className="flex items-center justify-center gap-2">
-              <p className="text-3xl font-bold leading-tight">
+              <p className="text-3xl font-bold leading-tight text-center">
                 {getWorkoutName(nextBb)}
               </p>
               <button
                 onClick={() => setShowPreview(true)}
-                style={{ fontSize: 12, color: theme.hex, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.85, flexShrink: 0 }}
+                style={{ fontSize: 12, color: theme.contrastText, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.85, flexShrink: 0 }}
               >
                 Preview
               </button>
             </div>
             {todayLogged ? (
-              <p className="text-sm mt-1" style={{ opacity: 0.6 }}>
+              <p className="text-sm mt-1 text-center" style={{ opacity: 0.6 }}>
                 Rest up — come back tomorrow.
               </p>
             ) : (
               <>
-                <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
+                <p className="text-sm mt-1 mb-5 text-center" style={{ opacity: 0.6 }}>
                   {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
                 </p>
                 <button
                   onClick={() => navigate(`/log/bb/${nextBb}`)}
-                  className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+                  className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors text-center"
                 >
                   Start Session →
                 </button>
@@ -438,10 +438,11 @@ export default function Dashboard() {
       <div className="px-4 mb-5">
         <button
           onClick={() => navigate('/cardio')}
-          className="w-full bg-card rounded-2xl p-4 text-left"
+          className="w-full rounded-2xl p-4 text-center"
+          style={{ backgroundColor: theme.hex + '80', color: theme.contrastText }}
         >
-          <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-1">Cardio</p>
-          <p className="font-semibold text-c-secondary">Log Cardio ›</p>
+          <p className="text-xs font-semibold uppercase tracking-widest mb-1 text-center" style={{ opacity: 0.6 }}>Cardio</p>
+          <p className="font-semibold text-center">Log Cardio ›</p>
         </button>
       </div>
 
