@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { BB_WORKOUT_NAMES } from '../data/exercises'
@@ -561,6 +561,10 @@ function AttachFallback({ onFinish, onDiscard }) {
 
 export default function CardioLogger() {
   const navigate = useNavigate()
+  const location = useLocation()
+  // When coming from BbLogger "Log Now", auto-attach to that workout session
+  const attachToWorkoutId = location.state?.attachToWorkoutId || null
+
   const {
     sessions, settings, customCardioTypes,
     activeCardioSession, saveActiveCardioSession, clearActiveCardioSession,
@@ -629,6 +633,12 @@ export default function CardioLogger() {
   }
 
   const handleConfirm = () => {
+    // Coming from BbLogger "Log Now" — auto-attach, skip the prompt
+    if (attachToWorkoutId) {
+      saveCardioAndFinish(attachToWorkoutId)
+      return
+    }
+
     // Check if a workout was logged today
     const todayStr = new Date().toISOString().split('T')[0]
     const todayWorkouts = sessions.filter(s => {

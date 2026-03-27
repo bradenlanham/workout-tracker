@@ -153,6 +153,14 @@ const useStore = create(
         })
       },
 
+      attachCardioToSession: (cardioId, sessionId) => {
+        set(state => ({
+          cardioSessions: state.cardioSessions.map(s =>
+            s.id === cardioId ? { ...s, attachedToSessionId: sessionId } : s
+          ),
+        }))
+      },
+
       // ── Session actions ───────────────────────────────────────────────────────────────
 
       addSession: (session) => {

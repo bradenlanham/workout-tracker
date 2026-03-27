@@ -637,6 +637,13 @@ const GRADES = ['D', 'C', 'B', 'A', 'A+']
 
 const CARDIO_TYPES = ['Running', 'Cycling', 'Elliptical', 'StairMaster', 'Rowing', 'Jump Rope', 'Swimming', 'Other']
 
+const INLINE_INTENSITIES = [
+  { id: 'easy',     label: 'Easy' },
+  { id: 'moderate', label: 'Moderate' },
+  { id: 'hard',     label: 'Hard' },
+  { id: 'allout',   label: 'All Out' },
+]
+
 function gradeStyle(g, theme, selected) {
   if (!selected) return 'bg-item text-c-dim'
   if (g === 'A+') return `${theme.bg} text-white`
@@ -651,27 +658,52 @@ function gradeInlineStyle(g, theme, selected) {
   return {}
 }
 
-function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, theme }) {
+function formatCardioDuration(seconds) {
+  if (!seconds) return ''
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
+  if (m > 0) return `${m}m`
+  return `${seconds}s`
+}
+
+// todayCardio: array of unattached cardio sessions logged today
+// onLogNow: saves the workout then navigates to /cardio
+function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onCancel, theme, todayCardio }) {
   const [grade, setGrade] = useState(null)
-  const [cardioCompleted, setCardioCompleted] = useState(null)
-  const [cardioType, setCardioType] = useState('')
+
+  // Scenario B: null | 'yes' (inline form expanded)
+  const [cardioChoice, setCardioChoice] = useState(null)
+
+  // Inline quick-log form state
+  const [cardioType, setCardioType]         = useState('')
   const [cardioDuration, setCardioDuration] = useState('')
-  const [cardioHR, setCardioHR] = useState('')
-  const [cardioNotes, setCardioNotes] = useState('')
+  const [cardioIntensity, setCardioIntensity] = useState(null)
+  const [cardioMinHR, setCardioMinHR]       = useState('')
+  const [cardioMaxHR, setCardioMaxHR]       = useState('')
+  const [cardioNotes, setCardioNotes]       = useState('')
 
-  const handleSave = () => {
-    const cardio = cardioCompleted
-      ? {
-          completed: true,
-          type: cardioType || 'Other',
-          duration: parseInt(cardioDuration) || null,
-          heartRate: parseInt(cardioHR) || null,
-          notes: cardioNotes,
-        }
-      : { completed: false }
+  const isScenarioA = todayCardio && todayCardio.length > 0
+  const firstCardio = todayCardio?.[0]
 
-    onSave({ grade, completedCardio: !!cardioCompleted, cardio })
+  // Scenario B — inline confirm
+  const handleSaveInline = () => {
+    onSave({
+      grade,
+      cardioAction: 'inlineLog',
+      inlineCardio: {
+        type:      cardioType || 'Other',
+        duration:  (parseInt(cardioDuration) || 0) * 60,
+        intensity: cardioIntensity,
+        minHR:     parseInt(cardioMinHR) || null,
+        maxHR:     parseInt(cardioMaxHR) || null,
+        notes:     cardioNotes,
+      },
+    })
   }
+
+  // Scenario B — no cardio
+  const handleSaveNo = () => onSave({ grade, cardioAction: 'none' })
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-5 overflow-y-auto py-10">
@@ -698,102 +730,186 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onCancel, the
 
         {/* Cardio */}
         <p className="text-xs text-c-dim font-semibold uppercase tracking-wide mb-2">Cardio</p>
-        <div className="flex gap-2 mb-3">
-          <button
-            onClick={() => setCardioCompleted(cardioCompleted === true ? null : true)}
-            className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
-              cardioCompleted === true ? 'bg-emerald-500 text-white' : 'bg-item text-c-dim'
-            }`}
-          >
-            ✓ Yes
-          </button>
-          <button
-            onClick={() => setCardioCompleted(cardioCompleted === false ? null : false)}
-            className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
-              cardioCompleted === false ? 'bg-hover text-c-secondary' : 'bg-item text-c-dim'
-            }`}
-          >
-            ✗ No
-          </button>
-        </div>
 
-        {/* Cardio details — only shown when yes is selected */}
-        {cardioCompleted === true && (
-          <div className="bg-item-dim rounded-2xl p-3 mb-3 space-y-2">
-            {/* Type selector */}
-            <div>
-              <p className="text-xs text-c-muted mb-1">Type</p>
-              <div className="flex flex-wrap gap-1.5">
-                {CARDIO_TYPES.map(t => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setCardioType(t)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                      cardioType === t ? `${theme.bg} text-white` : 'bg-item text-c-dim'
-                    }`}
-                    style={cardioType === t ? { color: theme.contrastText } : undefined}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+        {isScenarioA ? (
+          /* ── Scenario A: cardio already logged today ─────────────── */
+          <>
+            <div className="bg-item-dim rounded-2xl p-3 mb-3">
+              <p className="text-sm text-c-secondary">
+                You logged <span className="font-semibold">{firstCardio.type}</span>
+                {firstCardio.duration ? ` · ${formatCardioDuration(firstCardio.duration)}` : ''} earlier.
+                Attach to this workout?
+              </p>
+            </div>
+            <div className="flex gap-2 mb-2">
+              <button
+                onClick={() => onSave({ grade, cardioAction: 'attach', todayCardioId: firstCardio.id, todayCardioData: firstCardio })}
+                className={`flex-1 py-2.5 rounded-xl font-semibold text-sm ${theme.bg} text-white`}
+                style={{ color: theme.contrastText }}
+              >
+                Attach
+              </button>
+              <button
+                onClick={() => onSave({ grade, cardioAction: 'keep' })}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-dim"
+              >
+                Keep Separate
+              </button>
+            </div>
+            <button
+              onClick={() => onLogNow({ grade })}
+              className="w-full py-2.5 rounded-xl font-semibold text-sm bg-item text-c-secondary mb-3"
+            >
+              Log Another
+            </button>
+          </>
+        ) : (
+          /* ── Scenario B: no cardio logged today ───────────────────── */
+          <>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setCardioChoice(cardioChoice === 'yes' ? null : 'yes')}
+                className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
+                  cardioChoice === 'yes' ? 'bg-emerald-500 text-white' : 'bg-item text-c-dim'
+                }`}
+              >
+                Yes, done
+              </button>
+              <button
+                onClick={() => onLogNow({ grade })}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-secondary"
+              >
+                Log Now
+              </button>
+              <button
+                onClick={handleSaveNo}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-dim"
+              >
+                No
+              </button>
             </div>
 
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <p className="text-xs text-c-muted mb-1">Duration (min)</p>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={cardioDuration}
-                  onChange={e => setCardioDuration(e.target.value)}
-                  placeholder="30"
-                  className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-sm font-semibold"
-                  min={1}
-                />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs text-c-muted mb-1">Avg HR (bpm)</p>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={cardioHR}
-                  onChange={e => setCardioHR(e.target.value)}
-                  placeholder="optional"
-                  className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-sm font-semibold"
-                  min={1}
-                />
-              </div>
-            </div>
+            {/* Inline quick-log form */}
+            {cardioChoice === 'yes' && (
+              <div className="bg-item-dim rounded-2xl p-3 mb-3 space-y-2">
+                <div>
+                  <p className="text-xs text-c-muted mb-1">Type</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {CARDIO_TYPES.map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setCardioType(t)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                          cardioType === t ? `${theme.bg} text-white` : 'bg-item text-c-dim'
+                        }`}
+                        style={cardioType === t ? { color: theme.contrastText } : undefined}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <div>
-              <p className="text-xs text-c-muted mb-1">Notes</p>
-              <input
-                type="text"
-                value={cardioNotes}
-                onChange={e => setCardioNotes(e.target.value)}
-                placeholder="e.g. Zone 2, felt good…"
-                className="w-full bg-item text-c-primary rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <p className="text-xs text-c-muted mb-1">Duration (min)</p>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={cardioDuration}
+                      onChange={e => setCardioDuration(e.target.value)}
+                      placeholder="30"
+                      className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-sm font-semibold"
+                      min={1}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-c-muted mb-1">Intensity</p>
+                  <div className="flex gap-1.5">
+                    {INLINE_INTENSITIES.map(lvl => (
+                      <button
+                        key={lvl.id}
+                        type="button"
+                        onClick={() => setCardioIntensity(cardioIntensity === lvl.id ? null : lvl.id)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
+                          cardioIntensity === lvl.id ? `${theme.bg} text-white` : 'bg-item text-c-dim'
+                        }`}
+                        style={cardioIntensity === lvl.id ? { color: theme.contrastText } : {}}
+                      >
+                        {lvl.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <p className="text-xs text-c-muted mb-1">Min HR</p>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={cardioMinHR}
+                      onChange={e => setCardioMinHR(e.target.value)}
+                      placeholder="—"
+                      className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-sm font-semibold"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-c-muted mb-1">Max HR</p>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={cardioMaxHR}
+                      onChange={e => setCardioMaxHR(e.target.value)}
+                      placeholder="—"
+                      className="w-full bg-item text-c-primary rounded-lg px-2 py-2 text-center text-sm font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-c-muted mb-1">Notes</p>
+                  <input
+                    type="text"
+                    value={cardioNotes}
+                    onChange={e => setCardioNotes(e.target.value)}
+                    placeholder="e.g. Zone 2, felt good…"
+                    className="w-full bg-item text-c-primary rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <button
+                  onClick={handleSaveInline}
+                  disabled={!cardioDuration}
+                  className={`w-full py-3 rounded-xl font-bold text-sm ${theme.bg} text-white disabled:opacity-40`}
+                  style={{ color: theme.contrastText }}
+                >
+                  Save with Cardio
+                </button>
+              </div>
+            )}
+          </>
         )}
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 mt-1">
           <button
             onClick={onCancel}
             className="flex-1 bg-item text-c-secondary py-3.5 rounded-2xl font-semibold"
           >
             Keep Going
           </button>
-          <button
-            onClick={handleSave}
-            className={`flex-1 ${theme.bg} text-white py-3.5 rounded-2xl font-bold`}
-            style={{ color: theme.contrastText }}
-          >
-            Save
-          </button>
+          {!isScenarioA && cardioChoice !== 'yes' && (
+            <button
+              onClick={() => onSave({ grade, cardioAction: 'none' })}
+              className={`flex-1 ${theme.bg} text-white py-3.5 rounded-2xl font-bold`}
+              style={{ color: theme.contrastText }}
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -809,6 +925,7 @@ export default function BbLogger() {
     sessions, settings, addSession, updateSession,
     activeSession, saveActiveSession, clearActiveSession,
     customTemplates, splits, activeSplitId, updateSplit,
+    cardioSessions, addCardioSession, updateCardioSession,
   } = useStore()
   const theme = getTheme(settings.accentColor)
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
@@ -952,10 +1069,10 @@ export default function BbLogger() {
     }])
   }
 
-  const saveSession = ({ grade, completedCardio, cardio }) => {
-    const duration = Math.round(elapsedSeconds / 60)
+  // ── Shared: build exercise data array ────────────────────────────────────
 
-    const exerciseData = exercises
+  const buildExerciseData = () =>
+    exercises
       .map(ex => {
         const filledSets = ex.sets.filter(s => s.reps || s.weight)
         if (!filledSets.length) return null
@@ -973,6 +1090,12 @@ export default function BbLogger() {
       })
       .filter(Boolean)
 
+  // ── Shared: persist workout + auto-sync custom exercises to template ──────
+
+  const buildAndSaveWorkout = ({ grade, completedCardio, cardio }) => {
+    const duration     = Math.round(elapsedSeconds / 60)
+    const exerciseData = buildExerciseData()
+
     const savedSess = addSession({
       date:            new Date().toISOString(),
       mode:            'bb',
@@ -984,7 +1107,6 @@ export default function BbLogger() {
       notes:           sessionNotes,
       data:            { workoutType: type, exercises: exerciseData },
     })
-    setSavedSessionId(savedSess.id)
 
     clearActiveSession()
 
@@ -995,10 +1117,7 @@ export default function BbLogger() {
           s.exercises.map(e => typeof e === 'string' ? e : e.name)
         )
       )
-
-      // All exercise names in session order (for position determination)
-      const allSessionNames = exercises.map(ex => ex.name)
-      // Only persist exercises that had logged sets and aren't in template
+      const allSessionNames  = exercises.map(ex => ex.name)
       const exerciseDataNames = new Set(exerciseData.map(e => e.name))
       const newExercises = exercises.filter(ex =>
         exerciseDataNames.has(ex.name) && !templateExNames.has(ex.name)
@@ -1009,8 +1128,6 @@ export default function BbLogger() {
           ...s,
           exercises: [...s.exercises],
         }))
-
-        // Build map of template exercise name → section index (for insertion lookup)
         const templatePos = {}
         sections.forEach((s, si) => {
           s.exercises.forEach(e => {
@@ -1023,7 +1140,6 @@ export default function BbLogger() {
           const sessionIdx = allSessionNames.indexOf(newEx.name)
           let insertSi = sections.length - 1
           let insertAfterName = null
-
           for (let i = sessionIdx - 1; i >= 0; i--) {
             const prevName = allSessionNames[i]
             if (templatePos[prevName] !== undefined) {
@@ -1032,7 +1148,6 @@ export default function BbLogger() {
               break
             }
           }
-
           const section = sections[insertSi]
           let insertIdx
           if (insertAfterName) {
@@ -1044,7 +1159,6 @@ export default function BbLogger() {
           } else {
             insertIdx = section.exercises.length
           }
-
           section.exercises.splice(insertIdx, 0, newEx.name)
           templatePos[newEx.name] = insertSi
         }
@@ -1057,16 +1171,66 @@ export default function BbLogger() {
       }
     }
 
+    return { savedSess, exerciseData }
+  }
+
+  // ── Save session (from Finish modal) ─────────────────────────────────────
+  // cardioAction: 'none' | 'keep' | 'attach' | 'inlineLog'
+
+  const saveSession = ({ grade, cardioAction, todayCardioId, todayCardioData, inlineCardio }) => {
+    // Build the legacy `cardio` object used by the share card
+    let completedCardio = false
+    let cardio = { completed: false }
+
+    if (cardioAction === 'attach' && todayCardioData) {
+      completedCardio = true
+      cardio = {
+        completed: true,
+        type:      todayCardioData.type,
+        duration:  todayCardioData.duration ? Math.round(todayCardioData.duration / 60) : null,
+        heartRate: todayCardioData.maxHR || todayCardioData.minHR || null,
+        notes:     todayCardioData.notes || '',
+      }
+    } else if (cardioAction === 'inlineLog' && inlineCardio) {
+      completedCardio = true
+      cardio = {
+        completed: true,
+        type:      inlineCardio.type,
+        duration:  inlineCardio.duration ? Math.round(inlineCardio.duration / 60) : null,
+        heartRate: inlineCardio.maxHR || inlineCardio.minHR || null,
+        notes:     inlineCardio.notes || '',
+      }
+    }
+
+    const { savedSess, exerciseData } = buildAndSaveWorkout({ grade, completedCardio, cardio })
+    setSavedSessionId(savedSess.id)
+
+    // Cardio side effects
+    if (cardioAction === 'attach' && todayCardioId) {
+      updateCardioSession(todayCardioId, { attachedToSessionId: savedSess.id })
+    } else if (cardioAction === 'inlineLog' && inlineCardio) {
+      addCardioSession({
+        type:               inlineCardio.type,
+        duration:           inlineCardio.duration,
+        intensity:          inlineCardio.intensity,
+        minHR:              inlineCardio.minHR,
+        maxHR:              inlineCardio.maxHR,
+        notes:              inlineCardio.notes,
+        date:               new Date().toISOString().split('T')[0],
+        attachedToSessionId: savedSess.id,
+      })
+    }
+
     // Build share card summary
     const totalVolume = exerciseData.reduce((t, ex) =>
       t + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0), 0)
     const totalSets = exerciseData.reduce((t, ex) => t + ex.sets.length, 0)
-    const totalPRs = exerciseData.reduce((t, ex) => t + ex.sets.filter(s => s.isNewPR).length, 0)
+    const totalPRs  = exerciseData.reduce((t, ex) => t + ex.sets.filter(s => s.isNewPR).length, 0)
     const exerciseSummary = [...exerciseData]
       .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0))
       .map(ex => ({
-        name: ex.name,
-        sets: ex.sets,
+        name:  ex.name,
+        sets:  ex.sets,
         hasPR: ex.sets.some(s => s.isNewPR),
         notes: ex.notes,
       }))
@@ -1093,6 +1257,24 @@ export default function BbLogger() {
     setShowConfirm(false)
     setShowSummary(true)
   }
+
+  // ── "Log Now" flow: save workout then go to CardioLogger ─────────────────
+
+  const saveAndLogNow = ({ grade }) => {
+    const { savedSess } = buildAndSaveWorkout({
+      grade,
+      completedCardio: false,
+      cardio: { completed: false },
+    })
+    setSavedSessionId(savedSess.id)
+    setShowConfirm(false)
+    navigate('/cardio', { state: { attachToWorkoutId: savedSess.id } })
+  }
+
+  // ── Today's unattached cardio (for Finish modal Scenario A) ───────────────
+
+  const todayStr    = new Date().toISOString().split('T')[0]
+  const todayCardio = cardioSessions.filter(s => s.date === todayStr && !s.attachedToSessionId)
 
   // ── Render helpers ───────────────────────────────────────────────────────
 
@@ -1250,8 +1432,10 @@ export default function BbLogger() {
           exerciseCount={exercises.filter(ex => ex.sets.some(s => s.reps || s.weight)).length}
           elapsed={elapsedSeconds > 0 ? formatElapsed(elapsedSeconds) : null}
           onSave={saveSession}
+          onLogNow={saveAndLogNow}
           onCancel={() => setShowConfirm(false)}
           theme={theme}
+          todayCardio={todayCardio}
         />
       )}
 
