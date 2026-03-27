@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { getNextBbWorkout, getNextRotationItem, getWorkoutStreak } from '../utils/helpers'
-import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE } from '../data/exercises'
+import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MONTH_NAMES = [
@@ -27,6 +27,7 @@ export default function Dashboard() {
   const { sessions, settings, splits, activeSplitId } = useStore()
   const theme = getTheme(settings.accentColor)
   const [showMonth, setShowMonth] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
 
   const totalSessions = sessions.length
 
@@ -50,6 +51,23 @@ export default function Dashboard() {
   const getWorkoutEmoji = (wId) => {
     const w = activeSplit?.workouts?.find(w => w.id === wId)
     return w?.emoji || BB_WORKOUT_EMOJI[wId] || '🏋️'
+  }
+
+  // ── Preview data ─────────────────────────────────────────────────────────
+  const previewWorkout = activeSplit?.workouts?.find(w => w.id === nextBb)
+  const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[nextBb] || []
+
+  function getLastExerciseData(exName) {
+    const name = typeof exName === 'string' ? exName : exName?.name
+    if (!name) return null
+    const relevant = sessions
+      .filter(s => s.data?.exercises?.some(e => e.name === name))
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+    if (!relevant.length) return null
+    const ex = relevant[0].data.exercises.find(e => e.name === name)
+    const lastWorking = ex?.sets?.slice().reverse().find(s => s.type === 'working' && s.weight && s.reps)
+    if (!lastWorking) return null
+    return `Last: ${lastWorking.weight}×${lastWorking.reps}`
   }
 
   // ── Today detection ───────────────────────────────────────────────────────
@@ -209,9 +227,17 @@ export default function Dashboard() {
             <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
               {todayLogged ? 'Next in your split' : 'Next Up'}
             </p>
-            <p className="text-3xl font-bold leading-tight">
-              {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-3xl font-bold leading-tight">
+                {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+              </p>
+              <button
+                onClick={() => setShowPreview(true)}
+                style={{ fontSize: 12, color: theme.hex, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.85, flexShrink: 0 }}
+              >
+                Preview
+              </button>
+            </div>
             {todayLogged ? (
               <p className="text-sm mt-1" style={{ opacity: 0.6 }}>
                 Rest up — come back tomorrow 💤
@@ -354,6 +380,43 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* ── Workout Preview Overlay ──────────────────────────────────────────── */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 bg-base overflow-y-auto" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <div className="p-4">
+            <button onClick={() => setShowPreview(false)} className="text-sm opacity-60 mb-4">
+              ← go back
+            </button>
+            <h2 className="text-xl font-bold mb-1">
+              {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+            </h2>
+            <p className="text-sm opacity-50 mb-4">
+              {todayLogged ? "Tomorrow's workout" : "Next workout"}
+            </p>
+
+            {previewSections.map(section => (
+              <div key={section.label} className="mb-4">
+                <div className="text-xs uppercase tracking-wider opacity-40 mb-2">{section.label}</div>
+                {section.exercises.map((ex, i) => {
+                  const name = typeof ex === 'string' ? ex : ex.name
+                  const note = typeof ex === 'string' ? null : ex.note
+                  const last = getLastExerciseData(ex)
+                  return (
+                    <div key={i} className="py-2 border-b border-white/5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm">{name}</div>
+                        {last && <div className="text-xs opacity-40 shrink-0">{last}</div>}
+                      </div>
+                      {note && <div className="text-xs opacity-40 mt-0.5">{note}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   )
