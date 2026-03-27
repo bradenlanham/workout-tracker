@@ -277,8 +277,10 @@ function ExerciseItem({
   const addSet = () => {
     const lastSet = exercise.sets[exercise.sets.length - 1]
     const prevSet = lastSessionEx?.sets?.[exercise.sets.length]
+    const isFirstSet = exercise.sets.length === 0
+    const newType = lastSet?.type === 'drop' ? 'drop' : (isFirstSet ? firstSetType : 'working')
     const newSet = {
-      type:       'working',
+      type:       newType,
       reps:       '',
       weight:     '',
       prevWeight: prevSet?.weight ? String(prevSet.weight) : '',
