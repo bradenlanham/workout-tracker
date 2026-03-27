@@ -65,6 +65,35 @@ export default function Dashboard() {
 
   const totalSessions = sessions.length
 
+  const getWeekVolume = (weekOffset = 0) => {
+    const now = new Date()
+    const startOfThisWeek = new Date(now)
+    startOfThisWeek.setDate(now.getDate() - now.getDay() + (weekOffset * 7))
+    startOfThisWeek.setHours(0, 0, 0, 0)
+    const endOfWeek = new Date(startOfThisWeek)
+    endOfWeek.setDate(startOfThisWeek.getDate() + 7)
+    return sessions
+      .filter(s => {
+        const d = new Date(s.date)
+        return d >= startOfThisWeek && d < endOfWeek
+      })
+      .reduce((total, s) => {
+        return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
+          return exTotal + (ex.sets || []).reduce((setTotal, set) => {
+            return setTotal + ((set.weight || 0) * (set.reps || 0))
+          }, 0)
+        }, 0)
+      }, 0)
+  }
+
+  const formatVolume = (lbs) => {
+    if (lbs >= 1000) return `${(lbs / 1000).toFixed(1)}k`
+    return lbs === 0 ? '—' : `${lbs}`
+  }
+
+  const volumeThisWeek = getWeekVolume(0)
+  const volumeLastWeek = getWeekVolume(-1)
+
   const hour = new Date().getHours()
   const timeGreeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
@@ -72,6 +101,11 @@ export default function Dashboard() {
   const activeSplit   = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
   const rotation      = activeSplit?.rotation || BB_WORKOUT_SEQUENCE
   const workoutSeq    = rotation.filter(t => t !== 'rest')
+
+  const splitSessionCount = sessions.filter(s => {
+    if (!activeSplit?.createdAt) return true
+    return new Date(s.date) >= new Date(activeSplit.createdAt)
+  }).length
 
   const streak        = getWorkoutStreak(sessions, rotation)
 
@@ -227,12 +261,12 @@ export default function Dashboard() {
       return { type: isToday ? 'today-done' : 'done', session, emoji: getWorkoutEmoji(session.type), hasCardio }
     }
     if (isToday) {
-      if (isRestDay) return { type: 'today-rest', emoji: '😴', hasCardio }
+      if (isRestDay) return { type: 'today-rest', hasCardio }
       return { type: 'today-pending', emoji: getWorkoutEmoji(nextBb), hasCardio }
     }
     if (ahead > 0) {
       const rotItem = getFullRotationItem(ahead)
-      if (rotItem === 'rest') return { type: 'future-rest', emoji: '😴' }
+      if (rotItem === 'rest') return { type: 'future-rest' }
       const planned = rotItem || getPlannedWorkout(ahead)
       return { type: 'future', planned, emoji: planned ? getWorkoutEmoji(planned) : null }
     }
@@ -264,28 +298,29 @@ export default function Dashboard() {
       {/* ── Greeting ────────────────────────────────────────────────────────── */}
       <div className="px-4 pt-16 pb-5">
         <p className="text-c-muted text-sm font-medium">
-          {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}{' '}
-          <span>{todayLogged ? '✓' : '💪'}</span>
+          {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
         <h1 className="text-3xl font-bold mt-0.5">
           {todayLogged ? 'Your work here is done.' : 'Ready to train?'}
         </h1>
       </div>
 
-      {/* ── Stat badges ─────────────────────────────────────────────────────── */}
-      <div className="px-4 flex gap-3 mb-5">
-        <div className="flex-1 bg-card rounded-2xl p-4 flex items-center gap-3">
-          <span className="text-2xl">🔥</span>
-          <div>
-            <p className="text-xl font-bold leading-none">{streak}</p>
-            <p className="text-xs text-c-muted mt-0.5">Day streak</p>
+      {/* ── Stats row ───────────────────────────────────────────────────────── */}
+      <div className="px-4 mb-5">
+        <div className="bg-card rounded-2xl p-4 flex items-center justify-between">
+          <div className="flex-1 text-center">
+            <p className={`text-[22px] font-bold leading-none ${theme.text}`}>{formatVolume(volumeLastWeek)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Last Week</p>
           </div>
-        </div>
-        <div className="flex-1 bg-card rounded-2xl p-4 flex items-center gap-3">
-          <span className="text-2xl">💪</span>
-          <div>
-            <p className={`text-xl font-bold leading-none ${theme.text}`}>{totalSessions}</p>
-            <p className="text-xs text-c-muted mt-0.5">Sessions total</p>
+          <div className="w-px h-8 bg-white/10 mx-2" />
+          <div className="flex-1 text-center">
+            <p className="text-[22px] font-bold leading-none text-c-primary">{formatVolume(volumeThisWeek)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">This Week</p>
+          </div>
+          <div className="w-px h-8 bg-white/10 mx-2" />
+          <div className="flex-1 text-center">
+            <p className="text-[22px] font-bold leading-none text-c-primary">{splitSessionCount}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Sessions</p>
           </div>
         </div>
       </div>
@@ -325,7 +360,7 @@ export default function Dashboard() {
         {isRestDay ? (
           <div className="bg-card rounded-3xl p-6">
             <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted">Today</p>
-            <p className="text-3xl font-bold leading-tight">😴 Rest Day</p>
+            <p className="text-3xl font-bold leading-tight">Rest Day</p>
             <p className="text-sm mt-2 text-c-muted">
               Recovery is part of the plan. Come back stronger tomorrow.
             </p>
@@ -351,12 +386,12 @@ export default function Dashboard() {
             </div>
             {todayLogged ? (
               <p className="text-sm mt-1" style={{ opacity: 0.6 }}>
-                Rest up — come back tomorrow 💤
+                Rest up — come back tomorrow.
               </p>
             ) : (
               <>
                 <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
-                  {streak > 0 ? `${streak}-day streak 🔥` : 'Start your streak today!'}
+                  {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
                 </p>
                 <button
                   onClick={() => navigate(`/log/bb/${nextBb}`)}
@@ -377,7 +412,6 @@ export default function Dashboard() {
             onClick={() => setShowSorenessModal(true)}
             className="w-full bg-card rounded-2xl p-4 flex items-center gap-3 text-left border border-c-subtle"
           >
-            <span className="text-xl shrink-0">💪</span>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-0.5">Check-in</p>
               <p className="font-semibold text-c-primary text-sm">
@@ -452,7 +486,7 @@ export default function Dashboard() {
                         : isTodayPending
                           ? <span style={{ opacity: 0.5 }}>{info.emoji}</span>
                           : isTodayRest
-                            ? <span style={{ opacity: 0.5 }}>😴</span>
+                            ? <span className="text-[9px] text-c-muted font-semibold">R</span>
                             : (isFuture || isFutureRest) && info.emoji
                               ? info.emoji
                               : <span className="text-[8px] text-c-muted">·</span>}
@@ -522,10 +556,11 @@ export default function Dashboard() {
                     {(isCardio || isTodayCardio) && (
                       <span className="text-[8px] font-bold leading-none mt-0.5">C</span>
                     )}
-                    {(isTodayRest || isTodayPending) && (
-                      <span className="text-[9px] leading-none mt-0.5 opacity-50">
-                        {isTodayRest ? '😴' : info.emoji}
-                      </span>
+                    {isTodayRest && (
+                      <span className="text-[9px] leading-none mt-0.5 opacity-50 font-semibold">R</span>
+                    )}
+                    {isTodayPending && (
+                      <span className="text-[9px] leading-none mt-0.5 opacity-50">{info.emoji}</span>
                     )}
                     {(isFuture || isFutureRest) && info.emoji && (
                       <span className="text-[9px] leading-none mt-0.5 opacity-25">{info.emoji}</span>
