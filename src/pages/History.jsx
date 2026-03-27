@@ -312,6 +312,12 @@ function SessionDetail({ session, onClose, onDelete }) {
                 {attachedCardio.intensity && (
                   <span className="text-sm text-c-dim">{INTENSITY_LABELS[attachedCardio.intensity] || attachedCardio.intensity}</span>
                 )}
+                {attachedCardio.minHR && (
+                  <span className="text-sm text-c-dim">↓{attachedCardio.minHR} bpm</span>
+                )}
+                {attachedCardio.maxHR && (
+                  <span className="text-sm text-c-dim">↑{attachedCardio.maxHR} bpm</span>
+                )}
               </div>
               {attachedCardio.notes && (
                 <p className="text-xs text-c-muted mt-1 italic">{attachedCardio.notes}</p>
@@ -397,6 +403,18 @@ function CardioSessionDetail({ session, onClose, onDelete }) {
               <div className="bg-item-dim rounded-xl p-3 text-center">
                 <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1">Intensity</p>
                 <p className="text-lg font-bold">{INTENSITY_LABELS[session.intensity] || session.intensity}</p>
+              </div>
+            )}
+            {session.minHR && (
+              <div className="bg-item-dim rounded-xl p-3 text-center">
+                <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1">Min HR</p>
+                <p className="text-lg font-bold">{session.minHR} <span className="text-sm font-normal text-c-muted">bpm</span></p>
+              </div>
+            )}
+            {session.maxHR && (
+              <div className="bg-item-dim rounded-xl p-3 text-center">
+                <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1">Max HR</p>
+                <p className="text-lg font-bold">{session.maxHR} <span className="text-sm font-normal text-c-muted">bpm</span></p>
               </div>
             )}
           </div>

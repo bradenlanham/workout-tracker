@@ -128,6 +128,8 @@ function SessionScreen({
   displaySeconds, setDisplaySeconds,
   distance, setDistance,
   intensity, setIntensity,
+  minHR, setMinHR,
+  maxHR, setMaxHR,
   notes, setNotes,
 }) {
   const [showNotes, setShowNotes] = useState(!!notes)
@@ -204,7 +206,7 @@ function SessionScreen({
       ? parseHMS(manualH, manualM, manualS)
       : displaySeconds
     if (!duration) return
-    onLogSession({ duration, distance, intensity, notes })
+    onLogSession({ duration, distance, intensity, minHR, maxHR, notes })
   }
 
   const durationReady = useManual
@@ -340,6 +342,37 @@ function SessionScreen({
           </div>
         </div>
 
+        {/* ── Heart Rate ───────────────────────────────────────── */}
+        <div className="bg-card rounded-2xl p-4">
+          <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-3">Heart Rate — optional</p>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <p className="text-xs text-c-faint mb-1.5 text-center">Min HR</p>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={minHR}
+                onChange={e => setMinHR(e.target.value)}
+                placeholder="—"
+                className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-base font-semibold text-center"
+                min={0}
+              />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs text-c-faint mb-1.5 text-center">Max HR</p>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={maxHR}
+                onChange={e => setMaxHR(e.target.value)}
+                placeholder="—"
+                className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-base font-semibold text-center"
+                min={0}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* ── Notes ────────────────────────────────────────────── */}
         <div className="bg-card rounded-2xl p-4">
           {showNotes ? (
@@ -419,6 +452,18 @@ function ConfirmScreen({ data, cardioType, onConfirm, onBack, onDiscard, theme }
               <div className="bg-item-dim rounded-xl p-3 text-center">
                 <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1">Intensity</p>
                 <p className="text-lg font-bold">{INTENSITY_LABELS[data.intensity] || data.intensity}</p>
+              </div>
+            )}
+            {data.minHR && (
+              <div className="bg-item-dim rounded-xl p-3 text-center">
+                <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1">Min HR</p>
+                <p className="text-lg font-bold">{data.minHR} <span className="text-sm font-normal text-c-muted">bpm</span></p>
+              </div>
+            )}
+            {data.maxHR && (
+              <div className="bg-item-dim rounded-xl p-3 text-center">
+                <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1">Max HR</p>
+                <p className="text-lg font-bold">{data.maxHR} <span className="text-sm font-normal text-c-muted">bpm</span></p>
               </div>
             )}
           </div>
@@ -517,6 +562,8 @@ export default function CardioLogger() {
   // Session fields
   const [distance, setDistance] = useState(activeCardioSession?.distance || '')
   const [intensity, setIntensity] = useState(activeCardioSession?.intensity || null)
+  const [minHR, setMinHR] = useState(activeCardioSession?.minHR || '')
+  const [maxHR, setMaxHR] = useState(activeCardioSession?.maxHR || '')
   const [notes, setNotes] = useState(activeCardioSession?.notes || '')
 
   // Confirmed session data (between confirm screen and attach screen)
@@ -531,22 +578,26 @@ export default function CardioLogger() {
       startTimestamp: timerStartTimestamp,
       distance,
       intensity,
+      minHR,
+      maxHR,
       notes,
     })
-  }, [screen, cardioType, accumulatedSeconds, timerStartTimestamp, distance, intensity, notes]) // eslint-disable-line
+  }, [screen, cardioType, accumulatedSeconds, timerStartTimestamp, distance, intensity, minHR, maxHR, notes]) // eslint-disable-line
 
   const handleTypeSelect = (type) => {
     setCardioType(type)
     setScreen('session')
   }
 
-  const handleLogSession = ({ duration, distance: d, intensity: i, notes: n }) => {
+  const handleLogSession = ({ duration, distance: d, intensity: i, minHR: minH, maxHR: maxH, notes: n }) => {
     setPendingSession({
       type: cardioType,
       duration,
       distance: d ? parseFloat(d) : null,
       distanceUnit: getDistanceUnit(cardioType),
       intensity: i,
+      minHR: minH ? parseInt(minH) : null,
+      maxHR: maxH ? parseInt(maxH) : null,
       notes: n,
       date: new Date().toISOString().split('T')[0],
     })
@@ -633,6 +684,10 @@ export default function CardioLogger() {
         setDistance={setDistance}
         intensity={intensity}
         setIntensity={setIntensity}
+        minHR={minHR}
+        setMinHR={setMinHR}
+        maxHR={maxHR}
+        setMaxHR={setMaxHR}
         notes={notes}
         setNotes={setNotes}
       />
