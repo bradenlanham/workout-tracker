@@ -293,10 +293,10 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen pb-12">
+    <div className="min-h-screen pb-28">
 
       {/* ── Greeting ────────────────────────────────────────────────────────── */}
-      <div className="px-4 pt-16 pb-5">
+      <div className="px-4 pt-8 pb-5" style={{ paddingTop: 'max(32px, env(safe-area-inset-top))' }}>
         <p className="text-c-muted text-sm font-medium">
           {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
@@ -327,7 +327,7 @@ export default function Dashboard() {
           <div className="w-full h-px bg-white/10" />
           <div className="flex items-center justify-between">
             <div className="flex-1 text-center">
-              <p className="text-[22px] font-bold leading-none text-c-primary">{streak > 0 ? `${streak}` : '—'}</p>
+              <p className="text-[22px] font-bold leading-none text-c-primary">{streak > 0 ? `🔥 ${streak}` : '—'}</p>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Day Streak</p>
             </div>
             <div className="w-px h-8 bg-white/10 mx-2" />
@@ -351,23 +351,19 @@ export default function Dashboard() {
 
       {/* ── Active split label ──────────────────────────────────────────────── */}
       {activeSplit && (
-        <div className="px-4 mb-3 flex items-center gap-2">
-          <div className="flex flex-col gap-0.5">
-            <p className="text-xs text-c-muted">
-              Split: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
-            </p>
-            <p className="text-xs text-c-muted">
-              Started:{' '}
-              <span className="font-semibold text-c-dim">
-                {activeSplit.createdAt
-                  ? (() => {
-                      const days = Math.round((new Date() - new Date(activeSplit.createdAt)) / 86400000)
-                      return days === 0 ? 'Today' : days === 1 ? '1 day ago' : `${days} days ago`
-                    })()
-                  : 'Today'}
-              </span>
-            </p>
-          </div>
+        <div className="px-4 mb-3">
+          <p className="text-xs text-c-muted">
+            Split: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
+            {' · '}
+            <span className="font-semibold text-c-dim">
+              {activeSplit.createdAt
+                ? (() => {
+                    const days = Math.round((new Date() - new Date(activeSplit.createdAt)) / 86400000)
+                    return days === 0 ? 'Today' : days === 1 ? '1 day ago' : `${days} days ago`
+                  })()
+                : 'Today'}
+            </span>
+          </p>
         </div>
       )}
 
