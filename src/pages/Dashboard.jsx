@@ -293,9 +293,22 @@ export default function Dashboard() {
       {/* ── Active split label ──────────────────────────────────────────────── */}
       {activeSplit && (
         <div className="px-4 mb-3 flex items-center gap-2">
-          <p className="text-xs text-c-muted">
-            Training: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
-          </p>
+          <div className="flex flex-col gap-0.5">
+            <p className="text-xs text-c-muted">
+              Split: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
+            </p>
+            <p className="text-xs text-c-muted">
+              Started:{' '}
+              <span className="font-semibold text-c-dim">
+                {activeSplit.createdAt
+                  ? (() => {
+                      const days = Math.round((new Date() - new Date(activeSplit.createdAt)) / 86400000)
+                      return days === 0 ? 'Today' : days === 1 ? '1 day ago' : `${days} days ago`
+                    })()
+                  : 'Today'}
+              </span>
+            </p>
+          </div>
           {splits.length > 1 && (
             <button
               onClick={() => navigate('/splits')}
