@@ -272,6 +272,7 @@ function ExerciseItem({
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
   const { settings, setRestEndTimestamp } = useStore()
+  const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
 
   const addSet = () => {
     const lastSet = exercise.sets[exercise.sets.length - 1]
@@ -325,7 +326,7 @@ function ExerciseItem({
 
   const deleteSet = (i) => {
     const sets = exercise.sets.filter((_, idx) => idx !== i)
-    onUpdate({ ...exercise, sets: sets.length ? sets : [{ type: 'warmup', reps: '', weight: '' }] })
+    onUpdate({ ...exercise, sets: sets.length ? sets : [{ type: firstSetType, reps: '', weight: '' }] })
   }
 
   const markDone = () => {
@@ -808,6 +809,19 @@ export default function BbLogger() {
     customTemplates, splits, activeSplitId,
   } = useStore()
   const theme = getTheme(settings.accentColor)
+  const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
+
+  // ── Audio unlock on first touch (iOS requires user-gesture before AudioContext) ──
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)()
+        ctx.resume().then(() => ctx.close())
+      } catch (e) { /* ignore */ }
+    }
+    document.addEventListener('touchstart', unlock, { once: true })
+    return () => document.removeEventListener('touchstart', unlock)
+  }, [])
 
   // ── Resolve template (built-in or custom) ────────────────────────────────
 
@@ -842,7 +856,7 @@ export default function BbLogger() {
       id:    `${group.label}-${name}-${i}`,
       name,
       group: group.label,
-      sets:  [{ type: 'warmup', reps: '', weight: '' }],
+      sets:  [{ type: firstSetType, reps: '', weight: '' }],
       notes: '',
       done:  false,
       plateMode: false,
@@ -926,7 +940,7 @@ export default function BbLogger() {
       id:    `custom-${name}-${Date.now()}`,
       name,
       group: 'Custom',
-      sets:  [{ type: 'warmup', reps: '', weight: '' }],
+      sets:  [{ type: firstSetType, reps: '', weight: '' }],
       notes: '',
       done:  false,
       plateMode: false,

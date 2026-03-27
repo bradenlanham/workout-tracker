@@ -107,16 +107,17 @@ export function calcSessionVolume(exercises) {
 export function playBeep() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type = 'sine'
-    osc.frequency.value = 880
-    gain.gain.setValueAtTime(0.6, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.8)
+    ;[0, 0.15, 0.3].forEach(delay => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 880
+      osc.type = 'square'
+      gain.gain.value = 1.0
+      osc.start(ctx.currentTime + delay)
+      osc.stop(ctx.currentTime + delay + 0.12)
+    })
   } catch (e) {
     // AudioContext not available
   }

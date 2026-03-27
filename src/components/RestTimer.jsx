@@ -35,7 +35,7 @@ export default function RestTimer() {
       if (tl <= 0) {
         clearInterval(tickRef.current)
         setRestEndTimestamp(null)
-        playBeep()
+        if (settings.restTimerChime !== false) playBeep()
       }
     }, 500)
     return () => clearInterval(tickRef.current)

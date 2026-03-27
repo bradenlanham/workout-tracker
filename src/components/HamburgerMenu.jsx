@@ -219,16 +219,62 @@ export default function HamburgerMenu() {
                     </div>
                     <button
                       onClick={() => updateSettings({ autoStartRest: !settings.autoStartRest })}
-                      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                        settings.autoStartRest ? theme.bg : 'bg-item'
-                      }`}
-                      style={settings.autoStartRest ? { backgroundColor: theme.hex } : undefined}
+                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                      style={{ backgroundColor: settings.autoStartRest ? theme.hex : undefined }}
                       aria-label="Toggle auto-start rest timer"
                     >
+                      {!settings.autoStartRest && <span className="absolute inset-0 rounded-full bg-item" />}
                       <span
-                        className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                          settings.autoStartRest ? 'translate-x-5' : 'translate-x-0.5'
-                        }`}
+                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                        style={{ transform: settings.autoStartRest ? 'translateX(22px)' : 'translateX(2px)' }}
+                      />
+                    </button>
+                  </div>
+
+                  {/* First set default type */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">First set defaults to</p>
+                      <p className="text-xs text-c-dim mt-0.5">Type assigned to the first set of each exercise</p>
+                    </div>
+                    <div className="flex gap-1 bg-item rounded-xl p-0.5 shrink-0">
+                      <button
+                        onClick={() => updateSettings({ defaultFirstSetType: 'warmup' })}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                        style={settings.defaultFirstSetType !== 'working'
+                          ? { backgroundColor: theme.hex, color: theme.contrastText }
+                          : undefined}
+                      >
+                        Warm
+                      </button>
+                      <button
+                        onClick={() => updateSettings({ defaultFirstSetType: 'working' })}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                        style={settings.defaultFirstSetType === 'working'
+                          ? { backgroundColor: theme.hex, color: theme.contrastText }
+                          : undefined}
+                      >
+                        Work
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Rest timer chime */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">Rest timer chime</p>
+                      <p className="text-xs text-c-dim mt-0.5">Play sound when timer ends</p>
+                    </div>
+                    <button
+                      onClick={() => updateSettings({ restTimerChime: !settings.restTimerChime })}
+                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                      style={{ backgroundColor: settings.restTimerChime ? theme.hex : undefined }}
+                      aria-label="Toggle rest timer chime"
+                    >
+                      {!settings.restTimerChime && <span className="absolute inset-0 rounded-full bg-item" />}
+                      <span
+                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                        style={{ transform: settings.restTimerChime ? 'translateX(22px)' : 'translateX(2px)' }}
                       />
                     </button>
                   </div>

@@ -38,6 +38,8 @@ const useStore = create(
         backgroundTheme: 'obsidian',
         userName: '',
         autoStartRest: false,
+        defaultFirstSetType: 'warmup',
+        restTimerChime: true,
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
