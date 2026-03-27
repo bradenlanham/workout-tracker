@@ -5,6 +5,49 @@ import { getTheme } from '../theme'
 import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
+// ── Tutorial overlay ──────────────────────────────────────────────────────────
+const TUTORIAL_STEPS = [
+  {
+    text: 'This is your next workout. Tap Start Session to begin.',
+    style: { top: 390, left: 16, right: 16 },
+  },
+  {
+    text: 'Log cardio sessions here — before, after, or anytime.',
+    style: { top: 488, left: 16, right: 16 },
+  },
+  {
+    text: 'Your week at a glance. Tap any day to preview that workout.',
+    style: { top: 566, left: 16, right: 16 },
+  },
+  {
+    text: 'Settings, splits, and more live here.',
+    style: { top: 62, right: 16, width: 220 },
+  },
+]
+
+function TutorialOverlay({ step, onAdvance, onDone, theme }) {
+  if (step === null || step === undefined) return null
+  const current = TUTORIAL_STEPS[step]
+  const isLast = step === TUTORIAL_STEPS.length - 1
+  return (
+    <div className="fixed inset-0 z-50" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+      <div
+        className="absolute rounded-2xl p-4 shadow-2xl"
+        style={{ ...current.style, backgroundColor: 'var(--bg-card)', position: 'absolute' }}
+      >
+        <p className="text-sm text-c-primary leading-snug mb-3">{current.text}</p>
+        <button
+          onClick={isLast ? onDone : onAdvance}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors active:scale-[0.97] ${theme.bg}`}
+          style={{ color: theme.contrastText }}
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const SORENESS_RATINGS = [
   { id: 'notsore',  label: 'Not Sore',  desc: 'No noticeable muscle soreness or fatigue' },
   { id: 'sore',     label: 'Sore',      desc: 'Mild soreness; does not limit movement' },
@@ -57,12 +100,13 @@ function daysBetween(a, b) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions } = useStore()
+  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings } = useStore()
   const theme = getTheme(settings.accentColor)
   const [showMonth, setShowMonth] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [previewWorkoutId, setPreviewWorkoutId] = useState(null)
   const [showSorenessModal, setShowSorenessModal] = useState(false)
+  const [tutorialStep, setTutorialStep] = useState(() => settings.hasSeenTutorial ? null : 0)
 
   const totalSessions = sessions.length
 
@@ -601,6 +645,17 @@ export default function Dashboard() {
           onSkip={handleSorenessSkip}
         />
       )}
+
+      {/* ── Tutorial overlay ────────────────────────────────────────────────── */}
+      <TutorialOverlay
+        step={tutorialStep}
+        onAdvance={() => setTutorialStep(s => s + 1)}
+        onDone={() => {
+          setTutorialStep(null)
+          updateSettings({ hasSeenTutorial: true })
+        }}
+        theme={theme}
+      />
 
       {/* ── Workout Preview Overlay ──────────────────────────────────────────── */}
       {showPreview && (

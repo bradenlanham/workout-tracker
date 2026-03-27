@@ -40,6 +40,7 @@ const useStore = create(
         autoStartRest: false,
         defaultFirstSetType: 'warmup',
         restTimerChime: true,
+        hasSeenTutorial: false,
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
@@ -296,21 +297,30 @@ const useStore = create(
       // Custom merge: new top-level fields fall back to initial values when
       // not present in old persisted state — settings are deep-merged so
       // existing user prefs are never lost across deploys.
-      merge: (persisted, current) => ({
-        ...current,
-        ...persisted,
-        settings: { ...current.settings, ...(persisted.settings || {}) },
-        splits: persisted.splits || current.splits,
-        exerciseLibrary: persisted.exerciseLibrary || current.exerciseLibrary,
-        activeSplitId: persisted.activeSplitId ?? current.activeSplitId,
-        cardioSessions: persisted.cardioSessions || current.cardioSessions,
-        customCardioTypes: persisted.customCardioTypes || current.customCardioTypes,
-        activeCardioSession: persisted.activeCardioSession ?? null,
-        // Existing users who already have sessions are treated as onboarded
-        hasCompletedOnboarding: persisted.hasCompletedOnboarding
-          || (persisted.sessions && persisted.sessions.length > 0)
-          || false,
-      }),
+      merge: (persisted, current) => {
+        const hasExistingSessions = persisted.sessions && persisted.sessions.length > 0
+        return {
+          ...current,
+          ...persisted,
+          settings: {
+            ...current.settings,
+            ...(persisted.settings || {}),
+            // Existing users who already have sessions are treated as having seen the tutorial
+            hasSeenTutorial: persisted.settings?.hasSeenTutorial
+              ?? (hasExistingSessions ? true : false),
+          },
+          splits: persisted.splits || current.splits,
+          exerciseLibrary: persisted.exerciseLibrary || current.exerciseLibrary,
+          activeSplitId: persisted.activeSplitId ?? current.activeSplitId,
+          cardioSessions: persisted.cardioSessions || current.cardioSessions,
+          customCardioTypes: persisted.customCardioTypes || current.customCardioTypes,
+          activeCardioSession: persisted.activeCardioSession ?? null,
+          // Existing users who already have sessions are treated as onboarded
+          hasCompletedOnboarding: persisted.hasCompletedOnboarding
+            || hasExistingSessions
+            || false,
+        }
+      },
     }
   )
 )
