@@ -61,6 +61,7 @@ export default function Dashboard() {
   const theme = getTheme(settings.accentColor)
   const [showMonth, setShowMonth] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
+  const [previewWorkoutId, setPreviewWorkoutId] = useState(null)
   const [showSorenessModal, setShowSorenessModal] = useState(false)
 
   const totalSessions = sessions.length
@@ -120,10 +121,12 @@ export default function Dashboard() {
     const w = activeSplit?.workouts?.find(w => w.id === wId)
     return w?.emoji || BB_WORKOUT_EMOJI[wId] || '🏋️'
   }
+  const getShortName = (wId) => getWorkoutName(wId).split(' ')[0]
 
   // ── Preview data ─────────────────────────────────────────────────────────
-  const previewWorkout = activeSplit?.workouts?.find(w => w.id === nextBb)
-  const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[nextBb] || []
+  const activePreviewId = previewWorkoutId || nextBb
+  const previewWorkout = activeSplit?.workouts?.find(w => w.id === activePreviewId)
+  const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[activePreviewId] || []
 
   function getLastExerciseData(exName) {
     const name = typeof exName === 'string' ? exName : exName?.name
@@ -469,7 +472,10 @@ export default function Dashboard() {
             return (
               <button
                 key={i}
-                onClick={() => (isDone || isTodayDone || isCardio || isTodayCardio) && navigate('/history')}
+                onClick={() => {
+                  if (isDone || isTodayDone || isCardio || isTodayCardio) navigate('/history')
+                  else if (isFuture && info.planned) { setPreviewWorkoutId(info.planned); setShowPreview(true) }
+                }}
                 className={`flex-1 flex flex-col items-center py-2 rounded-xl transition-colors ${cellBg}`}
                 style={isTodayPending ? { outline: `2px solid ${theme.hex}`, outlineOffset: '-2px' } : {}}
               >
@@ -479,7 +485,7 @@ export default function Dashboard() {
                 <span className={`text-xs font-bold mb-1.5 ${isToday ? 'text-white' : 'text-c-dim'}`}>
                   {day.getDate()}
                 </span>
-                <span className={`text-sm leading-none ${(isFuture || isFutureRest || info.type === 'empty') ? 'opacity-25' : ''}`}>
+                <span className={`text-sm leading-none ${info.type === 'empty' ? 'opacity-25' : ''}`}>
                   {isTodayDone
                     ? <span className="flex flex-col items-center gap-0.5">
                         <span>✓</span>
@@ -496,9 +502,11 @@ export default function Dashboard() {
                           ? <span style={{ opacity: 0.5 }}>{info.emoji}</span>
                           : isTodayRest
                             ? <span className="text-[9px] text-c-muted font-semibold">R</span>
-                            : (isFuture || isFutureRest) && info.emoji
-                              ? info.emoji
-                              : <span className="text-[8px] text-c-muted">·</span>}
+                            : isFutureRest
+                              ? <span className="text-[9px] font-semibold" style={{ opacity: 0.5 }}>R</span>
+                              : isFuture && info.planned
+                                ? <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.5 }}>{getShortName(info.planned)}</span>
+                                : <span className="text-[8px] text-c-muted">·</span>}
                 </span>
               </button>
             )
@@ -598,14 +606,14 @@ export default function Dashboard() {
       {showPreview && (
         <div className="fixed inset-0 z-50 bg-base overflow-y-auto" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="p-4">
-            <button onClick={() => setShowPreview(false)} className="text-sm opacity-60 mb-4">
+            <button onClick={() => { setShowPreview(false); setPreviewWorkoutId(null) }} className="text-sm opacity-60 mb-4">
               ← go back
             </button>
             <h2 className="text-xl font-bold mb-1">
-              {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+              {getWorkoutEmoji(activePreviewId)} {getWorkoutName(activePreviewId)}
             </h2>
             <p className="text-sm opacity-50 mb-4">
-              {todayLogged ? "Tomorrow's workout" : "Next workout"}
+              {previewWorkoutId ? 'Upcoming workout' : todayLogged ? "Tomorrow's workout" : "Next workout"}
             </p>
 
             {previewSections.map(section => (
