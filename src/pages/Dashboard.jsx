@@ -378,21 +378,19 @@ export default function Dashboard() {
             </p>
           </div>
         ) : (
-          <div className={`${theme.bg} rounded-3xl p-6`} style={{ color: theme.contrastText, textAlign: 'center' }}>
+          <div className={`${theme.bg} rounded-3xl p-6`} style={{ position: 'relative', color: theme.contrastText, textAlign: 'center' }}>
+            <button
+              onClick={() => setShowPreview(true)}
+              style={{ position: 'absolute', top: 12, right: 16, fontSize: 11, color: theme.contrastText, opacity: 0.7, background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              Preview
+            </button>
             <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6, textAlign: 'center' }}>
               {todayLogged ? 'Next in your split' : 'Next Up'}
             </p>
-            <div className="flex items-center justify-center gap-2">
-              <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>
-                {getWorkoutName(nextBb)}
-              </p>
-              <button
-                onClick={() => setShowPreview(true)}
-                style={{ fontSize: 12, color: theme.contrastText, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.85, flexShrink: 0 }}
-              >
-                Preview
-              </button>
-            </div>
+            <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>
+              {getWorkoutName(nextBb)}
+            </p>
             {todayLogged ? (
               <p className="text-sm mt-1" style={{ opacity: 0.6, textAlign: 'center' }}>
                 Rest up — come back tomorrow.
