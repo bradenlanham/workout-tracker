@@ -28,7 +28,6 @@ export default function Dashboard() {
   const theme = getTheme(settings.accentColor)
   const [showMonth, setShowMonth] = useState(false)
 
-  const streak        = getWorkoutStreak(sessions, rotation)
   const totalSessions = sessions.length
 
   const hour = new Date().getHours()
@@ -38,6 +37,8 @@ export default function Dashboard() {
   const activeSplit   = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
   const rotation      = activeSplit?.rotation || BB_WORKOUT_SEQUENCE
   const workoutSeq    = rotation.filter(t => t !== 'rest')
+
+  const streak        = getWorkoutStreak(sessions, rotation)
 
   const nextBb            = getNextBbWorkout(sessions, rotation)
   const nextRotationItem  = getNextRotationItem(sessions, rotation)
