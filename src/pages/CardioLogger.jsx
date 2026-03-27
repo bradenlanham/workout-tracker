@@ -122,7 +122,7 @@ function TypeScreen({ onSelect, onBack, theme, customCardioTypes }) {
 // ── Session Screen ─────────────────────────────────────────────────────────────
 
 function SessionScreen({
-  cardioType, onBack, onLogSession, theme,
+  cardioType, onBack, onLogSession, onDiscard, theme,
   accumulatedSeconds, setAccumulatedSeconds,
   timerStartTimestamp, setTimerStartTimestamp,
   displaySeconds, setDisplaySeconds,
@@ -399,7 +399,7 @@ function SessionScreen({
       </div>
 
       {/* ── Footer ──────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-4 pt-3 pb-6 z-40">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-4 pt-3 pb-6 z-40 space-y-2">
         <button
           onClick={handleLog}
           disabled={!durationReady}
@@ -407,6 +407,12 @@ function SessionScreen({
           style={{ color: theme.contrastText }}
         >
           Log Session →
+        </button>
+        <button
+          onClick={onDiscard}
+          className="w-full py-2.5 rounded-2xl text-red-400 text-sm font-semibold bg-red-500/10 border border-red-500/20"
+        >
+          Discard Session
         </button>
       </div>
     </div>
@@ -504,33 +510,51 @@ function ConfirmScreen({ data, cardioType, onConfirm, onBack, onDiscard, theme }
 
 // ── Attach Prompt ──────────────────────────────────────────────────────────────
 
-function AttachScreen({ workoutSession, workoutName, onAttach, onKeepSeparate, theme }) {
+function AttachScreen({ workoutSession, workoutName, onAttach, onKeepSeparate, onBack, onDiscard, theme }) {
   return (
-    <div className="min-h-screen bg-base flex items-center justify-center px-4">
-      <div className="bg-card rounded-3xl p-6 w-full max-w-sm space-y-4">
-        <div className="text-center">
-          <p className="text-2xl mb-3">🔗</p>
-          <h2 className="text-xl font-bold mb-2">Attach to workout?</h2>
-          <p className="text-c-muted text-sm">
-            You also completed <span className="font-semibold text-c-secondary">{workoutName}</span> today. Attach this cardio session to that workout?
-          </p>
+    <div className="min-h-screen bg-base pb-12">
+      <div className="px-4 pt-12 pb-4">
+        <button onClick={onBack} className="text-sm text-c-muted mb-4 block">← go back</button>
+      </div>
+      <div className="flex items-center justify-center px-4">
+        <div className="bg-card rounded-3xl p-6 w-full max-w-sm space-y-4">
+          <div className="text-center">
+            <p className="text-2xl mb-3">🔗</p>
+            <h2 className="text-xl font-bold mb-2">Attach to workout?</h2>
+            <p className="text-c-muted text-sm">
+              You also completed <span className="font-semibold text-c-secondary">{workoutName}</span> today. Attach this cardio session to that workout?
+            </p>
+          </div>
+          <button
+            onClick={onAttach}
+            className={`w-full py-4 rounded-2xl font-bold ${theme.bg} text-white`}
+            style={{ color: theme.contrastText }}
+          >
+            Attach
+          </button>
+          <button
+            onClick={onKeepSeparate}
+            className="w-full py-4 rounded-2xl font-semibold bg-item text-c-secondary"
+          >
+            Keep Separate
+          </button>
+          <button
+            onClick={onDiscard}
+            className="w-full py-3 rounded-2xl text-red-400 font-semibold bg-red-500/10 border border-red-500/20"
+          >
+            Discard Session
+          </button>
         </div>
-        <button
-          onClick={onAttach}
-          className={`w-full py-4 rounded-2xl font-bold ${theme.bg} text-white`}
-          style={{ color: theme.contrastText }}
-        >
-          Attach
-        </button>
-        <button
-          onClick={onKeepSeparate}
-          className="w-full py-4 rounded-2xl font-semibold bg-item text-c-secondary"
-        >
-          Keep Separate
-        </button>
       </div>
     </div>
   )
+}
+
+// ── Attach Fallback (no workout found — save immediately without render side-effects) ──
+
+function AttachFallback({ onFinish, onDiscard }) {
+  useEffect(() => { onFinish() }, []) // eslint-disable-line
+  return null
 }
 
 // ── Main CardioLogger ──────────────────────────────────────────────────────────
@@ -673,6 +697,7 @@ export default function CardioLogger() {
           clearActiveCardioSession()
         }}
         onLogSession={handleLogSession}
+        onDiscard={handleDiscard}
         theme={theme}
         accumulatedSeconds={accumulatedSeconds}
         setAccumulatedSeconds={setAccumulatedSeconds}
@@ -714,15 +739,16 @@ export default function CardioLogger() {
         workoutName={todayWorkoutInfo.name}
         onAttach={() => saveCardioAndFinish(todayWorkoutInfo.session.id)}
         onKeepSeparate={() => saveCardioAndFinish(null)}
+        onBack={() => setScreen('confirm')}
+        onDiscard={handleDiscard}
         theme={theme}
       />
     )
   }
 
-  // Fallback: skip attach if no workout found
+  // Fallback: skip attach if no workout found (use effect to avoid render-time side effects)
   if (screen === 'attach') {
-    saveCardioAndFinish(null)
-    return null
+    return <AttachFallback onFinish={() => saveCardioAndFinish(null)} onDiscard={handleDiscard} />
   }
 
   return null
