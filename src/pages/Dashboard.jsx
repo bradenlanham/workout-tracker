@@ -305,22 +305,46 @@ export default function Dashboard() {
         </h1>
       </div>
 
-      {/* ── Stats row ───────────────────────────────────────────────────────── */}
+      {/* ── Stats rows ──────────────────────────────────────────────────────── */}
       <div className="px-4 mb-5">
-        <div className="bg-card rounded-2xl p-4 flex items-center justify-between">
-          <div className="flex-1 text-center">
-            <p className={`text-[22px] font-bold leading-none ${theme.text}`}>{formatVolume(volumeLastWeek)}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Last Week</p>
+        <div className="bg-card rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex-1 text-center">
+              <p className={`text-[22px] font-bold leading-none ${theme.text}`}>{formatVolume(volumeLastWeek)}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Last Week</p>
+            </div>
+            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="flex-1 text-center">
+              <p className="text-[22px] font-bold leading-none text-c-primary">{formatVolume(volumeThisWeek)}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">This Week</p>
+            </div>
+            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="flex-1 text-center">
+              <p className="text-[22px] font-bold leading-none text-c-primary">{splitSessionCount}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Sessions (Split)</p>
+            </div>
           </div>
-          <div className="w-px h-8 bg-white/10 mx-2" />
-          <div className="flex-1 text-center">
-            <p className="text-[22px] font-bold leading-none text-c-primary">{formatVolume(volumeThisWeek)}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">This Week</p>
-          </div>
-          <div className="w-px h-8 bg-white/10 mx-2" />
-          <div className="flex-1 text-center">
-            <p className="text-[22px] font-bold leading-none text-c-primary">{splitSessionCount}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Sessions</p>
+          <div className="w-full h-px bg-white/10" />
+          <div className="flex items-center justify-between">
+            <div className="flex-1 text-center">
+              <p className="text-[22px] font-bold leading-none text-c-primary">{streak > 0 ? `${streak}` : '—'}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Day Streak</p>
+            </div>
+            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="flex-1 text-center">
+              <p className="text-[22px] font-bold leading-none text-c-primary">{totalSessions}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Total Sessions</p>
+            </div>
+            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="flex-1 text-center">
+              <p className="text-[22px] font-bold leading-none text-c-primary">
+                {sessions.filter(s => {
+                  if (activeSplit?.createdAt && new Date(s.date) < new Date(activeSplit.createdAt)) return false
+                  return (s.data?.exercises || []).some(ex => ex.sets?.some(set => set.isNewPR))
+                }).length || '—'}
+              </p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">PRs This Split</p>
+            </div>
           </div>
         </div>
       </div>
@@ -344,14 +368,6 @@ export default function Dashboard() {
               </span>
             </p>
           </div>
-          {splits.length > 1 && (
-            <button
-              onClick={() => navigate('/splits')}
-              className={`text-xs font-semibold ${theme.text} ml-1`}
-            >
-              Switch
-            </button>
-          )}
         </div>
       )}
 
@@ -429,7 +445,7 @@ export default function Dashboard() {
       <div className="px-4 mb-5">
         <button
           onClick={() => navigate('/cardio')}
-          className="w-full bg-card rounded-2xl p-4 text-center"
+          className="w-full bg-card rounded-2xl p-4 text-left"
         >
           <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-1">Cardio</p>
           <p className="font-semibold text-c-secondary">Log Cardio ›</p>
