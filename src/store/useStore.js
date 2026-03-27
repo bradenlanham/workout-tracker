@@ -58,6 +58,11 @@ const useStore = create(
       // User's custom exercises (pre-built exercises stay in exercises.js)
       exerciseLibrary: [],
 
+      // ── Cardio ─────────────────────────────────────────────────────────────
+      cardioSessions: [],
+      customCardioTypes: [],
+      activeCardioSession: null,
+
       // ── Split init (call on app mount) ────────────────────────────────────
       // Auto-creates the built-in split from hardcoded data if splits is empty.
       // Preserves any workoutSequence the user may have saved previously.
@@ -114,6 +119,38 @@ const useStore = create(
         }
         set(prev => ({ splits: [...prev.splits, clone] }))
         return clone
+      },
+
+      // ── Cardio actions ────────────────────────────────────────────────────────────────
+
+      addCardioSession: (session) => {
+        const newSession = {
+          ...session,
+          id: `cardio_${generateId()}`,
+          createdAt: new Date().toISOString(),
+        }
+        set(state => ({ cardioSessions: [...state.cardioSessions, newSession] }))
+        return newSession
+      },
+
+      updateCardioSession: (id, updates) => {
+        set(state => ({
+          cardioSessions: state.cardioSessions.map(s => s.id === id ? { ...s, ...updates } : s),
+        }))
+      },
+
+      deleteCardioSession: (id) => {
+        set(state => ({ cardioSessions: state.cardioSessions.filter(s => s.id !== id) }))
+      },
+
+      saveActiveCardioSession: (session) => set({ activeCardioSession: session }),
+      clearActiveCardioSession: () => set({ activeCardioSession: null }),
+
+      addCustomCardioType: (typeStr) => {
+        set(state => {
+          if (state.customCardioTypes.includes(typeStr)) return {}
+          return { customCardioTypes: [...state.customCardioTypes, typeStr] }
+        })
       },
 
       // ── Session actions ───────────────────────────────────────────────────────────────
@@ -205,6 +242,8 @@ const useStore = create(
           splits: state.splits,
           activeSplitId: state.activeSplitId,
           exerciseLibrary: state.exerciseLibrary,
+          cardioSessions: state.cardioSessions,
+          customCardioTypes: state.customCardioTypes,
         }
         const json = JSON.stringify(payload, null, 2)
         const blob = new Blob([json], { type: 'application/json' })
@@ -232,6 +271,8 @@ const useStore = create(
               splits: data.splits || [],
               activeSplitId: data.activeSplitId || null,
               exerciseLibrary: data.exerciseLibrary || [],
+              cardioSessions: data.cardioSessions || [],
+              customCardioTypes: data.customCardioTypes || [],
             })
             return true
           }
@@ -254,6 +295,9 @@ const useStore = create(
         splits: persisted.splits || current.splits,
         exerciseLibrary: persisted.exerciseLibrary || current.exerciseLibrary,
         activeSplitId: persisted.activeSplitId ?? current.activeSplitId,
+        cardioSessions: persisted.cardioSessions || current.cardioSessions,
+        customCardioTypes: persisted.customCardioTypes || current.customCardioTypes,
+        activeCardioSession: persisted.activeCardioSession ?? null,
         // Existing users who already have sessions are treated as onboarded
         hasCompletedOnboarding: persisted.hasCompletedOnboarding
           || (persisted.sessions && persisted.sessions.length > 0)

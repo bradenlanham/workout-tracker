@@ -10,6 +10,7 @@ import History from './pages/History'
 import Progress from './pages/Progress'
 import Guide from './pages/Guide'
 import BbLogger from './pages/log/BbLogger'
+import CardioLogger from './pages/CardioLogger'
 import TemplateEditor from './pages/TemplateEditor'
 import SplitEditor from './pages/SplitEditor'
 import SplitManager from './pages/SplitManager'
@@ -40,6 +41,7 @@ function ThemedApp() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/log" element={<Log />} />
         <Route path="/log/bb/:type" element={<BbLogger />} />
+        <Route path="/cardio" element={<CardioLogger />} />
         <Route path="/history" element={<History />} />
         <Route path="/progress" element={<Progress />} />
         <Route path="/guide" element={<Guide />} />

@@ -5,6 +5,39 @@ import { getTheme } from '../theme'
 import { getNextBbWorkout, getNextRotationItem, getWorkoutStreak } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
+const SORENESS_RATINGS = [
+  { id: 'notsore',  label: 'Not Sore',  desc: 'No noticeable muscle soreness or fatigue' },
+  { id: 'sore',     label: 'Sore',      desc: 'Mild soreness; does not limit movement' },
+  { id: 'verysore', label: 'Very Sore', desc: 'Significant soreness; affects daily movement' },
+  { id: 'wrecked',  label: 'Wrecked',   desc: 'Extreme soreness; mobility is noticeably impaired' },
+]
+
+function SorenessModal({ workoutLabel, onRate, onSkip }) {
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end" onClick={onSkip}>
+      <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5 pb-10" onClick={e => e.stopPropagation()}>
+        <h3 className="text-xl font-bold mb-1">Soreness Check-in</h3>
+        <p className="text-c-dim text-sm mb-5">How sore are you after yesterday's {workoutLabel}?</p>
+        <div className="space-y-2">
+          {SORENESS_RATINGS.map(r => (
+            <button
+              key={r.id}
+              onClick={() => onRate(r.id)}
+              className="w-full text-left p-4 rounded-2xl bg-item hover:bg-hover active:bg-hover transition-colors"
+            >
+              <p className="font-semibold text-c-primary">{r.label}</p>
+              <p className="text-sm text-c-muted mt-0.5">{r.desc}</p>
+            </button>
+          ))}
+        </div>
+        <button onClick={onSkip} className="w-full mt-3 py-3 rounded-xl bg-item text-c-dim font-semibold">
+          Skip
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -24,10 +57,11 @@ function daysBetween(a, b) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { sessions, settings, splits, activeSplitId } = useStore()
+  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions } = useStore()
   const theme = getTheme(settings.accentColor)
   const [showMonth, setShowMonth] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
+  const [showSorenessModal, setShowSorenessModal] = useState(false)
 
   const totalSessions = sessions.length
 
@@ -70,13 +104,62 @@ export default function Dashboard() {
     return `Last: ${lastWorking.weight}×${lastWorking.reps}`
   }
 
-  // ── Today detection ───────────────────────────────────────────────────────
+  // ── Soreness check-in (yesterday's session) ───────────────────────────────
   const today    = new Date()
   const todayStr = toDateStr(today)
   const todayLogged = sessions.some(s => {
     const d = s.date ? s.date.split('T')[0] : null
     return d === todayStr
   })
+
+  const yesterday    = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  const yesterdayStr = toDateStr(yesterday)
+
+  // Find a workout from yesterday that hasn't had soreness offered yet
+  const pendingSorenessSession = sessions.find(s => {
+    const d = s.date ? s.date.split('T')[0] : null
+    return d === yesterdayStr && s.mode === 'bb' && !s.soreness
+  })
+
+  const getWorkoutLabel = (session) => {
+    if (!session) return ''
+    if (session.type?.startsWith('tpl_')) {
+      const tplId = session.type.slice(4)
+      const tpl = customTemplates?.find(t => t.id === tplId)
+      return tpl?.name || 'Custom Workout'
+    }
+    const w = activeSplit?.workouts?.find(w => w.id === session.type)
+    return w?.name || BB_WORKOUT_NAMES[session.type] || session.type
+  }
+
+  // Check if a cardio session is attached to the pending soreness session
+  const attachedCardio = pendingSorenessSession
+    ? cardioSessions?.find(c => c.attachedToSessionId === pendingSorenessSession.id)
+    : null
+
+  const sorenessWorkoutLabel = pendingSorenessSession
+    ? attachedCardio
+      ? `${getWorkoutLabel(pendingSorenessSession)} + ${attachedCardio.type}`
+      : getWorkoutLabel(pendingSorenessSession)
+    : ''
+
+  const handleSorenessRate = (rating) => {
+    if (!pendingSorenessSession) return
+    updateSession(pendingSorenessSession.id, {
+      soreness: { rating, date: yesterdayStr },
+    })
+    setShowSorenessModal(false)
+  }
+
+  const handleSorenessSkip = () => {
+    if (!pendingSorenessSession) return
+    // Mark as offered-but-skipped so it doesn't re-appear
+    updateSession(pendingSorenessSession.id, {
+      soreness: { skipped: true, date: yesterdayStr },
+    })
+    setShowSorenessModal(false)
+  }
   const isRestDay = nextRotationItem === 'rest' && !todayLogged
 
   // ── Session map: dateStr → most-recent session that day ───────────────────
@@ -88,6 +171,16 @@ export default function Dashboard() {
       sessionByDate[d] = s
     }
   })
+
+  // Cardio session dates (standalone only)
+  const cardioDateSet = new Set(
+    (cardioSessions || [])
+      .filter(c => !c.attachedToSessionId)
+      .map(c => c.date)
+  )
+  const cardioAndWorkoutDateSet = new Set(
+    (cardioSessions || []).map(c => c.date)
+  )
 
   // ── Planned workout N days from today (non-rest only, for the CTA card) ──
   function getPlannedWorkout(daysAhead) {
@@ -120,17 +213,22 @@ export default function Dashboard() {
 
   // ── Per-day info ─────────────────────────────────────────────────────────
   function getDayInfo(date) {
-    const dStr    = toDateStr(date)
-    const isToday = dStr === todayStr
-    const ahead   = daysBetween(today, date)
-    const session = sessionByDate[dStr]
+    const dStr       = toDateStr(date)
+    const isToday    = dStr === todayStr
+    const ahead      = daysBetween(today, date)
+    const session    = sessionByDate[dStr]
+    const hasCardio  = cardioAndWorkoutDateSet.has(dStr)
+    const cardioOnly = !session && cardioDateSet.has(dStr)
 
+    if (cardioOnly) {
+      return { type: isToday ? 'today-cardio' : 'cardio', hasCardio: true }
+    }
     if (session) {
-      return { type: isToday ? 'today-done' : 'done', session, emoji: getWorkoutEmoji(session.type) }
+      return { type: isToday ? 'today-done' : 'done', session, emoji: getWorkoutEmoji(session.type), hasCardio }
     }
     if (isToday) {
-      if (isRestDay) return { type: 'today-rest', emoji: '😴' }
-      return { type: 'today-pending', emoji: getWorkoutEmoji(nextBb) }
+      if (isRestDay) return { type: 'today-rest', emoji: '😴', hasCardio }
+      return { type: 'today-pending', emoji: getWorkoutEmoji(nextBb), hasCardio }
     }
     if (ahead > 0) {
       const rotItem = getFullRotationItem(ahead)
@@ -259,6 +357,38 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* ── Soreness check-in prompt ────────────────────────────────────────── */}
+      {pendingSorenessSession && (
+        <div className="px-4 mb-4">
+          <button
+            onClick={() => setShowSorenessModal(true)}
+            className="w-full bg-card rounded-2xl p-4 flex items-center gap-3 text-left border border-c-subtle"
+          >
+            <span className="text-xl shrink-0">💪</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-0.5">Check-in</p>
+              <p className="font-semibold text-c-primary text-sm">
+                Review yesterday's {sorenessWorkoutLabel} session.
+              </p>
+            </div>
+            <svg className="w-4 h-4 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* ── Log Cardio card ──────────────────────────────────────────────────── */}
+      <div className="px-4 mb-5">
+        <button
+          onClick={() => navigate('/cardio')}
+          className="w-full bg-card rounded-2xl p-4 text-center"
+        >
+          <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-1">Cardio</p>
+          <p className="font-semibold text-c-secondary">Log Cardio</p>
+        </button>
+      </div>
+
       {/* ── Weekly calendar strip ───────────────────────────────────────────── */}
       <div className="px-4 mb-1">
         <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-3">This week</p>
@@ -270,41 +400,49 @@ export default function Dashboard() {
             const isTodayPending = info.type === 'today-pending'
             const isTodayRest    = info.type === 'today-rest'
             const isDone         = info.type === 'done'
+            const isCardio       = info.type === 'cardio'
+            const isTodayCardio  = info.type === 'today-cardio'
             const isFuture       = info.type === 'future'
             const isFutureRest   = info.type === 'future-rest'
 
             let cellBg = 'bg-white/5'
             if (isTodayDone) cellBg = theme.bg
             else if (isDone) cellBg = theme.bgSubtle
+            else if (isCardio || isTodayCardio) cellBg = 'bg-blue-500/20'
 
             return (
               <button
                 key={i}
-                onClick={() => (isDone || isTodayDone) && navigate('/history')}
+                onClick={() => (isDone || isTodayDone || isCardio || isTodayCardio) && navigate('/history')}
                 className={`flex-1 flex flex-col items-center py-2 rounded-xl transition-colors ${cellBg}`}
                 style={isTodayPending ? { outline: `2px solid ${theme.hex}`, outlineOffset: '-2px' } : {}}
               >
-                {/* Day label */}
                 <span className={`text-[10px] font-semibold mb-0.5 ${isToday ? theme.text : 'text-c-muted'}`}>
                   {DAY_LABELS[i]}
                 </span>
-                {/* Date number */}
                 <span className={`text-xs font-bold mb-1.5 ${isToday ? 'text-white' : 'text-c-dim'}`}>
                   {day.getDate()}
                 </span>
-                {/* Status indicator */}
                 <span className={`text-sm leading-none ${(isFuture || isFutureRest || info.type === 'empty') ? 'opacity-25' : ''}`}>
                   {isTodayDone
-                    ? '✓'
+                    ? <span className="flex flex-col items-center gap-0.5">
+                        <span>✓</span>
+                        {info.hasCardio && <span style={{ fontSize: 8, color: '#60a5fa' }}>●</span>}
+                      </span>
                     : isDone
-                      ? info.emoji
-                      : isTodayPending
-                        ? <span style={{ opacity: 0.5 }}>{info.emoji}</span>
-                        : isTodayRest
-                          ? <span style={{ opacity: 0.5 }}>😴</span>
-                          : (isFuture || isFutureRest) && info.emoji
-                            ? info.emoji
-                            : <span className="text-[8px] text-c-muted">·</span>}
+                      ? <span className="flex flex-col items-center gap-0.5">
+                          <span>{info.emoji}</span>
+                          {info.hasCardio && <span style={{ fontSize: 8, color: '#60a5fa' }}>●</span>}
+                        </span>
+                      : isCardio || isTodayCardio
+                        ? <span className="text-blue-400 text-[11px] font-bold">C</span>
+                        : isTodayPending
+                          ? <span style={{ opacity: 0.5 }}>{info.emoji}</span>
+                          : isTodayRest
+                            ? <span style={{ opacity: 0.5 }}>😴</span>
+                            : (isFuture || isFutureRest) && info.emoji
+                              ? info.emoji
+                              : <span className="text-[8px] text-c-muted">·</span>}
                 </span>
               </button>
             )
@@ -344,18 +482,21 @@ export default function Dashboard() {
                 const isTodayPending = info.type === 'today-pending'
                 const isTodayRest    = info.type === 'today-rest'
                 const isDone         = info.type === 'done'
+                const isCardio       = info.type === 'cardio'
+                const isTodayCardio  = info.type === 'today-cardio'
                 const isFuture       = info.type === 'future'
                 const isFutureRest   = info.type === 'future-rest'
 
-                let cellBg   = 'bg-white/5'
-                let textCol  = 'text-c-muted'
-                if (isTodayDone) { cellBg = theme.bg;       textCol = 'text-white' }
-                else if (isDone) { cellBg = theme.bgSubtle; textCol = theme.text   }
+                let cellBg  = 'bg-white/5'
+                let textCol = 'text-c-muted'
+                if (isTodayDone)        { cellBg = theme.bg;        textCol = 'text-white'   }
+                else if (isDone)        { cellBg = theme.bgSubtle;  textCol = theme.text     }
+                else if (isCardio || isTodayCardio) { cellBg = 'bg-blue-500/20'; textCol = 'text-blue-400' }
 
                 return (
                   <button
                     key={i}
-                    onClick={() => (isDone || isTodayDone) && navigate('/history')}
+                    onClick={() => (isDone || isTodayDone || isCardio || isTodayCardio) && navigate('/history')}
                     className={`aspect-square flex flex-col items-center justify-center rounded-lg transition-colors ${cellBg} ${textCol}`}
                     style={isTodayPending ? { outline: `2px solid ${theme.hex}`, outlineOffset: '-2px' } : {}}
                   >
@@ -365,6 +506,9 @@ export default function Dashboard() {
                         {isTodayDone ? '✓' : info.emoji}
                       </span>
                     )}
+                    {(isCardio || isTodayCardio) && (
+                      <span className="text-[8px] font-bold leading-none mt-0.5">C</span>
+                    )}
                     {(isTodayRest || isTodayPending) && (
                       <span className="text-[9px] leading-none mt-0.5 opacity-50">
                         {isTodayRest ? '😴' : info.emoji}
@@ -373,6 +517,9 @@ export default function Dashboard() {
                     {(isFuture || isFutureRest) && info.emoji && (
                       <span className="text-[9px] leading-none mt-0.5 opacity-25">{info.emoji}</span>
                     )}
+                    {info.hasCardio && (isDone || isTodayDone) && (
+                      <span style={{ fontSize: 6, color: '#60a5fa', lineHeight: 1 }}>●</span>
+                    )}
                   </button>
                 )
               })}
@@ -380,6 +527,15 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* ── Soreness Modal ──────────────────────────────────────────────────── */}
+      {showSorenessModal && pendingSorenessSession && (
+        <SorenessModal
+          workoutLabel={sorenessWorkoutLabel}
+          onRate={handleSorenessRate}
+          onSkip={handleSorenessSkip}
+        />
+      )}
 
       {/* ── Workout Preview Overlay ──────────────────────────────────────────── */}
       {showPreview && (

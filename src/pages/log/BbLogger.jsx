@@ -806,7 +806,7 @@ export default function BbLogger() {
   const {
     sessions, settings, addSession, updateSession,
     activeSession, saveActiveSession, clearActiveSession,
-    customTemplates, splits, activeSplitId,
+    customTemplates, splits, activeSplitId, updateSplit,
   } = useStore()
   const theme = getTheme(settings.accentColor)
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
@@ -985,6 +985,75 @@ export default function BbLogger() {
     setSavedSessionId(savedSess.id)
 
     clearActiveSession()
+
+    // ── Auto-persist custom exercises to split template ───────────────────
+    if (!isCustomTemplate && activeSplitWorkout) {
+      const templateExNames = new Set(
+        activeSplitWorkout.sections.flatMap(s =>
+          s.exercises.map(e => typeof e === 'string' ? e : e.name)
+        )
+      )
+
+      // All exercise names in session order (for position determination)
+      const allSessionNames = exercises.map(ex => ex.name)
+      // Only persist exercises that had logged sets and aren't in template
+      const exerciseDataNames = new Set(exerciseData.map(e => e.name))
+      const newExercises = exercises.filter(ex =>
+        exerciseDataNames.has(ex.name) && !templateExNames.has(ex.name)
+      )
+
+      if (newExercises.length > 0) {
+        const sections = activeSplitWorkout.sections.map(s => ({
+          ...s,
+          exercises: [...s.exercises],
+        }))
+
+        // Build map of template exercise name → section index (for insertion lookup)
+        const templatePos = {}
+        sections.forEach((s, si) => {
+          s.exercises.forEach(e => {
+            const name = typeof e === 'string' ? e : e.name
+            templatePos[name] = si
+          })
+        })
+
+        for (const newEx of newExercises) {
+          const sessionIdx = allSessionNames.indexOf(newEx.name)
+          let insertSi = sections.length - 1
+          let insertAfterName = null
+
+          for (let i = sessionIdx - 1; i >= 0; i--) {
+            const prevName = allSessionNames[i]
+            if (templatePos[prevName] !== undefined) {
+              insertSi = templatePos[prevName]
+              insertAfterName = prevName
+              break
+            }
+          }
+
+          const section = sections[insertSi]
+          let insertIdx
+          if (insertAfterName) {
+            const afterIdx = section.exercises.findIndex(e => {
+              const n = typeof e === 'string' ? e : e.name
+              return n === insertAfterName
+            })
+            insertIdx = afterIdx !== -1 ? afterIdx + 1 : section.exercises.length
+          } else {
+            insertIdx = section.exercises.length
+          }
+
+          section.exercises.splice(insertIdx, 0, newEx.name)
+          templatePos[newEx.name] = insertSi
+        }
+
+        updateSplit(activeSplitId, {
+          workouts: activeSplit.workouts.map(w =>
+            w.id === type ? { ...w, sections } : w
+          ),
+        })
+      }
+    }
 
     // Build share card summary
     const totalVolume = exerciseData.reduce((t, ex) =>
