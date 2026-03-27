@@ -726,10 +726,21 @@ function Step4({ splitName, splitEmoji, workouts, rotation, isEdit, onSave, onBa
           </div>
 
           <div>
-            <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-1.5">Rotation</p>
-            <p className="text-sm text-c-secondary leading-relaxed">
-              {rotation.map((id, i) => `Day ${i + 1}: ${getLabel(id)}`).join(' · ')}
-            </p>
+            <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-2">Rotation</p>
+            <div className="space-y-1">
+              {rotation.map((id, i) => {
+                const isRest = id === 'rest'
+                const emoji  = isRest ? '😴' : (workouts.find(w => w.id === id)?.emoji || '🏋️')
+                const label  = isRest ? 'Rest Day' : (workouts.find(w => w.id === id)?.name || id)
+                return (
+                  <div key={i} className={`flex items-center gap-2 text-sm ${isRest ? 'text-c-muted' : 'text-c-secondary'}`}>
+                    <span className="text-[11px] text-c-muted w-10 shrink-0">Day {i + 1}</span>
+                    <span>{emoji}</span>
+                    <span className={isRest ? 'italic' : 'font-medium'}>{label}</span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
 

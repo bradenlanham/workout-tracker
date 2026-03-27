@@ -51,6 +51,19 @@ export function getNextBbWorkout(sessions, customSequence) {
   return sequence[(idx + 1) % sequence.length]
 }
 
+// Returns the next item in the FULL rotation (including 'rest') after the last session.
+// Use this to detect whether today is a rest day.
+export function getNextRotationItem(sessions, customSequence) {
+  const full = (customSequence && customSequence.length) ? customSequence : BB_WORKOUT_SEQUENCE
+  const bbSessions = sessions.filter(s => s.mode === 'bb' && s.type !== 'custom' && !s.type?.startsWith('tpl_'))
+  if (!bbSessions.length) return full[0]
+  const sorted = [...bbSessions].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const lastType = sorted[0].type
+  const lastPosInFull = full.indexOf(lastType)
+  if (lastPosInFull === -1) return full[0]
+  return full[(lastPosInFull + 1) % full.length]
+}
+
 export function getLastBbSession(sessions, workoutType) {
   const matching = sessions
     .filter(s => s.mode === 'bb' && s.type === workoutType)
@@ -110,28 +123,62 @@ export function playBeep() {
 }
 
 // ── Streaks ─────────────────────────────────────────────────────────────────
-// Counts consecutive calendar days that had at least one logged session.
+// Counts consecutive workout days going backwards, skipping rest days in the
+// rotation so that a scheduled rest day doesn't break the streak.
 
-export function getWorkoutStreak(sessions) {
+function getRotationItemOnDate(dateStr, sessions, rotation) {
+  if (!rotation || !rotation.length) return null
+  const nonRest = rotation.filter(t => t !== 'rest')
+  if (!nonRest.length) return 'rest'
+  const anchors = sessions
+    .filter(s => nonRest.includes(s.type))
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+  if (!anchors.length) return null
+  const anchor    = anchors[0]
+  const anchorIdx = rotation.indexOf(anchor.type)
+  const daysDiff  = Math.round((new Date(dateStr) - new Date(anchor.date.split('T')[0])) / 86400000)
+  return rotation[((anchorIdx + daysDiff) % rotation.length + rotation.length) % rotation.length]
+}
+
+export function getWorkoutStreak(sessions, rotation) {
   if (!sessions.length) return 0
 
-  const uniqueDays = [
-    ...new Set(sessions.map(s => new Date(s.date).toDateString()))
-  ].sort((a, b) => new Date(b) - new Date(a))
+  const toStr = d =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-  if (!uniqueDays.length) return 0
+  const sessionDaySet = new Set(sessions.map(s => s.date.split('T')[0]))
+  const today         = new Date()
+  const todayStr      = toStr(today)
 
-  // Streak is live only if the most recent session is today or yesterday
-  const today     = new Date().toDateString()
-  const yesterday = new Date(Date.now() - 86400000).toDateString()
-  if (uniqueDays[0] !== today && uniqueDays[0] !== yesterday) return 0
+  const mostRecentDay = [...sessions]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))[0]
+    .date.split('T')[0]
 
-  let streak = 1
-  for (let i = 1; i < uniqueDays.length; i++) {
-    const prev = new Date(uniqueDays[i - 1])
-    const curr = new Date(uniqueDays[i])
-    if (Math.round((prev - curr) / 86400000) === 1) streak++
-    else break
+  // Streak is live only if every day from mostRecentDay → today is either a
+  // session or a rest day in the rotation (no missed workout days in between).
+  const msrDate     = new Date(mostRecentDay)
+  const daysToToday = Math.round((new Date(todayStr) - msrDate) / 86400000)
+  for (let d = 1; d <= daysToToday; d++) {
+    const checkD = new Date(msrDate)
+    checkD.setDate(msrDate.getDate() + d)
+    const checkStr = toStr(checkD)
+    if (sessionDaySet.has(checkStr)) continue
+    const rotItem = rotation?.length ? getRotationItemOnDate(checkStr, sessions, rotation) : null
+    if (rotItem !== 'rest') return 0
+  }
+
+  // Count backwards from mostRecentDay, skipping rest days
+  let streak  = 0
+  let current = new Date(mostRecentDay)
+  for (let i = 0; i < 730; i++) {
+    const dStr = toStr(current)
+    if (sessionDaySet.has(dStr)) {
+      streak++
+    } else {
+      const rotItem = rotation?.length ? getRotationItemOnDate(dStr, sessions, rotation) : null
+      if (rotItem !== 'rest') break
+    }
+    current.setDate(current.getDate() - 1)
   }
   return streak
 }

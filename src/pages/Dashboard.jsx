@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getNextBbWorkout, getWorkoutStreak } from '../utils/helpers'
+import { getNextBbWorkout, getNextRotationItem, getWorkoutStreak } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE } from '../data/exercises'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -28,7 +28,7 @@ export default function Dashboard() {
   const theme = getTheme(settings.accentColor)
   const [showMonth, setShowMonth] = useState(false)
 
-  const streak        = getWorkoutStreak(sessions)
+  const streak        = getWorkoutStreak(sessions, rotation)
   const totalSessions = sessions.length
 
   const hour = new Date().getHours()
@@ -39,7 +39,8 @@ export default function Dashboard() {
   const rotation      = activeSplit?.rotation || BB_WORKOUT_SEQUENCE
   const workoutSeq    = rotation.filter(t => t !== 'rest')
 
-  const nextBb = getNextBbWorkout(sessions, rotation)
+  const nextBb            = getNextBbWorkout(sessions, rotation)
+  const nextRotationItem  = getNextRotationItem(sessions, rotation)
 
   const getWorkoutName = (wId) => {
     const w = activeSplit?.workouts?.find(w => w.id === wId)
@@ -57,6 +58,7 @@ export default function Dashboard() {
     const d = s.date ? s.date.split('T')[0] : null
     return d === todayStr
   })
+  const isRestDay = nextRotationItem === 'rest' && !todayLogged
 
   // ── Session map: dateStr → most-recent session that day ───────────────────
   const sessionByDate = {}
@@ -68,16 +70,33 @@ export default function Dashboard() {
     }
   })
 
-  // ── Planned workout N days from today ─────────────────────────────────────
-  // nextBb is "tomorrow's workout" when today is done, "today's workout" when not.
+  // ── Planned workout N days from today (non-rest only, for the CTA card) ──
   function getPlannedWorkout(daysAhead) {
     if (daysAhead < 0) return null
     const startIdx = workoutSeq.indexOf(nextBb)
     const base     = startIdx === -1 ? 0 : startIdx
-    // When todayLogged, nextBb maps to daysAhead=1; when not, to daysAhead=0
     const offset   = todayLogged ? daysAhead - 1 : daysAhead
     if (offset < 0) return null
     return workoutSeq[(base + offset) % workoutSeq.length]
+  }
+
+  // ── Full rotation item N days from today (includes 'rest') ────────────────
+  // Used by the calendar to show rest-day indicators on future dates.
+  function getFullRotationItem(daysAhead) {
+    if (daysAhead < 0) return null
+    const bbSessions = sessions.filter(s => s.mode === 'bb' && s.type !== 'custom' && !s.type?.startsWith('tpl_'))
+    let nextIdx
+    if (!bbSessions.length) {
+      nextIdx = 0
+    } else {
+      const sorted   = [...bbSessions].sort((a, b) => new Date(b.date) - new Date(a.date))
+      const lastType = sorted[0].type
+      const pos      = rotation.indexOf(lastType)
+      nextIdx        = pos === -1 ? 0 : (pos + 1) % rotation.length
+    }
+    const offset = todayLogged ? daysAhead - 1 : daysAhead
+    if (offset < 0) return null
+    return rotation[(nextIdx + offset) % rotation.length]
   }
 
   // ── Per-day info ─────────────────────────────────────────────────────────
@@ -91,10 +110,13 @@ export default function Dashboard() {
       return { type: isToday ? 'today-done' : 'done', session, emoji: getWorkoutEmoji(session.type) }
     }
     if (isToday) {
+      if (isRestDay) return { type: 'today-rest', emoji: '😴' }
       return { type: 'today-pending', emoji: getWorkoutEmoji(nextBb) }
     }
     if (ahead > 0) {
-      const planned = getPlannedWorkout(ahead)
+      const rotItem = getFullRotationItem(ahead)
+      if (rotItem === 'rest') return { type: 'future-rest', emoji: '😴' }
+      const planned = rotItem || getPlannedWorkout(ahead)
       return { type: 'future', planned, emoji: planned ? getWorkoutEmoji(planned) : null }
     }
     return { type: 'empty' }
@@ -170,31 +192,44 @@ export default function Dashboard() {
 
       {/* ── Main CTA ────────────────────────────────────────────────────────── */}
       <div className="px-4 mb-6">
-        <div className={`${theme.bg} rounded-3xl p-6`} style={{ color: theme.contrastText }}>
-          <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
-            {todayLogged ? 'Next in your split' : 'Next Up'}
-          </p>
-          <p className="text-3xl font-bold leading-tight">
-            {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
-          </p>
-          {todayLogged ? (
-            <p className="text-sm mt-1" style={{ opacity: 0.6 }}>
-              Rest up — come back tomorrow 💤
+        {isRestDay ? (
+          <div className="bg-card rounded-3xl p-6">
+            <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted">Today</p>
+            <p className="text-3xl font-bold leading-tight">😴 Rest Day</p>
+            <p className="text-sm mt-2 text-c-muted">
+              Recovery is part of the plan. Come back stronger tomorrow.
             </p>
-          ) : (
-            <>
-              <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
-                {streak > 0 ? `${streak}-day streak 🔥` : 'Start your streak today!'}
+            <p className="text-sm mt-4 font-semibold text-c-dim">
+              Next workout: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+            </p>
+          </div>
+        ) : (
+          <div className={`${theme.bg} rounded-3xl p-6`} style={{ color: theme.contrastText }}>
+            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
+              {todayLogged ? 'Next in your split' : 'Next Up'}
+            </p>
+            <p className="text-3xl font-bold leading-tight">
+              {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+            </p>
+            {todayLogged ? (
+              <p className="text-sm mt-1" style={{ opacity: 0.6 }}>
+                Rest up — come back tomorrow 💤
               </p>
-              <button
-                onClick={() => navigate(`/log/bb/${nextBb}`)}
-                className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
-              >
-                Start Session →
-              </button>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
+                  {streak > 0 ? `${streak}-day streak 🔥` : 'Start your streak today!'}
+                </p>
+                <button
+                  onClick={() => navigate(`/log/bb/${nextBb}`)}
+                  className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+                >
+                  Start Session →
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Weekly calendar strip ───────────────────────────────────────────── */}
@@ -202,12 +237,14 @@ export default function Dashboard() {
         <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-3">This week</p>
         <div className="flex gap-1">
           {weekDays.map((day, i) => {
-            const info       = getDayInfo(day)
-            const isToday    = toDateStr(day) === todayStr
+            const info           = getDayInfo(day)
+            const isToday        = toDateStr(day) === todayStr
             const isTodayDone    = info.type === 'today-done'
             const isTodayPending = info.type === 'today-pending'
+            const isTodayRest    = info.type === 'today-rest'
             const isDone         = info.type === 'done'
             const isFuture       = info.type === 'future'
+            const isFutureRest   = info.type === 'future-rest'
 
             let cellBg = 'bg-white/5'
             if (isTodayDone) cellBg = theme.bg
@@ -229,16 +266,18 @@ export default function Dashboard() {
                   {day.getDate()}
                 </span>
                 {/* Status indicator */}
-                <span className={`text-sm leading-none ${(isFuture || info.type === 'empty') ? 'opacity-25' : ''}`}>
+                <span className={`text-sm leading-none ${(isFuture || isFutureRest || info.type === 'empty') ? 'opacity-25' : ''}`}>
                   {isTodayDone
                     ? '✓'
                     : isDone
                       ? info.emoji
                       : isTodayPending
                         ? <span style={{ opacity: 0.5 }}>{info.emoji}</span>
-                        : isFuture && info.emoji
-                          ? info.emoji
-                          : <span className="text-[8px] text-c-muted">·</span>}
+                        : isTodayRest
+                          ? <span style={{ opacity: 0.5 }}>😴</span>
+                          : (isFuture || isFutureRest) && info.emoji
+                            ? info.emoji
+                            : <span className="text-[8px] text-c-muted">·</span>}
                 </span>
               </button>
             )
@@ -276,13 +315,15 @@ export default function Dashboard() {
                 const isToday        = toDateStr(day) === todayStr
                 const isTodayDone    = info.type === 'today-done'
                 const isTodayPending = info.type === 'today-pending'
+                const isTodayRest    = info.type === 'today-rest'
                 const isDone         = info.type === 'done'
                 const isFuture       = info.type === 'future'
+                const isFutureRest   = info.type === 'future-rest'
 
                 let cellBg   = 'bg-white/5'
                 let textCol  = 'text-c-muted'
-                if (isTodayDone) { cellBg = theme.bg;      textCol = 'text-white' }
-                else if (isDone) { cellBg = theme.bgSubtle; textCol = theme.text  }
+                if (isTodayDone) { cellBg = theme.bg;       textCol = 'text-white' }
+                else if (isDone) { cellBg = theme.bgSubtle; textCol = theme.text   }
 
                 return (
                   <button
@@ -297,7 +338,12 @@ export default function Dashboard() {
                         {isTodayDone ? '✓' : info.emoji}
                       </span>
                     )}
-                    {isFuture && info.emoji && (
+                    {(isTodayRest || isTodayPending) && (
+                      <span className="text-[9px] leading-none mt-0.5 opacity-50">
+                        {isTodayRest ? '😴' : info.emoji}
+                      </span>
+                    )}
+                    {(isFuture || isFutureRest) && info.emoji && (
                       <span className="text-[9px] leading-none mt-0.5 opacity-25">{info.emoji}</span>
                     )}
                   </button>
