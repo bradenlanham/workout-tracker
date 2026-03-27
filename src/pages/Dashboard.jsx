@@ -321,13 +321,13 @@ export default function Dashboard() {
             </p>
           </div>
         ) : (
-          <div className={`${theme.bg} rounded-3xl p-6`} style={{ color: theme.contrastText }}>
+          <div className={`${theme.bg} rounded-3xl p-6 text-center`} style={{ color: theme.contrastText }}>
             <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
               {todayLogged ? 'Next in your split' : 'Next Up'}
             </p>
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-center gap-2">
               <p className="text-3xl font-bold leading-tight">
-                {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+                {getWorkoutName(nextBb)}
               </p>
               <button
                 onClick={() => setShowPreview(true)}
@@ -385,7 +385,7 @@ export default function Dashboard() {
           className="w-full bg-card rounded-2xl p-4 text-center"
         >
           <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-1">Cardio</p>
-          <p className="font-semibold text-c-secondary">Log Cardio</p>
+          <p className="font-semibold text-c-secondary">Log Cardio ›</p>
         </button>
       </div>
 
