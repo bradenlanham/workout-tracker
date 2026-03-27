@@ -127,7 +127,7 @@ export function playBeep() {
 // Counts consecutive workout days going backwards, skipping rest days in the
 // rotation so that a scheduled rest day doesn't break the streak.
 
-function getRotationItemOnDate(dateStr, sessions, rotation) {
+export function getRotationItemOnDate(dateStr, sessions, rotation) {
   if (!rotation || !rotation.length) return null
   const nonRest = rotation.filter(t => t !== 'rest')
   if (!nonRest.length) return 'rest'

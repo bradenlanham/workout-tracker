@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getNextBbWorkout, getNextRotationItem, getWorkoutStreak } from '../utils/helpers'
+import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
 const SORENESS_RATINGS = [
@@ -110,7 +110,7 @@ export default function Dashboard() {
   const streak        = getWorkoutStreak(sessions, rotation)
 
   const nextBb            = getNextBbWorkout(sessions, rotation)
-  const nextRotationItem  = getNextRotationItem(sessions, rotation)
+  const nextRotationItem  = getRotationItemOnDate(toDateStr(new Date()), sessions, rotation) ?? rotation[0]
 
   const getWorkoutName = (wId) => {
     const w = activeSplit?.workouts?.find(w => w.id === wId)
@@ -228,21 +228,18 @@ export default function Dashboard() {
 
   // ── Full rotation item N days from today (includes 'rest') ────────────────
   // Used by the calendar to show rest-day indicators on future dates.
+  // Advances one slot per calendar day from the last logged session's position.
   function getFullRotationItem(daysAhead) {
     if (daysAhead < 0) return null
     const bbSessions = sessions.filter(s => s.mode === 'bb' && s.type !== 'custom' && !s.type?.startsWith('tpl_'))
-    let nextIdx
-    if (!bbSessions.length) {
-      nextIdx = 0
-    } else {
-      const sorted   = [...bbSessions].sort((a, b) => new Date(b.date) - new Date(a.date))
-      const lastType = sorted[0].type
-      const pos      = rotation.indexOf(lastType)
-      nextIdx        = pos === -1 ? 0 : (pos + 1) % rotation.length
-    }
-    const offset = todayLogged ? daysAhead - 1 : daysAhead
-    if (offset < 0) return null
-    return rotation[(nextIdx + offset) % rotation.length]
+    if (!bbSessions.length) return rotation[daysAhead % rotation.length]
+    const sorted     = [...bbSessions].sort((a, b) => new Date(b.date) - new Date(a.date))
+    const anchor     = sorted[0]
+    const anchorIdx  = rotation.indexOf(anchor.type)
+    if (anchorIdx === -1) return rotation[daysAhead % rotation.length]
+    const daysSinceAnchor = Math.round((today - new Date(anchor.date.split('T')[0])) / 86400000)
+    const todayIdx   = ((anchorIdx + daysSinceAnchor) % rotation.length + rotation.length) % rotation.length
+    return rotation[(todayIdx + daysAhead) % rotation.length]
   }
 
   // ── Per-day info ─────────────────────────────────────────────────────────
