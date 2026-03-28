@@ -214,7 +214,7 @@ function SessionScreen({
     : displaySeconds > 0
 
   return (
-    <div className="min-h-screen bg-base pb-32">
+    <div className="min-h-screen bg-base" style={{ paddingBottom: '120px' }}>
       <div className="sticky top-0 bg-base z-10 px-4 pt-12 pb-3">
         <button onClick={onBack} className="text-sm text-c-muted mb-3 block">← back</button>
         <h1 className="text-xl font-bold">{cardioType}</h1>
@@ -405,27 +405,25 @@ function SessionScreen({
         left: 0,
         right: 0,
         padding: '12px 16px',
-        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
-        background: 'var(--bg-base)',
-        borderTop: '1px solid var(--bg-item)',
-        zIndex: 40,
+        paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+        background: 'var(--bg-base, #121212)',
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        zIndex: 50,
         display: 'flex',
-        flexDirection: 'column',
         gap: '8px',
       }}>
         <button
-          onClick={handleLog}
-          disabled={!durationReady}
-          className={`w-full py-4 rounded-2xl font-bold text-lg transition-opacity ${theme.bg} text-white disabled:opacity-40`}
-          style={{ color: theme.contrastText }}
+          onClick={onDiscard}
+          style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none', fontSize: '16px', cursor: 'pointer' }}
         >
-          Log Session →
+          Cancel
         </button>
         <button
-          onClick={onDiscard}
-          className="w-full py-2.5 rounded-2xl text-red-400 text-sm font-semibold bg-red-500/10 border border-red-500/20"
+          onClick={handleLog}
+          disabled={!durationReady}
+          style={{ flex: 2, padding: '14px', borderRadius: '12px', background: durationReady ? (theme?.hex || '#3B82F6') : 'rgba(255,255,255,0.2)', color: 'white', border: 'none', fontSize: '16px', fontWeight: '600', cursor: durationReady ? 'pointer' : 'not-allowed', opacity: durationReady ? 1 : 0.5 }}
         >
-          Discard Session
+          Log Session
         </button>
       </div>
     </div>
