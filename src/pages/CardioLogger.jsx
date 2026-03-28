@@ -398,8 +398,21 @@ function SessionScreen({
         </div>
       </div>
 
-      {/* ── Footer ──────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-4 pt-3 pb-6 z-40 space-y-2">
+      {/* ── Fixed footer ─────────────────────────────────────────── */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: '12px 16px',
+        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+        background: 'var(--bg-base)',
+        borderTop: '1px solid var(--bg-item)',
+        zIndex: 40,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+      }}>
         <button
           onClick={handleLog}
           disabled={!durationReady}
