@@ -7,7 +7,33 @@ export default function RestTimer() {
   const { settings, updateSettings, restEndTimestamp, setRestEndTimestamp } = useStore()
   const [expanded, setExpanded] = useState(false)
   const [customDuration, setCustomDuration] = useState(settings.restTimerDuration)
+  const [position, setPosition] = useState({ x: null, y: null })
+  const dragRef = useRef(null)
+  const dragStart = useRef(null)
   const location = useLocation()
+
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0]
+    const rect = dragRef.current.getBoundingClientRect()
+    dragStart.current = {
+      offsetX: touch.clientX - rect.left,
+      offsetY: touch.clientY - rect.top,
+    }
+  }
+
+  const handleTouchMove = (e) => {
+    if (!dragStart.current) return
+    e.preventDefault()
+    const touch = e.touches[0]
+    setPosition({
+      x: touch.clientX - dragStart.current.offsetX,
+      y: touch.clientY - dragStart.current.offsetY,
+    })
+  }
+
+  const handleTouchEnd = () => {
+    dragStart.current = null
+  }
 
   // ── Compute timeLeft from stored timestamp ────────────────────────────────
 
@@ -100,7 +126,27 @@ export default function RestTimer() {
   const ss = String(currentTimeLeft % 60).padStart(2, '0')
 
   return (
-    <div className="fixed bottom-16 right-3 z-50 flex flex-col items-end gap-2">
+    <div
+      ref={dragRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{
+        position: 'fixed',
+        ...(position.x !== null ? {
+          left: position.x,
+          top: position.y,
+          right: 'auto',
+          bottom: 'auto',
+        } : {
+          right: 12,
+          bottom: 64,
+        }),
+        zIndex: 50,
+        touchAction: 'none',
+      }}
+      className="flex flex-col items-end gap-2"
+    >
       {expanded && (
         <div className="bg-card border border-c-base rounded-2xl p-4 shadow-xl w-52">
           <p className="text-xs text-c-dim mb-2 font-medium">REST DURATION</p>

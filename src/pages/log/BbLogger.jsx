@@ -1316,22 +1316,26 @@ export default function BbLogger() {
           <ClipGraphic />
         </div>
 
-        <div className="flex items-center justify-between px-4 pb-2" style={{ paddingRight: '4rem' }}>
-          <button
-            onClick={() => navigate(-1)}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-black/25"
-          >
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <span className="text-sm font-semibold" style={{ opacity: 0.7 }}>
+        <div className="flex items-center px-4 pb-2">
+          <div className="flex-1 flex justify-start">
+            <button
+              onClick={() => navigate(-1)}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-black/25"
+            >
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          </div>
+          <span className="text-sm font-semibold text-center" style={{ opacity: 0.7 }}>
             {loggedSets} set{loggedSets !== 1 ? 's' : ''} logged
           </span>
-          <div className="bg-black/25 rounded-full px-3 py-1.5">
-            <span className="text-sm font-mono font-bold text-white">
-              {formatElapsed(elapsedSeconds)}
-            </span>
+          <div className="flex-1 flex justify-end">
+            <div className="bg-black/25 rounded-full px-3 py-1.5">
+              <span className="text-sm font-mono font-bold text-white">
+                {formatElapsed(elapsedSeconds)}
+              </span>
+            </div>
           </div>
         </div>
 
