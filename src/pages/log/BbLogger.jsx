@@ -26,8 +26,8 @@ const BAR_CYCLE = [45, 0, 25]
 const CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨']
 const circled = n => n >= 1 && n <= 9 ? CIRCLED[n - 1] : `×${n}`
 const emptyPlates = () => ({ 100: 0, 45: 0, 35: 0, 25: 0, 10: 0, 5: 0, 2.5: 0 })
-const calcTotal = (plates, barWeight) =>
-  Object.entries(plates).reduce((s, [w, c]) => s + Number(w) * c * 2, 0) + barWeight
+const calcTotal = (plates, barWeight, multiplier = 2) =>
+  Object.entries(plates).reduce((s, [w, c]) => s + Number(w) * c * multiplier, 0) + barWeight
 const formatPlateBreakdown = (plates) =>
   Object.entries(plates)
     .filter(([, c]) => c > 0)
@@ -115,17 +115,18 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier }) {
   const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
-  const total     = calcTotal(plates, barWeight)
+  const mult      = plateMultiplier || 2
+  const total     = calcTotal(plates, barWeight, mult)
   const r         = parseInt(set.reps) || 0
   const isPR      = (total > maxWeight && total > 0) || (r > maxReps && r > 0)
 
   const update = (newPlates, newBar) => {
-    const newTotal = calcTotal(newPlates, newBar)
-    onChange({ ...set, plates: newPlates, barWeight: newBar, weight: String(newTotal), plateLoaded: true })
+    const newTotal = calcTotal(newPlates, newBar, mult)
+    onChange({ ...set, plates: newPlates, barWeight: newBar, weight: String(newTotal), plateLoaded: true, plateMultiplier: mult })
   }
   const addPlate    = plate => update({ ...plates, [plate]: (plates[plate] || 0) + 1 }, barWeight)
   const removePlate = plate => update({ ...plates, [plate]: Math.max(0, (plates[plate] || 0) - 1) }, barWeight)
@@ -133,7 +134,6 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     const idx = BAR_CYCLE.indexOf(barWeight)
     const newBar = BAR_CYCLE[(idx + 1) % BAR_CYCLE.length]
     update(plates, newBar)
-    // barDefault is synced inside updateSet to avoid stale-closure overwrite
   }
 
   return (
@@ -149,7 +149,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           type="number"
           inputMode="numeric"
           value={set.reps}
-          onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total) })}
+          onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total), plateMultiplier: mult })}
           placeholder={set.prevReps || 'reps'}
           className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
           min={0}
@@ -171,6 +171,15 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           className="h-8 px-2.5 rounded-lg bg-item text-c-secondary text-xs font-semibold shrink-0"
         >
           Bar:{barWeight === 0 ? '—' : barWeight}
+        </button>
+        <button
+          type="button"
+          onClick={onToggleMultiplier}
+          className={`h-8 px-2.5 rounded-lg text-xs font-bold shrink-0 transition-colors ${
+            mult === 1 ? 'bg-amber-500/20 border border-amber-500/40 text-amber-400' : 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
+          }`}
+        >
+          {mult}×
         </button>
         {PLATE_OPTIONS.map(plate => {
           const count = plates[plate] || 0
@@ -206,7 +215,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier }) {
   if (plateLoaded) {
     return (
       <PlateSetRow
@@ -217,6 +226,8 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         onDelete={onDelete}
         onBarChange={onBarChange}
         theme={theme}
+        plateMultiplier={plateMultiplier}
+        onToggleMultiplier={onToggleMultiplier}
       />
     )
   }
@@ -440,7 +451,7 @@ function ExerciseItem({
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
 
-          {/* Plate mode toggles + Last session */}
+          {/* Plate mode + Uni toggles + Last session */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -452,6 +463,17 @@ function ExerciseItem({
               }`}
             >
               <span>🏋️</span> Plates
+            </button>
+            <button
+              type="button"
+              onClick={() => onUpdate({ ...exercise, unilateral: !exercise.unilateral })}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                exercise.unilateral
+                  ? 'bg-purple-500/20 border border-purple-500/40 text-purple-400'
+                  : 'bg-item text-c-dim'
+              }`}
+            >
+              Uni
             </button>
             {prevSets.length > 0 && (
               <button
@@ -499,6 +521,17 @@ function ExerciseItem({
                 onDelete={() => deleteSet(i)}
                 theme={theme}
                 plateLoaded={exercise.plateLoaded}
+                plateMultiplier={exercise.plateMultiplier || 2}
+                onToggleMultiplier={() => {
+                  const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
+                  // Recalculate all set weights with new multiplier
+                  const updatedSets = exercise.sets.map(s => {
+                    if (!s.plates) return s
+                    const newTotal = calcTotal(s.plates, s.barWeight ?? 45, newMult)
+                    return { ...s, weight: String(newTotal), plateMultiplier: newMult }
+                  })
+                  onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
+                }}
               />
             </div>
           ))}
@@ -608,6 +641,103 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
         </div>
         <button onClick={onClose} className="w-full mt-3 py-3 rounded-xl bg-item text-c-dim font-semibold">
           Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Post-session comparison screen ────────────────────────────────────────────
+
+function SessionComparison({ currentExercises, lastSession, theme, onContinue }) {
+  if (!lastSession?.data?.exercises?.length) {
+    return null
+  }
+
+  const lastExMap = {}
+  lastSession.data.exercises.forEach(ex => { lastExMap[ex.name] = ex })
+
+  const comparisons = currentExercises
+    .filter(ex => ex.sets?.some(s => s.weight > 0 || s.reps > 0))
+    .map(ex => {
+      const prev = lastExMap[ex.name]
+      const curVol = ex.sets.reduce((t, s) => t + (s.weight || 0) * (s.reps || 0), 0)
+      if (!prev) return { name: ex.name, curVol, prevVol: 0, isNew: true }
+      const prevVol = prev.sets.reduce((t, s) => t + (s.weight || 0) * (s.reps || 0), 0)
+      return { name: ex.name, curVol, prevVol }
+    })
+    .filter(c => c.curVol > 0 || c.prevVol > 0)
+
+  const totalCurVol  = comparisons.reduce((t, c) => t + c.curVol, 0)
+  const totalPrevVol = comparisons.reduce((t, c) => t + c.prevVol, 0)
+  const totalDiffPct = totalPrevVol > 0 ? ((totalCurVol - totalPrevVol) / totalPrevVol * 100) : null
+
+  const formatVol = (v) => v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')}k` : `${v}`
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] bg-base flex flex-col items-center overflow-y-auto"
+      style={{
+        paddingTop: 'max(1.5rem, env(safe-area-inset-top, 1.5rem))',
+        paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))',
+      }}
+    >
+      <div className="w-full max-w-sm px-4 flex flex-col items-center gap-4">
+
+        {/* Header */}
+        <div className="w-full text-center">
+          <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-1">vs Last Session</p>
+          <h2 className="text-2xl font-bold">
+            {totalDiffPct !== null ? (
+              <span className={totalDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                {totalDiffPct >= 0 ? '↑' : '↓'} {Math.abs(totalDiffPct).toFixed(1)}% Volume
+              </span>
+            ) : (
+              <span className="text-c-primary">First Session Logged</span>
+            )}
+          </h2>
+          {totalDiffPct !== null && (
+            <p className="text-sm text-c-dim mt-1">
+              {formatVol(totalPrevVol)} → {formatVol(totalCurVol)} lbs
+            </p>
+          )}
+        </div>
+
+        {/* Exercise rows */}
+        <div className="w-full bg-card rounded-2xl overflow-hidden">
+          {comparisons.map((c, i) => {
+            const diff = c.prevVol > 0 ? ((c.curVol - c.prevVol) / c.prevVol * 100) : null
+            return (
+              <div
+                key={i}
+                className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-c-base' : ''}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{c.name}</p>
+                  <p className="text-xs text-c-muted">
+                    {c.isNew ? 'New' : `${formatVol(c.prevVol)} → ${formatVol(c.curVol)}`}
+                  </p>
+                </div>
+                {diff !== null ? (
+                  <div className={`flex items-center gap-1 shrink-0 ${diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className="text-sm font-bold">{diff >= 0 ? '↑' : '↓'}</span>
+                    <span className="text-sm font-bold">{Math.abs(diff).toFixed(0)}%</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-c-muted font-semibold shrink-0">NEW</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Continue button */}
+        <button
+          onClick={onContinue}
+          className={`${theme.bg} text-white font-bold py-3.5 px-14 rounded-2xl text-base`}
+          style={{ color: theme.contrastText }}
+        >
+          Continue
         </button>
       </div>
     </div>
@@ -996,6 +1126,8 @@ export default function BbLogger() {
   const [showAddPanel,   setShowAddPanel]   = useState(false)
   const [showConfirm,    setShowConfirm]    = useState(false)
   const reorderSection = null // reorder UI removed
+  const [showComparison, setShowComparison] = useState(false)
+  const [comparisonData, setComparisonData] = useState(null)
   const [showSummary,    setShowSummary]    = useState(false)
   const [summaryData,    setSummaryData]    = useState(null)
   const [savedSessionId, setSavedSessionId] = useState(null)
@@ -1082,15 +1214,23 @@ export default function BbLogger() {
       .map(ex => {
         const filledSets = ex.sets.filter(s => s.reps || s.weight)
         if (!filledSets.length) return null
+        const uni = !!ex.unilateral
         return {
           name:  ex.name,
           notes: ex.notes,
           completedAt: ex.completedAt || 0,
+          unilateral: uni,
+          plates: ex.plateLoaded ? ex.sets.map(s => s.plates ? { plates: s.plates, barWeight: s.barWeight } : null) : undefined,
           sets: filledSets.map(s => {
             const { maxWeight, maxReps } = getExercisePRs(sessions, ex.name)
-            const w = parseFloat(s.weight) || 0
+            const rawW = parseFloat(s.weight) || 0
+            const w = uni ? rawW * 2 : rawW
             const r = parseInt(s.reps)     || 0
-            return { type: s.type, reps: r, weight: w, isNewPR: (w > maxWeight && w > 0) || (r > maxReps && r > 0) }
+            return {
+              type: s.type, reps: r, weight: w, rawWeight: rawW,
+              isNewPR: (w > maxWeight && w > 0) || (r > maxReps && r > 0),
+              ...(s.plates ? { plates: s.plates, barWeight: s.barWeight } : {}),
+            }
           }),
         }
       })
@@ -1261,7 +1401,13 @@ export default function BbLogger() {
       theme,
     })
     setShowConfirm(false)
-    setShowSummary(true)
+    // Show comparison screen if there's a previous session, then share card
+    if (lastSession?.data?.exercises?.length) {
+      setComparisonData(exerciseData)
+      setShowComparison(true)
+    } else {
+      setShowSummary(true)
+    }
   }
 
   // ── "Log Now" flow: save workout then go to CardioLogger ─────────────────
@@ -1443,6 +1589,15 @@ export default function BbLogger() {
           onCancel={() => setShowConfirm(false)}
           theme={theme}
           todayCardio={todayCardio}
+        />
+      )}
+
+      {showComparison && comparisonData && (
+        <SessionComparison
+          currentExercises={comparisonData}
+          lastSession={lastSession}
+          theme={theme}
+          onContinue={() => { setShowComparison(false); setShowSummary(true) }}
         />
       )}
 

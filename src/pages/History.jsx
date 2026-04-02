@@ -158,7 +158,7 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme 
 
 // ── Session detail modal ───────────────────────────────────────────────────────
 
-function buildShareData(session, settings, theme, splits) {
+function buildShareData(session, settings, theme, splits, attachedCardio) {
   const exercises = session.data?.exercises || []
   const totalVolume = exercises.reduce((t, ex) =>
     t + ex.sets.reduce((s, set) => s + (set.reps || 0) * (set.weight || 0), 0), 0)
@@ -192,7 +192,17 @@ function buildShareData(session, settings, theme, splits) {
     totalPRs,
     exerciseSummary,
     grade: session.grade,
-    cardio: session.cardio || { completed: session.completedCardio || false },
+    cardio: session.cardio?.completed
+      ? session.cardio
+      : attachedCardio
+        ? {
+            completed: true,
+            type: attachedCardio.type,
+            duration: attachedCardio.duration ? Math.round(attachedCardio.duration / 60) : null,
+            heartRate: attachedCardio.maxHR || attachedCardio.minHR || null,
+            notes: attachedCardio.notes || '',
+          }
+        : { completed: session.completedCardio || false },
     theme,
   }
 }
@@ -206,9 +216,12 @@ function Stat({ label, value }) {
   )
 }
 
+const GRADE_OPTIONS = ['D', 'C', 'B', 'A', 'A+']
+
 function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showShareCard, setShowShareCard] = useState(false)
+  const [showGradePicker, setShowGradePicker] = useState(false)
   const { settings, updateSession, cardioSessions, splits } = useStore()
   const theme = getTheme(settings.accentColor)
   const d        = session.data || {}
@@ -222,7 +235,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   if (showShareCard) {
     return (
       <ShareCard
-        data={buildShareData(session, settings, theme, splits)}
+        data={buildShareData(session, settings, theme, splits, attachedCardio)}
         onDone={() => setShowShareCard(false)}
         sessionId={session.id}
         onUpdateSession={updateSession}
@@ -257,10 +270,16 @@ function SessionDetail({ session, onClose, onDelete }) {
               <p className="text-sm text-c-dim">{formatDate(session.date)} · {formatTime(session.date)}</p>
               {session.duration && <p className="text-xs text-c-muted">{session.duration} min session</p>}
               <div className="flex items-center gap-2 mt-1">
-                {session.grade && (
-                  <span className="text-xs font-bold bg-item px-2 py-0.5 rounded-lg">{session.grade}</span>
-                )}
+                <button
+                  onClick={() => setShowGradePicker(v => !v)}
+                  className="text-xs font-bold bg-item px-2 py-0.5 rounded-lg"
+                >
+                  {session.grade || 'Add Grade'}
+                </button>
                 {session.completedCardio === true && (
+                  <span className="text-xs text-emerald-400 font-semibold">Cardio ✓</span>
+                )}
+                {attachedCardio && !session.completedCardio && (
                   <span className="text-xs text-emerald-400 font-semibold">Cardio ✓</span>
                 )}
                 {session.soreness?.rating && (
@@ -269,6 +288,24 @@ function SessionDetail({ session, onClose, onDelete }) {
                   </span>
                 )}
               </div>
+              {showGradePicker && (
+                <div className="flex items-center gap-1.5 mt-2">
+                  {GRADE_OPTIONS.map(g => (
+                    <button
+                      key={g}
+                      onClick={() => { updateSession(session.id, { grade: g }); setShowGradePicker(false) }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                        session.grade === g
+                          ? `${theme.bg} text-white`
+                          : 'bg-item text-c-dim'
+                      }`}
+                      style={session.grade === g ? { color: theme.contrastText } : {}}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
