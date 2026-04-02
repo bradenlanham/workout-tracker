@@ -158,7 +158,7 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme 
 
 // ── Session detail modal ───────────────────────────────────────────────────────
 
-function buildShareData(session, settings, theme) {
+function buildShareData(session, settings, theme, splits) {
   const exercises = session.data?.exercises || []
   const totalVolume = exercises.reduce((t, ex) =>
     t + ex.sets.reduce((s, set) => s + (set.reps || 0) * (set.weight || 0), 0), 0)
@@ -183,8 +183,8 @@ function buildShareData(session, settings, theme) {
   })
   return {
     userName: settings.userName || '',
-    workoutName: BB_WORKOUT_NAMES[session.type] || session.type,
-    workoutEmoji: BB_WORKOUT_EMOJI[session.type] || '🏋️',
+    workoutName: resolveWorkoutName(session.type, splits),
+    workoutEmoji: resolveWorkoutEmoji(session.type, splits),
     dateStr,
     durationStr,
     totalVolume,
@@ -209,12 +209,12 @@ function Stat({ label, value }) {
 function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showShareCard, setShowShareCard] = useState(false)
-  const { settings, updateSession, cardioSessions } = useStore()
+  const { settings, updateSession, cardioSessions, splits } = useStore()
   const theme = getTheme(settings.accentColor)
   const d        = session.data || {}
   const isBb     = session.mode === 'bb'
-  const sessionName  = BB_WORKOUT_NAMES[session.type] || session.type
-  const sessionEmoji = BB_WORKOUT_EMOJI[session.type] || '🏋️'
+  const sessionName  = resolveWorkoutName(session.type, splits)
+  const sessionEmoji = resolveWorkoutEmoji(session.type, splits)
 
   // Find any cardio session attached to this strength session
   const attachedCardio = cardioSessions?.find(c => c.attachedToSessionId === session.id)
@@ -222,7 +222,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   if (showShareCard) {
     return (
       <ShareCard
-        data={buildShareData(session, settings, theme)}
+        data={buildShareData(session, settings, theme, splits)}
         onDone={() => setShowShareCard(false)}
         sessionId={session.id}
         onUpdateSession={updateSession}
@@ -448,11 +448,11 @@ function CardioSessionDetail({ session, onClose, onDelete }) {
 
 // ── Session card ───────────────────────────────────────────────────────────────
 
-function SessionCard({ session, onClick, themeHex }) {
+function SessionCard({ session, onClick, themeHex, splits }) {
   const d    = session.data || {}
 
-  const name  = BB_WORKOUT_NAMES[session.type] || session.type
-  const emoji = BB_WORKOUT_EMOJI[session.type] || '🏋️'
+  const name  = resolveWorkoutName(session.type, splits)
+  const emoji = resolveWorkoutEmoji(session.type, splits)
 
   const subtitle = `${d.exercises?.filter(e => e.sets.some(s => s.reps)).length || 0} exercises · ${d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0} sets`
 
@@ -513,8 +513,28 @@ function CardioSessionCard({ session, onClick }) {
 
 // ── Main History ───────────────────────────────────────────────────────────────
 
+// ── Resolve workout name / emoji from splits + built-in data ──────────────────
+
+function resolveWorkoutName(type, splits) {
+  if (BB_WORKOUT_NAMES[type]) return BB_WORKOUT_NAMES[type]
+  for (const split of (splits || [])) {
+    const w = split.workouts?.find(w => w.id === type)
+    if (w?.name) return w.name
+  }
+  return type
+}
+
+function resolveWorkoutEmoji(type, splits) {
+  if (BB_WORKOUT_EMOJI[type]) return BB_WORKOUT_EMOJI[type]
+  for (const split of (splits || [])) {
+    const w = split.workouts?.find(w => w.id === type)
+    if (w?.emoji) return w.emoji
+  }
+  return '🏋️'
+}
+
 export default function History() {
-  const { sessions, settings, deleteSession, cardioSessions, deleteCardioSession } = useStore()
+  const { sessions, settings, deleteSession, cardioSessions, deleteCardioSession, splits } = useStore()
   const theme = getTheme(settings.accentColor)
   const backgroundTheme = settings.backgroundTheme
 
@@ -587,7 +607,7 @@ export default function History() {
                 </p>
                 <div className="space-y-2">
                   {group.strength.map(s => (
-                    <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} themeHex={theme.hex} />
+                    <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} themeHex={theme.hex} splits={splits} />
                   ))}
                   {group.cardio.map(s => (
                     <CardioSessionCard key={s.id} session={s} onClick={() => setSelectedCardio(s.id)} />

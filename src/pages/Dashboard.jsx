@@ -340,7 +340,7 @@ export default function Dashboard() {
     <div className="min-h-screen pb-28">
 
       {/* ── Greeting ────────────────────────────────────────────────────────── */}
-      <div className="px-4 pt-8 pb-5" style={{ paddingTop: 'max(32px, env(safe-area-inset-top))' }}>
+      <div className="px-4 pt-14 pb-5" style={{ paddingTop: 'max(56px, calc(env(safe-area-inset-top) + 24px))' }}>
         <p className="text-c-muted text-sm font-medium">
           {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
@@ -351,43 +351,43 @@ export default function Dashboard() {
 
       {/* ── Stats rows ──────────────────────────────────────────────────────── */}
       <div className="px-4 mb-5">
-        <div className="bg-card rounded-2xl p-4 space-y-3">
+        <div className="bg-card rounded-2xl px-3 py-2.5 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex-1 text-center">
-              <p className={`text-[22px] font-bold leading-none ${theme.text}`}>{formatVolume(volumeLastWeek)}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Last Week</p>
+              <p className={`text-lg font-bold leading-none ${theme.text}`}>{formatVolume(volumeLastWeek)}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Last Week</p>
             </div>
-            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="w-px h-6 bg-white/10 mx-1.5" />
             <div className="flex-1 text-center">
-              <p className="text-[22px] font-bold leading-none text-c-primary">{formatVolume(volumeThisWeek)}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">This Week</p>
+              <p className="text-lg font-bold leading-none text-c-primary">{formatVolume(volumeThisWeek)}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">This Week</p>
             </div>
-            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="w-px h-6 bg-white/10 mx-1.5" />
             <div className="flex-1 text-center">
-              <p className="text-[22px] font-bold leading-none text-c-primary">{splitSessionCount}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Sessions (Split)</p>
+              <p className="text-lg font-bold leading-none text-c-primary">{splitSessionCount}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Sessions (Split)</p>
             </div>
           </div>
           <div className="w-full h-px bg-white/10" />
           <div className="flex items-center justify-between">
             <div className="flex-1 text-center">
-              <p className="text-[22px] font-bold leading-none text-c-primary">{streak > 0 ? `🔥 ${streak}` : '—'}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Day Streak</p>
+              <p className="text-lg font-bold leading-none text-c-primary">{streak > 0 ? `🔥 ${streak}` : '—'}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Day Streak</p>
             </div>
-            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="w-px h-6 bg-white/10 mx-1.5" />
             <div className="flex-1 text-center">
-              <p className="text-[22px] font-bold leading-none text-c-primary">{totalSessions}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Total Sessions</p>
+              <p className="text-lg font-bold leading-none text-c-primary">{totalSessions}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Total Sessions</p>
             </div>
-            <div className="w-px h-8 bg-white/10 mx-2" />
+            <div className="w-px h-6 bg-white/10 mx-1.5" />
             <div className="flex-1 text-center">
-              <p className="text-[22px] font-bold leading-none text-c-primary">
+              <p className="text-lg font-bold leading-none text-c-primary">
                 {sessions.filter(s => {
                   if (activeSplit?.createdAt && new Date(s.date) < new Date(activeSplit.createdAt)) return false
                   return (s.data?.exercises || []).some(ex => ex.sets?.some(set => set.isNewPR))
                 }).length || '—'}
               </p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">PRs This Split</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">PRs This Split</p>
             </div>
           </div>
         </div>

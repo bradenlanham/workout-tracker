@@ -547,28 +547,11 @@ function ExerciseItem({
 
 // ── Group section label ────────────────────────────────────────────────────────
 
-function GroupLabel({ label, isCompleted, onReorder, isReordering }) {
+function GroupLabel({ label, isCompleted }) {
   return (
     <div className={`flex items-center gap-2 px-1 pt-2 pb-1 ${isCompleted ? 'text-emerald-400' : 'text-c-muted'}`}>
       <span className="text-xs font-bold uppercase tracking-widest">{label}</span>
       <div className="flex-1 h-px bg-current opacity-20" />
-      {!isCompleted && onReorder && (
-        isReordering ? (
-          <button
-            onClick={onReorder}
-            className="text-xs font-semibold text-emerald-400 px-2.5 py-1 bg-emerald-500/20 rounded-lg shrink-0"
-          >
-            Done
-          </button>
-        ) : (
-          <button
-            onClick={onReorder}
-            className="text-xs text-c-muted underline shrink-0"
-          >
-            Reorder
-          </button>
-        )
-      )}
     </div>
   )
 }
@@ -970,7 +953,7 @@ export default function BbLogger() {
 
   const savedSession = (activeSession && activeSession.type === type) ? activeSession : null
 
-  const defaultExercises = groups.flatMap(group =>
+  const templateExercises = groups.flatMap(group =>
     group.exercises.map((name, i) => ({
       id:    `${group.label}-${name}-${i}`,
       name,
@@ -985,11 +968,34 @@ export default function BbLogger() {
     }))
   )
 
+  // Merge in exercises from the last session of this type that aren't already
+  // in the template — this ensures custom exercises always reappear.
+  const defaultExercises = (() => {
+    const lastSess = getLastBbSession(sessions, type)
+    if (!lastSess?.data?.exercises?.length) return templateExercises
+    const templateNames = new Set(templateExercises.map(e => e.name))
+    const extras = lastSess.data.exercises
+      .filter(ex => !templateNames.has(ex.name))
+      .map((ex, i) => ({
+        id:    `prev-${ex.name}-${i}`,
+        name:  ex.name,
+        group: 'Added',
+        sets:  [{ type: firstSetType, reps: '', weight: '' }],
+        notes: '',
+        done:  false,
+        plateMode: false,
+        platesPerSide: 2,
+        plateWeight: 45,
+        barWeight: 45,
+      }))
+    return [...templateExercises, ...extras]
+  })()
+
   const [exercises,      setExercises]      = useState(() => savedSession?.exercises || defaultExercises)
   const [sessionNotes,   setSessionNotes]   = useState(() => savedSession?.sessionNotes || '')
   const [showAddPanel,   setShowAddPanel]   = useState(false)
   const [showConfirm,    setShowConfirm]    = useState(false)
-  const [reorderSection, setReorderSection] = useState(null)
+  const reorderSection = null // reorder UI removed
   const [showSummary,    setShowSummary]    = useState(false)
   const [summaryData,    setSummaryData]    = useState(null)
   const [savedSessionId, setSavedSessionId] = useState(null)
@@ -1352,14 +1358,11 @@ export default function BbLogger() {
       {/* ── Exercise groups ──────────────────────────────────────────────── */}
       <div className="px-4 pt-3 space-y-2">
         {renderGroups.map(group => {
-          const isReordering = !group.isCompleted && reorderSection === group.label
           return (
             <div key={group.label}>
               <GroupLabel
                 label={group.isCompleted ? '✓ Completed' : group.label}
                 isCompleted={group.isCompleted}
-                onReorder={!group.isCompleted ? () => setReorderSection(isReordering ? null : group.label) : undefined}
-                isReordering={isReordering}
               />
               <div className="space-y-2">
                 {group.exercises.map((ex, idx) => {
@@ -1376,7 +1379,7 @@ export default function BbLogger() {
                       isLast={idx === groupExes.length - 1}
                       onMoveUp={() => moveExercise(ex.id, 'up')}
                       onMoveDown={() => moveExercise(ex.id, 'down')}
-                      reorderMode={isReordering}
+                      reorderMode={false}
                     />
                   )
                 })}
