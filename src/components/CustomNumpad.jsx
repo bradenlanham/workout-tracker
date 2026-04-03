@@ -73,6 +73,12 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     config?.onNext?.()
   }, [config])
 
+  const handleHide = useCallback((e) => {
+    e.preventDefault()
+    document.activeElement?.blur()
+    onClose()
+  }, [onClose])
+
   const handleDone = useCallback((e) => {
     e.preventDefault()
     // Blur synchronously before closing so any browser-triggered refocus (e.g. Chrome/Safari
@@ -138,6 +144,30 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           ].join(', '),
         }}
       >
+        {/* Hide ⌄ – collapse numpad without committing */}
+        <button
+          onPointerDown={handleHide}
+          style={{
+            backgroundColor: 'transparent',
+            color: 'var(--text-muted)',
+            fontWeight: 700,
+            fontSize: 20,
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.10)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'manipulation',
+          }}
+        >
+          ⌄
+        </button>
+
         {/* Field label */}
         <span
           style={{
