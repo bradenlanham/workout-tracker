@@ -150,7 +150,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           inputMode="numeric"
           value={set.reps}
           onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total), plateMultiplier: mult })}
-          placeholder={set.prevReps || 'reps'}
+          placeholder="reps"
           className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
           min={0}
         />
@@ -246,7 +246,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         inputMode="decimal"
         value={set.weight}
         onChange={e => onChange({ ...set, weight: e.target.value })}
-        placeholder={set.prevWeight || 'lbs'}
+        placeholder="lbs"
         className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
@@ -256,7 +256,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         inputMode="numeric"
         value={set.reps}
         onChange={e => onChange({ ...set, reps: e.target.value })}
-        placeholder={set.prevReps || 'reps'}
+        placeholder="reps"
         className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
@@ -294,13 +294,10 @@ function ExerciseItem({
       type:       newType,
       reps:       '',
       weight:     '',
-      prevWeight: prevSet?.weight ? String(prevSet.weight) : '',
-      prevReps:   prevSet?.reps   ? String(prevSet.reps)   : '',
     }
     if (exercise.plateLoaded) {
-      newSet.plates    = prevSet?.plates    ?? emptyPlates()
+      newSet.plates    = emptyPlates()
       newSet.barWeight = exercise.barDefault ?? prevSet?.barWeight ?? 45
-      if (prevSet?.weight) newSet.weight = String(prevSet.weight)
     }
     onUpdate({ ...exercise, sets: [...exercise.sets, newSet] })
     if (settings.autoStartRest && lastSet?.type === 'working' && (lastSet.reps || lastSet.weight)) {
@@ -313,19 +310,9 @@ function ExerciseItem({
     const oldSet = sets[i]
     if (newSet.type === 'drop' && oldSet.type !== 'drop') {
       if (exercise.plateLoaded) {
-        // Plate-loaded drop: clear plates, carry barDefault, leave weight as 75% hint
-        const prevWorking = sets.slice(0, i).reverse().find(s => s.type === 'working')
-        const prevTotal = prevWorking ? parseFloat(prevWorking.weight) : 0
-        const suggested = prevTotal > 0 ? Math.round(prevTotal * 0.75 / 5) * 5 : 0
+        // Plate-loaded drop: clear plates, carry barDefault
         const barWeight = exercise.barDefault ?? 45
-        newSet = { ...newSet, plates: emptyPlates(), barWeight, weight: String(suggested || barWeight) }
-      } else if (!newSet.weight) {
-        // Standard drop: suggest 75% of previous working set weight
-        const prevWorking = sets.slice(0, i).reverse().find(s => s.type === 'working')
-        if (prevWorking && prevWorking.weight) {
-          const suggested = Math.round(parseFloat(prevWorking.weight) * 0.75 / 5) * 5
-          newSet = { ...newSet, weight: String(suggested || '') }
-        }
+        newSet = { ...newSet, plates: emptyPlates(), barWeight, weight: '' }
       }
     }
     sets[i] = newSet
