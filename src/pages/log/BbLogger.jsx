@@ -131,14 +131,16 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
   const isPR      = (total > maxWeight && total > 0) || (r > maxReps && r > 0)
 
   // Always-fresh refs so stable callbacks never hold stale closures
-  const setRef     = useRef(set)
-  const onChgRef   = useRef(onChange)
-  const multRef    = useRef(mult)
-  const totalRef   = useRef(total)
-  setRef.current   = set
-  onChgRef.current = onChange
-  multRef.current  = mult
-  totalRef.current = total
+  const setRef       = useRef(set)
+  const onChgRef     = useRef(onChange)
+  const multRef      = useRef(mult)
+  const totalRef     = useRef(total)
+  const onAdvanceRef = useRef(onAdvance)
+  setRef.current     = set
+  onChgRef.current   = onChange
+  multRef.current    = mult
+  totalRef.current   = total
+  onAdvanceRef.current = onAdvance
 
   // Stable reps onChange for the numpad (never re-created)
   const handleRepsChange = useCallback((v) => {
@@ -146,6 +148,13 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     const m = multRef.current
     const t = totalRef.current
     onChgRef.current({ ...s, reps: v, plates: s.plates ?? emptyPlates(), barWeight: s.barWeight ?? 45, weight: String(t), plateMultiplier: m })
+  }, [])
+
+  // Advance to next set only when reps and a non-zero total exist
+  const handleNextSet = useCallback(() => {
+    if (setRef.current.reps && totalRef.current > 0) {
+      onAdvanceRef.current?.()
+    }
   }, [])
 
   const repsFieldKey = `reps-plate-${exerciseName}-${setIndex}`
@@ -184,8 +193,9 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
             isDecimalAllowed: false,
             initialValue: set.reps,
             onChange: handleRepsChange,
-            isLastField: true,
+            onNextSet: handleNextSet,
             themeHex: theme.hex,
+            themeContrastText: theme.contrastText,
           })}
           placeholder="reps"
           className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
@@ -269,10 +279,12 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   const localRepsRef = useRef(null)
 
   // Always-fresh refs so stable callbacks never hold stale closures
-  const setRef     = useRef(set)
-  const onChgRef   = useRef(onChange)
-  setRef.current   = set
-  onChgRef.current = onChange
+  const setRef        = useRef(set)
+  const onChgRef      = useRef(onChange)
+  const onAdvanceRef  = useRef(onAdvance)
+  setRef.current      = set
+  onChgRef.current    = onChange
+  onAdvanceRef.current = onAdvance
 
   // Stable onChange handlers – recreated only when the field context changes
   const handleWeightChange = useCallback((v) => {
@@ -281,6 +293,13 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
 
   const handleRepsChange = useCallback((v) => {
     onChgRef.current({ ...setRef.current, reps: v })
+  }, [])
+
+  // Advance to next set only when both fields are filled
+  const handleNextSet = useCallback(() => {
+    if (setRef.current.weight && setRef.current.reps) {
+      onAdvanceRef.current?.()
+    }
   }, [])
 
   if (plateLoaded) {
@@ -328,9 +347,9 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           isDecimalAllowed: true,
           initialValue: set.weight,
           onChange: handleWeightChange,
-          onNext: () => localRepsRef.current?.focus(),
-          isLastField: false,
+          onNextSet: handleNextSet,
           themeHex: theme.hex,
+          themeContrastText: theme.contrastText,
         })}
         placeholder="lbs"
         className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
@@ -349,8 +368,9 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           isDecimalAllowed: false,
           initialValue: set.reps,
           onChange: handleRepsChange,
-          isLastField: true,
+          onNextSet: handleNextSet,
           themeHex: theme.hex,
+          themeContrastText: theme.contrastText,
         })}
         placeholder="reps"
         className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"

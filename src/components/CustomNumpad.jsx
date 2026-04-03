@@ -2,19 +2,16 @@ import { useEffect, useRef, useCallback } from 'react'
 
 // CustomNumpad – fully replaces the iOS system keyboard for reps/weight inputs.
 // Props:
-//   config    – { fieldKey, label, isDecimalAllowed, initialValue, onChange, onNext, isLastField, themeHex }
-//   isOpen    – boolean controlling slide animation
-//   onClose   – called when Done is pressed
+//   config  – { fieldKey, label, isDecimalAllowed, initialValue, onChange,
+//               onNextSet, themeHex, themeContrastText }
+//   isOpen  – boolean controlling slide animation
+//   onClose – called when Done is pressed
 export default function CustomNumpad({ config, isOpen, onClose }) {
-  // Tracks the current typed value without causing re-renders on every keystroke.
-  // Synced to config.initialValue whenever the active field changes.
-  const currentValueRef = useRef('')
-
-  // Long-press backspace to clear the field
+  const currentValueRef  = useRef('')
   const longPressTimerRef = useRef(null)
   const longPressFiredRef = useRef(false)
 
-  // Reset the value buffer whenever we switch to a new field (fieldKey changes)
+  // Reset value buffer when switching to a new field
   useEffect(() => {
     if (config) {
       currentValueRef.current = config.initialValue || ''
@@ -62,30 +59,29 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
   const endLongPress = useCallback(() => {
     clearTimeout(longPressTimerRef.current)
-    if (!longPressFiredRef.current) {
-      handleBackspace()
-    }
+    if (!longPressFiredRef.current) handleBackspace()
   }, [handleBackspace])
 
   const cancelLongPress = useCallback(() => {
     clearTimeout(longPressTimerRef.current)
   }, [])
 
-  const handleNext = useCallback((e) => {
+  const handleNextSet = useCallback((e) => {
     e.preventDefault()
-    config?.onNext?.()
+    config?.onNextSet?.()
   }, [config])
 
   const handleDone = useCallback((e) => {
     e.preventDefault()
     onClose()
-    // Blur whichever input is focused so there's no ghost cursor
     requestAnimationFrame(() => document.activeElement?.blur())
   }, [onClose])
 
-  const themeColor = config?.themeHex || '#22c55e'
+  const themeColor        = config?.themeHex          || '#22c55e'
+  const themeContrastText = config?.themeContrastText || '#0a0a0a'
+  const decimalActive     = config?.isDecimalAllowed
 
-  // Digit key style
+  // Base style for digit keys
   const digitStyle = {
     height: 56,
     borderRadius: 12,
@@ -101,8 +97,6 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     WebkitTapHighlightColor: 'transparent',
     touchAction: 'manipulation',
   }
-
-  const decimalActive = config?.isDecimalAllowed
 
   return (
     <div
@@ -122,18 +116,25 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
         WebkitUserSelect: 'none',
       }}
     >
-      {/* ── Action row ──────────────────────────────────────────────── */}
+      {/* ── Action row ─────────────────────────────────────────────────
+          Frosted/raised feel so it visually separates from the key grid */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 16px',
-          borderBottom: '1px solid var(--border-subtle)',
+          gap: 10,
+          padding: '10px 12px',
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
         }}
       >
+        {/* Field label */}
         <span
           style={{
+            flex: 1,
             color: 'var(--text-muted)',
             fontSize: 12,
             fontWeight: 700,
@@ -143,22 +144,45 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
         >
           {config?.label || ''}
         </span>
+
+        {/* Next Set – secondary/outlined */}
         <button
-          onPointerDown={config?.isLastField ? handleDone : handleNext}
+          onPointerDown={handleNextSet}
           style={{
-            backgroundColor: themeColor,
-            color: '#fff',
-            fontWeight: 700,
-            fontSize: 15,
-            padding: '9px 22px',
+            backgroundColor: 'rgba(255, 255, 255, 0.07)',
+            color: 'var(--text-secondary)',
+            fontWeight: 600,
+            fontSize: 14,
+            padding: '8px 16px',
             borderRadius: 12,
-            border: 'none',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
             cursor: 'pointer',
+            whiteSpace: 'nowrap',
             WebkitTapHighlightColor: 'transparent',
             touchAction: 'manipulation',
           }}
         >
-          {config?.isLastField ? 'Done ✓' : 'Next →'}
+          + Next Set
+        </button>
+
+        {/* Done – primary accent */}
+        <button
+          onPointerDown={handleDone}
+          style={{
+            backgroundColor: themeColor,
+            color: themeContrastText,
+            fontWeight: 700,
+            fontSize: 14,
+            padding: '8px 18px',
+            borderRadius: 12,
+            border: 'none',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'manipulation',
+          }}
+        >
+          Done ✓
         </button>
       </div>
 
@@ -171,8 +195,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           padding: '10px 12px 12px',
         }}
       >
-        {/* Row 1: 7 8 9 */}
-        {['7', '8', '9'].map(k => (
+        {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(k => (
           <button
             key={k}
             onPointerDown={e => { e.preventDefault(); handleKey(k) }}
@@ -182,29 +205,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           </button>
         ))}
 
-        {/* Row 2: 4 5 6 */}
-        {['4', '5', '6'].map(k => (
-          <button
-            key={k}
-            onPointerDown={e => { e.preventDefault(); handleKey(k) }}
-            style={digitStyle}
-          >
-            {k}
-          </button>
-        ))}
-
-        {/* Row 3: 1 2 3 */}
-        {['1', '2', '3'].map(k => (
-          <button
-            key={k}
-            onPointerDown={e => { e.preventDefault(); handleKey(k) }}
-            style={digitStyle}
-          >
-            {k}
-          </button>
-        ))}
-
-        {/* Row 4: decimal  0  ⌫ */}
+        {/* Decimal */}
         <button
           onPointerDown={e => { e.preventDefault(); if (decimalActive) handleKey('.') }}
           style={{
@@ -218,6 +219,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           {decimalActive ? '.' : ''}
         </button>
 
+        {/* 0 */}
         <button
           onPointerDown={e => { e.preventDefault(); handleKey('0') }}
           style={digitStyle}
@@ -225,6 +227,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           0
         </button>
 
+        {/* Backspace – short tap deletes last char, long press clears */}
         <button
           onPointerDown={startLongPress}
           onPointerUp={endLongPress}
