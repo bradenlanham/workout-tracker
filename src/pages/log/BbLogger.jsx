@@ -691,6 +691,59 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
   )
 }
 
+// ── Session saved confirmation screen ─────────────────────────────────────────
+
+function SessionSaved({ stats, onShare, onDone }) {
+  const fmt = v => v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')}k` : `${v}`
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-center animate-session-saved"
+      style={{
+        backgroundColor: '#0a0a0a',
+        paddingTop: 'max(2rem, env(safe-area-inset-top, 2rem))',
+        paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 2rem))',
+      }}
+    >
+      {/* Animated checkmark */}
+      <div className="animate-check-circle mb-8">
+        <svg width="96" height="96" viewBox="0 0 96 96" fill="none">
+          <circle cx="48" cy="48" r="46" fill="#16a34a" />
+          <path
+            className="animate-check-stroke"
+            d="M27 48 L41 62 L69 35"
+            stroke="white"
+            strokeWidth="5.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+
+      <h1 className="text-3xl font-bold text-white mb-3">Session Saved</h1>
+
+      <p className="text-sm text-gray-500 font-mono mb-14 tracking-wide">
+        {stats.exerciseCount} exercise{stats.exerciseCount !== 1 ? 's' : ''} · {stats.setCount} set{stats.setCount !== 1 ? 's' : ''} · {fmt(stats.totalVolume)} lbs total volume
+      </p>
+
+      <div className="flex gap-3 w-full max-w-xs px-6">
+        <button
+          onClick={onDone}
+          className="flex-1 py-4 rounded-2xl font-semibold text-base"
+          style={{ backgroundColor: '#1c1c1c', color: '#9ca3af' }}
+        >
+          Done
+        </button>
+        <button
+          onClick={onShare}
+          className="flex-1 py-4 rounded-2xl bg-emerald-500 text-white font-bold text-base"
+        >
+          Share
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Post-session comparison screen ────────────────────────────────────────────
 
 function SessionComparison({ currentExercises, lastSession, theme, onContinue }) {
@@ -1170,6 +1223,8 @@ export default function BbLogger() {
   const [showAddPanel,   setShowAddPanel]   = useState(false)
   const [showConfirm,    setShowConfirm]    = useState(false)
   const reorderSection = null // reorder UI removed
+  const [showSaved,      setShowSaved]      = useState(false)
+  const [savedStats,     setSavedStats]     = useState(null)
   const [showComparison, setShowComparison] = useState(false)
   const [comparisonData, setComparisonData] = useState(null)
   const [showSummary,    setShowSummary]    = useState(false)
@@ -1445,9 +1500,20 @@ export default function BbLogger() {
       theme,
     })
     setShowConfirm(false)
-    // Show comparison screen if there's a previous session, then share card
+    setComparisonData(exerciseData)
+    setSavedStats({
+      exerciseCount: exerciseData.length,
+      setCount:      totalSets,
+      totalVolume,
+    })
+    setShowSaved(true)
+  }
+
+  // ── "Share" tapped on the Session Saved screen ───────────────────────────
+
+  const handleShareFromSaved = () => {
+    setShowSaved(false)
     if (lastSession?.data?.exercises?.length) {
-      setComparisonData(exerciseData)
       setShowComparison(true)
     } else {
       setShowSummary(true)
@@ -1633,6 +1699,14 @@ export default function BbLogger() {
           onCancel={() => setShowConfirm(false)}
           theme={theme}
           todayCardio={todayCardio}
+        />
+      )}
+
+      {showSaved && savedStats && (
+        <SessionSaved
+          stats={savedStats}
+          onShare={handleShareFromSaved}
+          onDone={() => navigate('/dashboard')}
         />
       )}
 
