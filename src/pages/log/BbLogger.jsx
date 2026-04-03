@@ -1223,13 +1223,14 @@ export default function BbLogger() {
   const [showAddPanel,   setShowAddPanel]   = useState(false)
   const [showConfirm,    setShowConfirm]    = useState(false)
   const reorderSection = null // reorder UI removed
-  const [showSaved,      setShowSaved]      = useState(false)
-  const [savedStats,     setSavedStats]     = useState(null)
-  const [showComparison, setShowComparison] = useState(false)
-  const [comparisonData, setComparisonData] = useState(null)
-  const [showSummary,    setShowSummary]    = useState(false)
-  const [summaryData,    setSummaryData]    = useState(null)
-  const [savedSessionId, setSavedSessionId] = useState(null)
+  const [showSaved,          setShowSaved]          = useState(false)
+  const [savedStats,         setSavedStats]         = useState(null)
+  const [showComparison,     setShowComparison]     = useState(false)
+  const [comparisonData,     setComparisonData]     = useState(null)
+  const [comparisonPrevSess, setComparisonPrevSess] = useState(null)
+  const [showSummary,        setShowSummary]        = useState(false)
+  const [summaryData,        setSummaryData]        = useState(null)
+  const [savedSessionId,     setSavedSessionId]     = useState(null)
 
   // ── Session timer (timestamp-based — survives backgrounding) ─────────────
 
@@ -1423,6 +1424,11 @@ export default function BbLogger() {
   // cardioAction: 'none' | 'keep' | 'attach' | 'inlineLog'
 
   const saveSession = ({ grade, cardioAction, todayCardioId, todayCardioData, inlineCardio }) => {
+    // Capture the previous session NOW — before addSession mutates the store.
+    // After saving, lastSession would return the just-saved session (most recent
+    // of this type), making the comparison show 0% diff against itself.
+    const prevSession = lastSession
+
     // Build the legacy `cardio` object used by the share card
     let completedCardio = false
     let cardio = { completed: false }
@@ -1501,6 +1507,7 @@ export default function BbLogger() {
     })
     setShowConfirm(false)
     setComparisonData(exerciseData)
+    setComparisonPrevSess(prevSession)
     setSavedStats({
       exerciseCount: exerciseData.length,
       setCount:      totalSets,
@@ -1513,7 +1520,10 @@ export default function BbLogger() {
 
   const handleShareFromSaved = () => {
     setShowSaved(false)
-    if (lastSession?.data?.exercises?.length) {
+    // Use the pre-save snapshot of the previous session — comparisonPrevSess
+    // was captured before addSession updated the store, so it correctly points
+    // to the session BEFORE the one we just saved.
+    if (comparisonPrevSess?.data?.exercises?.length) {
       setShowComparison(true)
     } else {
       setShowSummary(true)
@@ -1713,7 +1723,7 @@ export default function BbLogger() {
       {showComparison && comparisonData && (
         <SessionComparison
           currentExercises={comparisonData}
-          lastSession={lastSession}
+          lastSession={comparisonPrevSess}
           theme={theme}
           onContinue={() => { setShowComparison(false); setShowSummary(true) }}
         />
