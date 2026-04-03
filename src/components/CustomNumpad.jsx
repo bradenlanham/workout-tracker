@@ -67,17 +67,28 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     clearTimeout(longPressTimerRef.current)
   }, [])
 
+  const configRef = useRef(config)
+  configRef.current = config
+
   // "Next →": weight → focus reps; reps → submit set & open next row
   const handleNext = useCallback((e) => {
     e.preventDefault()
-    config?.onNext?.()
-  }, [config])
+    configRef.current?.onNext?.()
+  }, [])
+
+  // Blur synchronously BEFORE calling onClose so that any iOS auto-focus
+  // (which triggers openNumpad → setNumpadIsOpen(true)) is enqueued before
+  // our setNumpadIsOpen(false) in the same React batch — guaranteeing the
+  // numpad closes even when the browser refocuses the next empty input.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   const handleDone = useCallback((e) => {
     e.preventDefault()
-    onClose()
-    requestAnimationFrame(() => document.activeElement?.blur())
-  }, [onClose])
+    const active = document.activeElement
+    if (active && active !== document.body) active.blur()
+    onCloseRef.current()
+  }, [])
 
   const themeColor        = config?.themeHex          || '#22c55e'
   const themeContrastText = config?.themeContrastText || '#0a0a0a'
