@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../data/exercises'
@@ -7,6 +7,11 @@ import {
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
+import CustomNumpad from '../../components/CustomNumpad'
+
+// Shared context so SetRow/PlateSetRow can register with the page-level numpad
+// without prop drilling through ExerciseItem.
+export const NumpadContext = createContext(null)
 
 // ── Per-workout-type accent color and warmup tip ───────────────────────────────
 
@@ -115,7 +120,8 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, setIndex }) {
+  const numpadCtx = useContext(NumpadContext)
   const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
@@ -123,6 +129,27 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
   const total     = calcTotal(plates, barWeight, mult)
   const r         = parseInt(set.reps) || 0
   const isPR      = (total > maxWeight && total > 0) || (r > maxReps && r > 0)
+
+  // Always-fresh refs so stable callbacks never hold stale closures
+  const setRef     = useRef(set)
+  const onChgRef   = useRef(onChange)
+  const multRef    = useRef(mult)
+  const totalRef   = useRef(total)
+  setRef.current   = set
+  onChgRef.current = onChange
+  multRef.current  = mult
+  totalRef.current = total
+
+  // Stable reps onChange for the numpad (never re-created)
+  const handleRepsChange = useCallback((v) => {
+    const s = setRef.current
+    const m = multRef.current
+    const t = totalRef.current
+    onChgRef.current({ ...s, reps: v, plates: s.plates ?? emptyPlates(), barWeight: s.barWeight ?? 45, weight: String(t), plateMultiplier: m })
+  }, [])
+
+  const repsFieldKey = `reps-plate-${exerciseName}-${setIndex}`
+  const isRepsActive = numpadCtx?.numpadConfig?.fieldKey === repsFieldKey
 
   const update = (newPlates, newBar) => {
     const newTotal = calcTotal(newPlates, newBar, mult)
@@ -147,15 +174,22 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
         </div>
         <input
           ref={repsRef}
-          type="number"
-          inputMode="numeric"
-          enterKeyHint="done"
+          type="text"
+          inputMode="none"
           value={set.reps}
           onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total), plateMultiplier: mult })}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); onAdvance?.() } }}
+          onFocus={() => numpadCtx?.openNumpad({
+            fieldKey: repsFieldKey,
+            label: 'Reps',
+            isDecimalAllowed: false,
+            initialValue: set.reps,
+            onChange: handleRepsChange,
+            isLastField: true,
+            themeHex: theme.hex,
+          })}
           placeholder="reps"
           className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
-          min={0}
+          style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}` } : {}}
         />
         {set.reps && total > 0 ? (
           <button
@@ -230,8 +264,24 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, setIndex }) {
+  const numpadCtx    = useContext(NumpadContext)
   const localRepsRef = useRef(null)
+
+  // Always-fresh refs so stable callbacks never hold stale closures
+  const setRef     = useRef(set)
+  const onChgRef   = useRef(onChange)
+  setRef.current   = set
+  onChgRef.current = onChange
+
+  // Stable onChange handlers – recreated only when the field context changes
+  const handleWeightChange = useCallback((v) => {
+    onChgRef.current({ ...setRef.current, weight: v })
+  }, [])
+
+  const handleRepsChange = useCallback((v) => {
+    onChgRef.current({ ...setRef.current, reps: v })
+  }, [])
 
   if (plateLoaded) {
     return (
@@ -247,6 +297,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         onToggleMultiplier={onToggleMultiplier}
         repsRef={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
         onAdvance={onAdvance}
+        setIndex={setIndex}
       />
     )
   }
@@ -256,34 +307,54 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   const r   = parseInt(set.reps)     || 0
   const isPR = (w > maxWeight && w > 0) || (r > maxReps && r > 0)
 
+  const weightFieldKey = `weight-${exerciseName}-${setIndex}`
+  const repsFieldKey   = `reps-${exerciseName}-${setIndex}`
+  const isWeightActive = numpadCtx?.numpadConfig?.fieldKey === weightFieldKey
+  const isRepsActive   = numpadCtx?.numpadConfig?.fieldKey === repsFieldKey
+
   return (
     <div className="flex items-center gap-2">
       <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} />
       {/* Weight FIRST */}
       <input
         ref={weightRef}
-        type="number"
-        inputMode="decimal"
-        enterKeyHint="next"
+        type="text"
+        inputMode="none"
         value={set.weight}
         onChange={e => onChange({ ...set, weight: e.target.value })}
-        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); localRepsRef.current?.focus() } }}
+        onFocus={() => numpadCtx?.openNumpad({
+          fieldKey: weightFieldKey,
+          label: 'Weight (lbs)',
+          isDecimalAllowed: true,
+          initialValue: set.weight,
+          onChange: handleWeightChange,
+          onNext: () => localRepsRef.current?.focus(),
+          isLastField: false,
+          themeHex: theme.hex,
+        })}
         placeholder="lbs"
         className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
-        min={0}
+        style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}` } : {}}
       />
       {/* Reps SECOND */}
       <input
         ref={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
-        type="number"
-        inputMode="numeric"
-        enterKeyHint="done"
+        type="text"
+        inputMode="none"
         value={set.reps}
         onChange={e => onChange({ ...set, reps: e.target.value })}
-        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); onAdvance?.() } }}
+        onFocus={() => numpadCtx?.openNumpad({
+          fieldKey: repsFieldKey,
+          label: 'Reps',
+          isDecimalAllowed: false,
+          initialValue: set.reps,
+          onChange: handleRepsChange,
+          isLastField: true,
+          themeHex: theme.hex,
+        })}
         placeholder="reps"
         className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
-        min={0}
+        style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}` } : {}}
       />
       <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
       {set.weight && set.reps ? (
@@ -582,6 +653,7 @@ function ExerciseItem({
                 weightRef={el => { setWeightRefs.current[i] = el }}
                 repsRef={el => { setRepsRefs.current[i] = el }}
                 onAdvance={() => addSet(true)}
+                setIndex={i}
               />
             </div>
           ))}
@@ -1228,6 +1300,23 @@ export default function BbLogger() {
   const [sessionNotes,   setSessionNotes]   = useState(() => savedSession?.sessionNotes || '')
   const [showAddPanel,   setShowAddPanel]   = useState(false)
   const [showConfirm,    setShowConfirm]    = useState(false)
+
+  // ── Custom numpad state ───────────────────────────────────────────────────
+  // isOpen drives the slide animation; config stays populated during slide-out
+  // so the numpad content doesn't disappear mid-animation.
+  const [numpadIsOpen,  setNumpadIsOpen]  = useState(false)
+  const [numpadConfig,  setNumpadConfig]  = useState(null)
+
+  const openNumpad = useCallback((config) => {
+    setNumpadConfig(config)
+    setNumpadIsOpen(true)
+  }, [])
+
+  const closeNumpad = useCallback(() => {
+    setNumpadIsOpen(false)
+  }, [])
+
+  const numpadCtxValue = { numpadConfig, openNumpad, closeNumpad }
   const reorderSection = null // reorder UI removed
   const [showSaved,          setShowSaved]          = useState(false)
   const [savedStats,         setSavedStats]         = useState(null)
@@ -1579,6 +1668,7 @@ export default function BbLogger() {
   if (customPending.length) renderGroups.push({ label: 'Added', exercises: customPending })
 
   return (
+    <NumpadContext.Provider value={numpadCtxValue}>
     <div className="pb-40 min-h-screen bg-base">
 
       {/* ── Clipboard header (sticky) ────────────────────────────────────── */}
@@ -1744,6 +1834,10 @@ export default function BbLogger() {
           onUpdateSession={updateSession}
         />
       )}
+
+      {/* Custom numpad – always in DOM for slide animation */}
+      <CustomNumpad config={numpadConfig} isOpen={numpadIsOpen} onClose={closeNumpad} />
     </div>
+    </NumpadContext.Provider>
   )
 }
