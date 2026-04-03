@@ -120,7 +120,7 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, setIndex }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex }) {
   const numpadCtx = useContext(NumpadContext)
   const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
   const plates    = set.plates    ?? emptyPlates()
@@ -136,11 +136,13 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
   const multRef      = useRef(mult)
   const totalRef     = useRef(total)
   const onAdvanceRef = useRef(onAdvance)
+  const onDoneRef    = useRef(onDone)
   setRef.current     = set
   onChgRef.current   = onChange
   multRef.current    = mult
   totalRef.current   = total
   onAdvanceRef.current = onAdvance
+  onDoneRef.current    = onDone
 
   // Stable reps onChange for the numpad (never re-created)
   const handleRepsChange = useCallback((v) => {
@@ -155,6 +157,11 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     if (setRef.current.reps && totalRef.current > 0) {
       onAdvanceRef.current?.()
     }
+  }, [])
+
+  // Mark exercise done — stable, reads onDoneRef at call time
+  const handleExerciseDone = useCallback(() => {
+    onDoneRef.current?.()
   }, [])
 
   const repsFieldKey = `reps-plate-${exerciseName}-${setIndex}`
@@ -194,6 +201,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
             initialValue: set.reps,
             onChange: handleRepsChange,
             onNext: handleNextSet,
+            onDone: handleExerciseDone,
             themeHex: theme.hex,
             themeContrastText: theme.contrastText,
           })}
@@ -274,7 +282,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, setIndex }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex }) {
   const numpadCtx    = useContext(NumpadContext)
   const localRepsRef = useRef(null)
 
@@ -282,9 +290,11 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   const setRef        = useRef(set)
   const onChgRef      = useRef(onChange)
   const onAdvanceRef  = useRef(onAdvance)
+  const onDoneRef     = useRef(onDone)
   setRef.current      = set
   onChgRef.current    = onChange
   onAdvanceRef.current = onAdvance
+  onDoneRef.current   = onDone
 
   // Stable onChange handlers – recreated only when the field context changes
   const handleWeightChange = useCallback((v) => {
@@ -302,6 +312,11 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
     }
   }, [])
 
+  // Mark exercise done — stable, reads onDoneRef at call time
+  const handleExerciseDone = useCallback(() => {
+    onDoneRef.current?.()
+  }, [])
+
   if (plateLoaded) {
     return (
       <PlateSetRow
@@ -316,6 +331,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         onToggleMultiplier={onToggleMultiplier}
         repsRef={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
         onAdvance={onAdvance}
+        onDone={handleExerciseDone}
         setIndex={setIndex}
       />
     )
@@ -348,6 +364,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           initialValue: set.weight,
           onChange: handleWeightChange,
           onNext: () => localRepsRef.current?.focus(),
+          onDone: handleExerciseDone,
           themeHex: theme.hex,
           themeContrastText: theme.contrastText,
         })}
@@ -369,6 +386,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           initialValue: set.reps,
           onChange: handleRepsChange,
           onNext: handleNextSet,
+          onDone: handleExerciseDone,
           themeHex: theme.hex,
           themeContrastText: theme.contrastText,
         })}
@@ -418,6 +436,20 @@ function ExerciseItem({
     ? allSessions.filter(s => s.mode === 'bb' && s.data?.workoutType === workoutType)
     : allSessions.filter(s => s.mode === 'bb')
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
+
+  // Always-fresh refs so stableMarkDone never holds a stale closure
+  const exerciseRef = useRef(exercise)
+  const onUpdateRef = useRef(onUpdate)
+  exerciseRef.current = exercise
+  onUpdateRef.current = onUpdate
+
+  // Stable callback passed to SetRow → numpad config.onDone
+  const stableMarkDone = useCallback(() => {
+    onUpdateRef.current({ ...exerciseRef.current, done: true, completedAt: Date.now() })
+    setExpanded(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
   const setWeightRefs = useRef({})
   const setRepsRefs   = useRef({})
   const pendingFocusRef = useRef(null)
@@ -673,6 +705,7 @@ function ExerciseItem({
                 weightRef={el => { setWeightRefs.current[i] = el }}
                 repsRef={el => { setRepsRefs.current[i] = el }}
                 onAdvance={() => addSet(true)}
+                onDone={stableMarkDone}
                 setIndex={i}
               />
             </div>

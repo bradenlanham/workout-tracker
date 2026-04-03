@@ -75,12 +75,15 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
   const handleDone = useCallback((e) => {
     e.preventDefault()
+    // Fire the exercise-complete callback before closing so the exercise is marked
+    // done in the same event; the callback reads fresh values via refs in SetRow.
+    config?.onDone?.()
     // Blur synchronously before closing so any browser-triggered refocus (e.g. Chrome/Safari
     // returning focus to the previously-focused element) is batched with the closeNumpad call.
     // Both state updates land in the same React flush; closeNumpad's false wins.
     document.activeElement?.blur()
     onClose()
-  }, [onClose])
+  }, [config, onClose])
 
   const themeColor        = config?.themeHex          || '#22c55e'
   const themeContrastText = config?.themeContrastText || '#0a0a0a'
