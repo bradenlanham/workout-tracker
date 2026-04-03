@@ -121,14 +121,14 @@
     to   { stroke-dashoffset: 0; }
   }
   .animate-session-saved {
-    animation: sessionSavedEnter 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: sessionSavedEnter 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
   .animate-check-circle {
-    animation: circleScaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
+    animation: circleScaleIn 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
   }
   .animate-check-stroke {
     stroke-dasharray: 72;
     stroke-dashoffset: 72;
-    animation: checkStrokeDraw 0.4s ease 0.5s both;
+    animation: checkStrokeDraw 0.55s ease 0.75s both;
   }
 }

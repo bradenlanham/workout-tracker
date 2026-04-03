@@ -792,6 +792,8 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
 // ── Session saved confirmation screen ─────────────────────────────────────────
 
 function SessionSaved({ stats, onShare, onDone }) {
+  const { settings } = useStore()
+  const theme = getTheme(settings.accentColor)
   const fmt = v => v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')}k` : `${v}`
   return (
     <div
@@ -803,9 +805,12 @@ function SessionSaved({ stats, onShare, onDone }) {
       }}
     >
       {/* Animated checkmark */}
-      <div className="animate-check-circle mb-8">
+      <div
+        className="animate-check-circle mb-8"
+        style={{ filter: `drop-shadow(0 0 20px ${theme.hex}4D)` }}
+      >
         <svg width="96" height="96" viewBox="0 0 96 96" fill="none">
-          <circle cx="48" cy="48" r="46" fill="#16a34a" />
+          <circle cx="48" cy="48" r="46" fill={theme.hex} />
           <path
             className="animate-check-stroke"
             d="M27 48 L41 62 L69 35"
@@ -833,7 +838,8 @@ function SessionSaved({ stats, onShare, onDone }) {
         </button>
         <button
           onClick={onShare}
-          className="flex-1 py-4 rounded-2xl bg-emerald-500 text-white font-bold text-base"
+          className="flex-1 py-4 rounded-2xl font-bold text-base text-white"
+          style={{ backgroundColor: theme.hex }}
         >
           Share
         </button>
