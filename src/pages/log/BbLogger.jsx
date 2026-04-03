@@ -115,7 +115,7 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance }) {
   const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
@@ -146,23 +146,38 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           {isPR && <span className="text-xs">🏆</span>}
         </div>
         <input
+          ref={repsRef}
           type="number"
           inputMode="numeric"
+          enterKeyHint="done"
           value={set.reps}
           onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total), plateMultiplier: mult })}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); onAdvance?.() } }}
           placeholder="reps"
           className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
           min={0}
         />
-        <button
-          type="button"
-          onClick={onDelete}
-          className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        {set.reps && total > 0 ? (
+          <button
+            type="button"
+            onClick={() => onAdvance?.()}
+            className="w-8 h-10 flex items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <button
@@ -215,7 +230,9 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance }) {
+  const localRepsRef = useRef(null)
+
   if (plateLoaded) {
     return (
       <PlateSetRow
@@ -228,6 +245,8 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         theme={theme}
         plateMultiplier={plateMultiplier}
         onToggleMultiplier={onToggleMultiplier}
+        repsRef={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
+        onAdvance={onAdvance}
       />
     )
   }
@@ -242,34 +261,52 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
       <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} />
       {/* Weight FIRST */}
       <input
+        ref={weightRef}
         type="number"
         inputMode="decimal"
+        enterKeyHint="next"
         value={set.weight}
         onChange={e => onChange({ ...set, weight: e.target.value })}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); localRepsRef.current?.focus() } }}
         placeholder="lbs"
         className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
       {/* Reps SECOND */}
       <input
+        ref={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
         type="number"
         inputMode="numeric"
+        enterKeyHint="done"
         value={set.reps}
         onChange={e => onChange({ ...set, reps: e.target.value })}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); onAdvance?.() } }}
         placeholder="reps"
         className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10"
         min={0}
       />
       <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+      {set.weight && set.reps ? (
+        <button
+          type="button"
+          onClick={() => onAdvance?.()}
+          className="w-8 h-10 flex items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }
@@ -284,8 +321,25 @@ function ExerciseItem({
   const [showPrev, setShowPrev] = useState(false)
   const { settings, setRestEndTimestamp } = useStore()
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
+  const setWeightRefs = useRef({})
+  const setRepsRefs   = useRef({})
+  const pendingFocusRef = useRef(null)
 
-  const addSet = () => {
+  // Focus the weight (or reps for plate mode) input of a newly added set after render
+  useEffect(() => {
+    if (pendingFocusRef.current !== null) {
+      const idx = pendingFocusRef.current
+      pendingFocusRef.current = null
+      requestAnimationFrame(() => {
+        const weightEl = setWeightRefs.current[idx]
+        const repsEl   = setRepsRefs.current[idx]
+        if (exercise.plateLoaded && repsEl) repsEl.focus()
+        else if (weightEl) weightEl.focus()
+      })
+    }
+  }, [exercise.sets.length, exercise.plateLoaded])
+
+  const addSet = (autoFocus = false) => {
     const lastSet = exercise.sets[exercise.sets.length - 1]
     const prevSet = lastSessionEx?.sets?.[exercise.sets.length]
     const isFirstSet = exercise.sets.length === 0
@@ -299,6 +353,7 @@ function ExerciseItem({
       newSet.plates    = emptyPlates()
       newSet.barWeight = exercise.barDefault ?? prevSet?.barWeight ?? 45
     }
+    if (autoFocus) pendingFocusRef.current = exercise.sets.length
     onUpdate({ ...exercise, sets: [...exercise.sets, newSet] })
     if (settings.autoStartRest && lastSet?.type === 'working' && (lastSet.reps || lastSet.weight)) {
       setRestEndTimestamp(Date.now() + settings.restTimerDuration * 1000)
@@ -511,7 +566,6 @@ function ExerciseItem({
                 plateMultiplier={exercise.plateMultiplier || 2}
                 onToggleMultiplier={() => {
                   const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
-                  // Recalculate all set weights with new multiplier
                   const updatedSets = exercise.sets.map(s => {
                     if (!s.plates) return s
                     const newTotal = calcTotal(s.plates, s.barWeight ?? 45, newMult)
@@ -519,6 +573,9 @@ function ExerciseItem({
                   })
                   onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
                 }}
+                weightRef={el => { setWeightRefs.current[i] = el }}
+                repsRef={el => { setRepsRefs.current[i] = el }}
+                onAdvance={() => addSet(true)}
               />
             </div>
           ))}
