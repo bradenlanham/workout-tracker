@@ -315,11 +315,17 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
 
 function ExerciseItem({
   exercise, lastSessionEx, allSessions, onUpdate, theme,
-  isFirst, isLast, onMoveUp, onMoveDown, reorderMode,
+  isFirst, isLast, onMoveUp, onMoveDown, reorderMode, workoutType,
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
   const { settings, setRestEndTimestamp } = useStore()
+
+  // Scope session history to the current workout type so that an exercise like
+  // "Pull-ups" in Back Day and Full Body tracks PRs and notes independently.
+  const scopedSessions = workoutType
+    ? allSessions.filter(s => s.mode === 'bb' && s.data?.workoutType === workoutType)
+    : allSessions.filter(s => s.mode === 'bb')
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
   const setWeightRefs = useRef({})
   const setRepsRefs   = useRef({})
@@ -390,8 +396,8 @@ function ExerciseItem({
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const hasPR = allSessions.length > 0 && exercise.sets.some(s => {
-    const { maxWeight, maxReps } = getExercisePRs(allSessions, exercise.name)
+  const hasPR = scopedSessions.length > 0 && exercise.sets.some(s => {
+    const { maxWeight, maxReps } = getExercisePRs(scopedSessions, exercise.name)
     return (parseFloat(s.weight) > maxWeight && parseFloat(s.weight) > 0) ||
       (parseInt(s.reps) > maxReps && parseInt(s.reps) > 0)
   })
@@ -401,8 +407,8 @@ function ExerciseItem({
   const prevSets   = lastSessionEx?.sets || []
 
   const lastExNotes = (() => {
-    const prev = [...allSessions]
-      .filter(s => s.mode === 'bb' && s.data?.exercises?.some(e => e.name === exercise.name))
+    const prev = [...scopedSessions]
+      .filter(s => s.data?.exercises?.some(e => e.name === exercise.name))
       .sort((a, b) => new Date(b.date) - new Date(a.date))
     if (!prev.length) return null
     const ex = prev[0].data.exercises.find(e => e.name === exercise.name)
@@ -558,7 +564,7 @@ function ExerciseItem({
               <SetRow
                 set={set}
                 exerciseName={exercise.name}
-                allSessions={allSessions}
+                allSessions={scopedSessions}
                 onChange={newSet => updateSet(i, newSet)}
                 onDelete={() => deleteSet(i)}
                 theme={theme}
@@ -1639,6 +1645,7 @@ export default function BbLogger() {
                       exercise={ex}
                       lastSessionEx={lastSession?.data?.exercises?.find(e => e.name === ex.name)}
                       allSessions={sessions}
+                      workoutType={type}
                       onUpdate={updated => updateExercise(ex.id, updated)}
                       theme={theme}
                       isFirst={idx === 0}
