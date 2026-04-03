@@ -193,7 +193,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
             isDecimalAllowed: false,
             initialValue: set.reps,
             onChange: handleRepsChange,
-            onNextSet: handleNextSet,
+            onNext: handleNextSet,
             themeHex: theme.hex,
             themeContrastText: theme.contrastText,
           })}
@@ -347,7 +347,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           isDecimalAllowed: true,
           initialValue: set.weight,
           onChange: handleWeightChange,
-          onNextSet: handleNextSet,
+          onNext: () => localRepsRef.current?.focus(),
           themeHex: theme.hex,
           themeContrastText: theme.contrastText,
         })}
@@ -368,7 +368,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           isDecimalAllowed: false,
           initialValue: set.reps,
           onChange: handleRepsChange,
-          onNextSet: handleNextSet,
+          onNext: handleNextSet,
           themeHex: theme.hex,
           themeContrastText: theme.contrastText,
         })}

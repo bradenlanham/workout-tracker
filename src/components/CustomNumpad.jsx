@@ -3,11 +3,12 @@ import { useEffect, useRef, useCallback } from 'react'
 // CustomNumpad – fully replaces the iOS system keyboard for reps/weight inputs.
 // Props:
 //   config  – { fieldKey, label, isDecimalAllowed, initialValue, onChange,
-//               onNextSet, themeHex, themeContrastText }
+//               onNext, themeHex, themeContrastText }
+//               onNext: weight field → focus reps; reps field → submit set & open next
 //   isOpen  – boolean controlling slide animation
 //   onClose – called when Done is pressed
 export default function CustomNumpad({ config, isOpen, onClose }) {
-  const currentValueRef  = useRef('')
+  const currentValueRef   = useRef('')
   const longPressTimerRef = useRef(null)
   const longPressFiredRef = useRef(false)
 
@@ -66,9 +67,10 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     clearTimeout(longPressTimerRef.current)
   }, [])
 
-  const handleNextSet = useCallback((e) => {
+  // "Next →": weight → focus reps; reps → submit set & open next row
+  const handleNext = useCallback((e) => {
     e.preventDefault()
-    config?.onNextSet?.()
+    config?.onNext?.()
   }, [config])
 
   const handleDone = useCallback((e) => {
@@ -81,7 +83,6 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
   const themeContrastText = config?.themeContrastText || '#0a0a0a'
   const decimalActive     = config?.isDecimalAllowed
 
-  // Base style for digit keys
   const digitStyle = {
     height: 56,
     borderRadius: 12,
@@ -116,19 +117,22 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
         WebkitUserSelect: 'none',
       }}
     >
-      {/* ── Action row ─────────────────────────────────────────────────
-          Frosted/raised feel so it visually separates from the key grid */}
+      {/* ── Action row – Liquid Glass panel ─────────────────────────── */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 10,
           padding: '10px 12px',
-          backgroundColor: 'rgba(255, 255, 255, 0.05)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 100%)',
+          backdropFilter: 'blur(24px) saturate(1.8)',
+          WebkitBackdropFilter: 'blur(24px) saturate(1.8)',
+          borderBottom: '1px solid rgba(255,255,255,0.10)',
+          boxShadow: [
+            'inset 0 1px 0 rgba(255,255,255,0.35)',  // top-edge specular highlight
+            'inset 0 -1px 0 rgba(0,0,0,0.20)',        // inner bottom shadow
+            '0 4px 16px rgba(0,0,0,0.40)',             // outer drop shadow
+          ].join(', '),
         }}
       >
         {/* Field label */}
@@ -145,27 +149,27 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           {config?.label || ''}
         </span>
 
-        {/* Next Set – secondary/outlined */}
+        {/* Next → – secondary outlined */}
         <button
-          onPointerDown={handleNextSet}
+          onPointerDown={handleNext}
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.07)',
+            backgroundColor: 'rgba(255,255,255,0.08)',
             color: 'var(--text-secondary)',
             fontWeight: 600,
             fontSize: 14,
-            padding: '8px 16px',
+            padding: '8px 18px',
             borderRadius: 12,
-            border: '1px solid rgba(255, 255, 255, 0.12)',
+            border: '1px solid rgba(255,255,255,0.14)',
             cursor: 'pointer',
             whiteSpace: 'nowrap',
             WebkitTapHighlightColor: 'transparent',
             touchAction: 'manipulation',
           }}
         >
-          + Next Set
+          Next →
         </button>
 
-        {/* Done – primary accent */}
+        {/* Done ✓ – primary accent */}
         <button
           onPointerDown={handleDone}
           style={{
@@ -205,7 +209,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           </button>
         ))}
 
-        {/* Decimal */}
+        {/* Decimal – disabled (invisible) for Reps */}
         <button
           onPointerDown={e => { e.preventDefault(); if (decimalActive) handleKey('.') }}
           style={{
