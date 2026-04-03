@@ -232,7 +232,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           padding: '10px 12px 12px',
         }}
       >
-        {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(k => (
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => (
           <button
             key={k}
             onPointerDown={e => { e.preventDefault(); handleKey(k) }}
