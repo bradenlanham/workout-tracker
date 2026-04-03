@@ -75,8 +75,11 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
   const handleDone = useCallback((e) => {
     e.preventDefault()
+    // Blur synchronously before closing so any browser-triggered refocus (e.g. Chrome/Safari
+    // returning focus to the previously-focused element) is batched with the closeNumpad call.
+    // Both state updates land in the same React flush; closeNumpad's false wins.
+    document.activeElement?.blur()
     onClose()
-    requestAnimationFrame(() => document.activeElement?.blur())
   }, [onClose])
 
   const themeColor        = config?.themeHex          || '#22c55e'
