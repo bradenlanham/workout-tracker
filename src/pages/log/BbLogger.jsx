@@ -1023,7 +1023,8 @@ function formatCardioDuration(seconds) {
 
 // todayCardio: array of unattached cardio sessions logged today
 // onLogNow: saves the workout then navigates to /cardio
-function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onCancel, theme, todayCardio }) {
+function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onCancel, onDiscard, theme, todayCardio }) {
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [grade, setGrade] = useState(null)
 
   // Scenario B: null | 'yes' (inline form expanded)
@@ -1265,6 +1266,34 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onC
             </button>
           )}
         </div>
+
+        {/* Discard session */}
+        {!confirmDiscard ? (
+          <button
+            onClick={() => setConfirmDiscard(true)}
+            className="w-full mt-3 py-2.5 rounded-2xl text-sm font-medium text-red-400 hover:text-red-300 transition-colors"
+          >
+            Discard Session
+          </button>
+        ) : (
+          <div className="mt-3 bg-red-500/10 border border-red-500/30 rounded-2xl p-3 text-center">
+            <p className="text-sm text-red-400 font-semibold mb-2">This will delete all progress. Are you sure?</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDiscard(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-item text-c-secondary"
+              >
+                Never mind
+              </button>
+              <button
+                onClick={onDiscard}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-red-500 text-white"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1777,6 +1806,30 @@ export default function BbLogger() {
     <NumpadContext.Provider value={numpadCtxValue}>
     <div className="pb-40 min-h-screen bg-base">
 
+      {/* ── Start Session overlay ────────────────────────────────────────── */}
+      {!sessionStarted && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="text-center px-8">
+            <div className="text-5xl mb-3">{workoutEmoji}</div>
+            <h2 className="text-2xl font-bold text-white mb-1">{workoutName}</h2>
+            <p className="text-sm text-white/60 mb-8">Timer starts when you begin</p>
+            <button
+              onClick={handleStartSession}
+              className={`${theme.bg} px-10 py-4 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-transform`}
+              style={{ color: theme.contrastText }}
+            >
+              Start Session
+            </button>
+            <button
+              onClick={() => navigate(-1)}
+              className="block mx-auto mt-4 text-sm text-white/50 underline underline-offset-2"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Clipboard header (sticky) ────────────────────────────────────── */}
       <div
         className="sticky top-0 z-30"
@@ -1953,6 +2006,7 @@ export default function BbLogger() {
           onSave={saveSession}
           onLogNow={saveAndLogNow}
           onCancel={() => setShowConfirm(false)}
+          onDiscard={() => { clearActiveSession(); navigate('/dashboard'); }}
           theme={theme}
           todayCardio={todayCardio}
         />
