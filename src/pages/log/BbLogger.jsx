@@ -316,9 +316,14 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
     }
   }, [])
 
-  // Focus reps from weight field — numpad passes value but we ignore it here
+  // Focus reps from weight field — numpad passes value but we ignore it here.
+  // Deferred via requestAnimationFrame so the pointerdown event on the Next
+  // button fully settles before we move focus; without this, iOS Safari can
+  // drop the focus transfer and the numpad collapses instead of advancing.
   const handleFocusReps = useCallback(() => {
-    localRepsRef.current?.focus()
+    requestAnimationFrame(() => {
+      localRepsRef.current?.focus({ preventScroll: true })
+    })
   }, [])
 
   // Mark exercise done (stable ref so it never goes stale)
