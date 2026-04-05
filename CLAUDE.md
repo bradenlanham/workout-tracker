@@ -1,6 +1,16 @@
 # Gains — Project State
 
-> Last updated: April 2, 2026
+> Last updated: April 5, 2026
+
+## Rules for Claude
+
+1. **Read this file first** at the start of every new session before doing anything else.
+2. **Update this file** after every batch of changes. Add new features to "Recent Changes", update file structure if files were added/removed, and update store shape if state changed. Update the "Last updated" date.
+3. **Never run git commands from the sandbox.** See "Development Workflow" below. Give the user PowerShell commands to run locally.
+4. **Validate builds** with `npx vite build --outDir /tmp/test-build`. Never build to the mounted `dist/` folder.
+5. **Give the user exact PowerShell commands** for git operations. Use PowerShell syntax (`Remove-Item`, backslashes, etc.), not bash.
+
+---
 
 ## Overview
 
