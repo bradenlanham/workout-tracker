@@ -399,6 +399,15 @@ function ExerciseItem({
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
   const { settings, setRestEndTimestamp } = useStore()
+  const numpadCtx = useContext(NumpadContext)
+
+  // ── Focus mode: when numpad is open, check if THIS exercise owns the active field.
+  // If the numpad is open but the active field belongs to a different exercise,
+  // this exercise should auto-collapse to save screen space.
+  const activeFieldKey = numpadCtx?.numpadConfig?.fieldKey || ''
+  const ownsActiveField = activeFieldKey.includes(exercise.name)
+  const numpadOpen = numpadCtx?.numpadIsOpen || false
+  const focusCollapsed = numpadOpen && !ownsActiveField && !exercise.done
 
   // Scope session history to the current workout type so that an exercise like
   // "Pull-ups" in Back Day and Full Body tracks PRs and notes independently.
@@ -410,7 +419,8 @@ function ExerciseItem({
   const setRepsRefs   = useRef({})
   const pendingFocusRef = useRef(null)
 
-  // Focus the weight (or reps for plate mode) input of a newly added set after render
+  // Focus the weight (or reps for plate mode) input of a newly added set after render.
+  // Use preventScroll to avoid the browser yanking the viewport when the new row appears.
   useEffect(() => {
     if (pendingFocusRef.current !== null) {
       const idx = pendingFocusRef.current
@@ -418,8 +428,8 @@ function ExerciseItem({
       requestAnimationFrame(() => {
         const weightEl = setWeightRefs.current[idx]
         const repsEl   = setRepsRefs.current[idx]
-        if (exercise.plateLoaded && repsEl) repsEl.focus()
-        else if (weightEl) weightEl.focus()
+        const target = (exercise.plateLoaded && repsEl) ? repsEl : weightEl
+        if (target) target.focus({ preventScroll: true })
       })
     }
   }, [exercise.sets.length, exercise.plateLoaded])
@@ -493,6 +503,9 @@ function ExerciseItem({
     const ex = prev[0].data.exercises.find(e => e.name === exercise.name)
     return ex?.notes || null
   })()
+
+  // When the numpad is open and another exercise owns the focus, hide this card entirely
+  if (focusCollapsed) return null
 
   return (
     <div className={`bg-card rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''}`}>
@@ -1330,7 +1343,7 @@ export default function BbLogger() {
     setNumpadIsOpen(false)
   }, [])
 
-  const numpadCtxValue = { numpadConfig, openNumpad, closeNumpad }
+  const numpadCtxValue = { numpadConfig, numpadIsOpen, openNumpad, closeNumpad }
   const reorderSection = null // reorder UI removed
   const [showSaved,          setShowSaved]          = useState(false)
   const [savedStats,         setSavedStats]         = useState(null)
@@ -1736,10 +1749,13 @@ export default function BbLogger() {
         {renderGroups.map(group => {
           return (
             <div key={group.label}>
-              <GroupLabel
-                label={group.isCompleted ? '✓ Completed' : group.label}
-                isCompleted={group.isCompleted}
-              />
+              {/* Hide section labels when numpad is open to maximize space */}
+              {!numpadIsOpen && (
+                <GroupLabel
+                  label={group.isCompleted ? '✓ Completed' : group.label}
+                  isCompleted={group.isCompleted}
+                />
+              )}
               <div className="space-y-2">
                 {group.exercises.map((ex, idx) => {
                   const groupExes = group.exercises
@@ -1765,15 +1781,18 @@ export default function BbLogger() {
           )
         })}
 
-        {/* Add exercise */}
-        <button
-          onClick={() => setShowAddPanel(true)}
-          className="w-full py-4 mt-2 rounded-2xl border-2 border-dashed border-c-base text-c-muted font-semibold flex items-center justify-center gap-2"
-        >
-          <span className="text-xl">+</span> Add Exercise
-        </button>
+        {/* Add exercise – hidden when numpad is open to save space */}
+        {!numpadIsOpen && (
+          <button
+            onClick={() => setShowAddPanel(true)}
+            className="w-full py-4 mt-2 rounded-2xl border-2 border-dashed border-c-base text-c-muted font-semibold flex items-center justify-center gap-2"
+          >
+            <span className="text-xl">+</span> Add Exercise
+          </button>
+        )}
 
-        {/* Session notes */}
+        {/* Session notes – hidden when numpad is open */}
+        {!numpadIsOpen && (
         <div className="bg-card rounded-2xl p-4">
           <p className="text-xs text-c-muted mb-2 font-semibold uppercase tracking-wide">Session Notes</p>
           <textarea
@@ -1784,9 +1803,11 @@ export default function BbLogger() {
             className="w-full bg-item text-c-secondary rounded-xl px-3 py-2.5 text-sm placeholder-gray-400 resize-none"
           />
         </div>
+        )}
       </div>
 
-      {/* ── Sticky footer ────────────────────────────────────────────────── */}
+      {/* ── Sticky footer – hidden when numpad is open ───────────────────── */}
+      {!numpadIsOpen && (
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-3 pt-3 safe-bottom z-40">
         {loggedSets === 0 ? (
           <p className="text-center text-sm text-c-muted py-1">Log at least one set to save</p>
@@ -1800,6 +1821,7 @@ export default function BbLogger() {
           </button>
         )}
       </div>
+      )}
 
       {/* ── Panels & modals ──────────────────────────────────────────────── */}
       {showAddPanel && (

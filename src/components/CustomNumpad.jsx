@@ -6,7 +6,7 @@ import { useEffect, useRef, useCallback } from 'react'
 //               onNext, themeHex, themeContrastText }
 //               onNext: weight field → focus reps; reps field → submit set & open next
 //   isOpen  – boolean controlling slide animation
-//   onClose – called when Done is pressed
+//   onClose – called when Done is pressed (ONLY closes numpad, never marks exercise done)
 export default function CustomNumpad({ config, isOpen, onClose }) {
   const currentValueRef   = useRef('')
   const longPressTimerRef = useRef(null)
@@ -73,17 +73,18 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     config?.onNext?.()
   }, [config])
 
-  const handleHide = useCallback((e) => {
+  // "Done ✓": ALWAYS just closes the numpad. Nothing else.
+  const handleDone = useCallback((e) => {
     e.preventDefault()
+    // Blur synchronously before closing so any browser-triggered refocus
+    // is batched with the closeNumpad call in the same React flush.
     document.activeElement?.blur()
     onClose()
   }, [onClose])
 
-  const handleDone = useCallback((e) => {
+  // Hide keyboard — same as Done (close numpad, blur input)
+  const handleHide = useCallback((e) => {
     e.preventDefault()
-    // Blur synchronously before closing so any browser-triggered refocus (e.g. Chrome/Safari
-    // returning focus to the previously-focused element) is batched with the closeNumpad call.
-    // Both state updates land in the same React flush; closeNumpad's false wins.
     document.activeElement?.blur()
     onClose()
   }, [onClose])
@@ -93,11 +94,11 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
   const decimalActive     = config?.isDecimalAllowed
 
   const digitStyle = {
-    height: 56,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 10,
     backgroundColor: 'var(--bg-item)',
     color: 'var(--text-primary)',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '500',
     border: 'none',
     cursor: 'pointer',
@@ -126,48 +127,41 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
         WebkitUserSelect: 'none',
       }}
     >
-      {/* ── Action row – Liquid Glass panel ─────────────────────────── */}
+      {/* ── Hide keyboard bar — full-width, obvious tap target ─────── */}
+      <button
+        onPointerDown={handleHide}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          padding: '8px 0',
+          backgroundColor: 'transparent',
+          border: 'none',
+          borderBottom: '1px solid var(--border-subtle)',
+          cursor: 'pointer',
+          WebkitTapHighlightColor: 'transparent',
+          touchAction: 'manipulation',
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ opacity: 0.5 }}>
+          <path d="M5 8L10 13L15 8" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span style={{ color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em' }}>
+          Hide Keyboard
+        </span>
+      </button>
+
+      {/* ── Action row ────────────────────────────────────────────── */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          padding: '10px 12px',
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 100%)',
-          backdropFilter: 'blur(24px) saturate(1.8)',
-          WebkitBackdropFilter: 'blur(24px) saturate(1.8)',
-          borderBottom: '1px solid rgba(255,255,255,0.10)',
-          boxShadow: [
-            'inset 0 1px 0 rgba(255,255,255,0.35)',  // top-edge specular highlight
-            'inset 0 -1px 0 rgba(0,0,0,0.20)',        // inner bottom shadow
-            '0 4px 16px rgba(0,0,0,0.40)',             // outer drop shadow
-          ].join(', '),
+          padding: '8px 12px',
         }}
       >
-        {/* Hide ⌄ – collapse numpad without committing */}
-        <button
-          onPointerDown={handleHide}
-          style={{
-            backgroundColor: 'transparent',
-            color: 'var(--text-muted)',
-            fontWeight: 700,
-            fontSize: 20,
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.10)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation',
-          }}
-        >
-          ⌄
-        </button>
-
         {/* Field label */}
         <span
           style={{
@@ -202,7 +196,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           Next →
         </button>
 
-        {/* Done ✓ – primary accent */}
+        {/* Done ✓ – primary accent — always just closes the numpad */}
         <button
           onPointerDown={handleDone}
           style={{
@@ -223,13 +217,13 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
         </button>
       </div>
 
-      {/* ── Key grid ────────────────────────────────────────────────── */}
+      {/* ── Key grid (compact) ────────────────────────────────────── */}
       <div
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 8,
-          padding: '10px 12px 12px',
+          gap: 6,
+          padding: '6px 12px 10px',
         }}
       >
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => (
@@ -249,7 +243,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
             ...digitStyle,
             backgroundColor: decimalActive ? 'var(--bg-item)' : 'transparent',
             color: decimalActive ? 'var(--text-secondary)' : 'var(--text-faint)',
-            fontSize: 26,
+            fontSize: 24,
             cursor: decimalActive ? 'pointer' : 'default',
           }}
         >
@@ -270,7 +264,7 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           onPointerUp={endLongPress}
           onPointerLeave={cancelLongPress}
           onPointerCancel={cancelLongPress}
-          style={{ ...digitStyle, color: 'var(--text-secondary)', fontSize: 20 }}
+          style={{ ...digitStyle, color: 'var(--text-secondary)', fontSize: 18 }}
         >
           ⌫
         </button>
