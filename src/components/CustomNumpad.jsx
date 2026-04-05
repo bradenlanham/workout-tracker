@@ -69,9 +69,11 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
   }, [])
 
   // "Next →": weight → focus reps; reps → submit set & open next row
+  // Pass the current numpad value so the callback has the freshest data
+  // (React state may not have flushed yet when onNext fires)
   const handleNext = useCallback((e) => {
     e.preventDefault()
-    config?.onNext?.()
+    config?.onNext?.(currentValueRef.current)
   }, [config])
 
   // "Done ✓": marks the exercise as completed, then closes the numpad

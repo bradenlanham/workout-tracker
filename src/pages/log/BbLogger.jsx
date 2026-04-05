@@ -152,9 +152,11 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     onChgRef.current({ ...s, reps: v, plates: s.plates ?? emptyPlates(), barWeight: s.barWeight ?? 45, weight: String(t), plateMultiplier: m })
   }, [])
 
-  // Advance to next set only when reps and a non-zero total exist
-  const handleNextSet = useCallback(() => {
-    if (setRef.current.reps && totalRef.current > 0) {
+  // Advance to next set — numpad passes the freshest reps value directly
+  // because React state hasn't flushed yet when onNext fires
+  const handleNextSet = useCallback((currentNumpadValue) => {
+    const repsVal = currentNumpadValue ?? setRef.current.reps
+    if (repsVal && totalRef.current > 0) {
       onAdvanceRef.current?.()
     }
   }, [])
@@ -305,11 +307,18 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
     onChgRef.current({ ...setRef.current, reps: v })
   }, [])
 
-  // Advance to next set only when both fields are filled
-  const handleNextSet = useCallback(() => {
-    if (setRef.current.weight && setRef.current.reps) {
+  // Advance to next set — numpad passes the freshest reps value directly
+  // because React state hasn't flushed yet when onNext fires
+  const handleNextSet = useCallback((currentNumpadValue) => {
+    const repsVal = currentNumpadValue ?? setRef.current.reps
+    if (setRef.current.weight && repsVal) {
       onAdvanceRef.current?.()
     }
+  }, [])
+
+  // Focus reps from weight field — numpad passes value but we ignore it here
+  const handleFocusReps = useCallback(() => {
+    localRepsRef.current?.focus()
   }, [])
 
   // Mark exercise done (stable ref so it never goes stale)
@@ -363,7 +372,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           isDecimalAllowed: true,
           initialValue: set.weight,
           onChange: handleWeightChange,
-          onNext: () => localRepsRef.current?.focus(),
+          onNext: handleFocusReps,
           onDone: handleDone,
           themeHex: theme.hex,
           themeContrastText: theme.contrastText,
@@ -1386,28 +1395,63 @@ export default function BbLogger() {
 
   // ── Session timer (timestamp-based — survives backgrounding) ─────────────
 
-  const startTimestamp = useRef(savedSession?.startTimestamp || Date.now())
-  const [elapsedSeconds, setElapsedSeconds] = useState(
-    Math.floor((Date.now() - startTimestamp.current) / 1000)
-  )
+  const [sessionStarted, setSessionStarted] = useState(savedSession?.sessionStarted || false)
+  const startTimestamp = useRef(savedSession?.startTimestamp || null)
+  const [isPaused, setIsPaused] = useState(savedSession?.isPaused || false)
+  const totalPausedMsRef = useRef(savedSession?.totalPausedMs || 0)
+  const pauseStartedAtRef = useRef(savedSession?.pauseStartedAt || null)
+
+  const calcElapsed = () => {
+    if (!sessionStarted || !startTimestamp.current) return 0
+    let paused = totalPausedMsRef.current
+    if (isPaused && pauseStartedAtRef.current) {
+      paused += Date.now() - pauseStartedAtRef.current
+    }
+    return Math.max(0, Math.floor((Date.now() - startTimestamp.current - paused) / 1000))
+  }
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(calcElapsed)
+
+  const handleStartSession = () => {
+    startTimestamp.current = Date.now()
+    setSessionStarted(true)
+    setIsPaused(false)
+    totalPausedMsRef.current = 0
+    pauseStartedAtRef.current = null
+  }
+
+  const handlePause = () => {
+    if (!sessionStarted) return
+    pauseStartedAtRef.current = Date.now()
+    setIsPaused(true)
+  }
+
+  const handleResume = () => {
+    if (pauseStartedAtRef.current) {
+      totalPausedMsRef.current += Date.now() - pauseStartedAtRef.current
+      pauseStartedAtRef.current = null
+    }
+    setIsPaused(false)
+  }
 
   useEffect(() => {
+    if (!sessionStarted || isPaused) return
     const id = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startTimestamp.current) / 1000))
+      setElapsedSeconds(calcElapsed())
     }, 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [sessionStarted, isPaused]) // eslint-disable-line
 
   // Recalc on app return from background
   useEffect(() => {
     const handleVisibility = () => {
-      if (!document.hidden) {
-        setElapsedSeconds(Math.floor((Date.now() - startTimestamp.current) / 1000))
+      if (!document.hidden && sessionStarted) {
+        setElapsedSeconds(calcElapsed())
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [])
+  }, [sessionStarted, isPaused]) // eslint-disable-line
 
   // ── Persist active session on every change ───────────────────────────────
 
@@ -1416,8 +1460,13 @@ export default function BbLogger() {
       type,
       exercises,
       sessionNotes,
+      sessionStarted,
+      startTimestamp: startTimestamp.current,
+      isPaused,
+      totalPausedMs: totalPausedMsRef.current,
+      pauseStartedAt: pauseStartedAtRef.current,
     })
-  }, [exercises, sessionNotes]) // eslint-disable-line
+  }, [exercises, sessionNotes, sessionStarted, isPaused]) // eslint-disable-line
 
   // ── Session helpers ──────────────────────────────────────────────────────
 
@@ -1744,7 +1793,10 @@ export default function BbLogger() {
         <div className="flex items-center px-4 pb-2">
           <div className="flex-1 flex justify-start">
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => {
+                if (sessionStarted && !isPaused) handlePause()
+                navigate(-1)
+              }}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-black/25"
             >
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1755,9 +1807,25 @@ export default function BbLogger() {
           <span className="text-sm font-semibold text-center" style={{ opacity: 0.7 }}>
             {loggedSets} set{loggedSets !== 1 ? 's' : ''} logged
           </span>
-          <div className="flex-1 flex justify-end">
-            <div className="bg-black/25 rounded-full px-3 py-1.5">
-              <span className="text-sm font-mono font-bold text-white">
+          <div className="flex-1 flex justify-end items-center gap-2">
+            {sessionStarted && (
+              <button
+                onClick={isPaused ? handleResume : handlePause}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-black/25"
+              >
+                {isPaused ? (
+                  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
+                )}
+              </button>
+            )}
+            <div className={`rounded-full px-3 py-1.5 ${isPaused ? 'bg-white/30' : 'bg-black/25'}`}>
+              <span className="text-base font-mono font-extrabold tracking-tight text-white" style={{ letterSpacing: '0.02em' }}>
                 {formatElapsed(elapsedSeconds)}
               </span>
             </div>
