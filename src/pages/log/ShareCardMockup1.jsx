@@ -23,6 +23,7 @@ const SAMPLE = {
   totalVolume: 21000,
   totalSets: 19,
   totalPRs: 2,
+  streak: 5,
   grade: 'B',
   exercises: [
     { name: 'Incline DB Press', topSet: '85 × 8', volume: 1360, hasPR: false },
@@ -140,7 +141,7 @@ export default function ShareCardMockup1() {
             <div style={{ fontSize: 11, color: '#ffffff88', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 2 }}>
               {d.userName}
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+            <div style={{ fontSize: 26, fontWeight: 900, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
               {d.workoutEmoji} {d.workoutName}
             </div>
             <div style={{ fontSize: 12, color: '#ffffff77', marginTop: 2 }}>
@@ -240,7 +241,7 @@ export default function ShareCardMockup1() {
           {[
             { label: 'VOL', value: formatVol(d.totalVolume), color: '#ffffffDD' },
             { label: 'SETS', value: d.totalSets, color: '#ffffffDD' },
-            { label: 'PRs', value: d.totalPRs, color: '#FCD34D' },
+            { label: 'STREAK', value: d.streak + '🔥', color: '#FB923C' },
             { label: 'GRADE', value: d.grade, color: gradeColor(d.grade) },
           ].map((stat, i) => (
             <div
