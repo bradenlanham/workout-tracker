@@ -1417,6 +1417,11 @@ export default function BbLogger() {
     return [...templateExercises, ...extras]
   })()
 
+  // True only when this component mounted with an existing saved session (genuine resume).
+  // Captured once at mount — savedSession becomes truthy after the first auto-save even
+  // on a fresh session, so we can't rely on it reactively for the subtitle.
+  const [isResumed] = useState(() => !!(activeSession && activeSession.type === type))
+
   const [exercises,      setExercises]      = useState(() => savedSession?.exercises || defaultExercises)
   const [sessionNotes,   setSessionNotes]   = useState(() => savedSession?.sessionNotes || '')
   const [showAddPanel,   setShowAddPanel]   = useState(false)
@@ -1866,6 +1871,8 @@ export default function BbLogger() {
           backgroundColor: theme.hex,
           paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
           color: theme.contrastText,
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
         }}
       >
         <div className="flex items-center px-4 pb-1.5 pt-0.5">
@@ -1882,9 +1889,6 @@ export default function BbLogger() {
               </svg>
             </button>
           </div>
-          <span className="text-xs font-semibold text-center" style={{ opacity: 0.7 }}>
-            {loggedSets} set{loggedSets !== 1 ? 's' : ''} logged
-          </span>
           <div className="flex-1 flex justify-end items-center gap-2">
             {sessionStarted && (
               <button
@@ -1911,10 +1915,13 @@ export default function BbLogger() {
         </div>
 
         <div className="px-5 pb-2">
-          <h1 className="text-lg font-bold leading-tight">
+          <h1
+            className="font-bold leading-tight"
+            style={{ fontSize: 21, color: '#fff', textShadow: '0 0 20px rgba(255,255,255,0.15)' }}
+          >
             {workoutEmoji} {workoutName}
           </h1>
-          {savedSession && (
+          {isResumed && (
             <p className="text-xs mt-0.5" style={{ opacity: 0.6 }}>Resumed from saved session</p>
           )}
         </div>
