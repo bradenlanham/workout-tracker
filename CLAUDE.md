@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 5, 2026
+> Last updated: April 6, 2026
 
 ## Rules for Claude
 
@@ -29,6 +29,7 @@
 - **Styling:** Tailwind CSS 3.4.3 with CSS custom properties for theming
 - **Charts:** Recharts 2.12.2
 - **Build:** Vite 5.2.0
+- **Image export:** html2canvas (for share card JPEG export)
 - **No backend.** All data lives in localStorage. Export/import via JSON backup files.
 
 ---
@@ -75,7 +76,7 @@ src/
         ├── BbLogger.jsx       # THE MAIN SESSION LOGGER — exercise cards, sets, plates mode, uni toggle,
         │                      # previous session ghost rows, add exercise panel, finish modal, session comparison,
         │                      # auto-persist to split template, share card integration
-        ├── ShareCard.jsx      # Post-session summary card: selfie, stats, exercise breakdown, cardio, grade
+        ├── ShareCard.jsx      # Trading card share card: 5 tiers by streak, selfie, stats bar, JPEG export
         └── CameraCapture.jsx  # Selfie camera component for share card
 ```
 
@@ -233,15 +234,19 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - Grades drive the color of heatmap cells in History: A+ = accent color, A = emerald, B = amber, C = red, D = dark red.
 - **Editable after save:** The grade badge in History session detail is tappable and shows a picker to set/change grade anytime.
 
-### Share Card (ShareCard.jsx) — PENDING REDESIGN
-- **Full spec:** See `SHARE_CARD_SPEC.md` in repo root.
-- **Current state:** Old scrollable card (to be fully replaced).
-- **Approved mockup:** `src/pages/log/ShareCardTiers.jsx` — viewable at `/#/mockup/common` through `/#/mockup/mythic`.
-- **Redesign summary:** Fixed-viewport trading card with 5 rarity tiers based on workout streak. Photo window (4:3), compact exercise list (max 6 + overflow), stat bar (VOL/SETS/STREAK/GRADE), JPEG export via html2canvas + Web Share API.
-- **Tier system:** Common (0–5 streak, accent color), Rare (6–14, silver), Epic (15–19, gold), Legendary (20–49, animated orange gradient), Mythic (50+, animated holographic + sparkle particles).
-- **New dependency:** `html2canvas` (needs `npm install`).
-- **Caller changes:** Both `BbLogger.jsx` and `History.jsx` must pass `streak` via `getWorkoutStreak(sessions, rotation)` in the share data object.
-- **Cleanup after implementation:** Delete mockup files (`ShareCardMockup1.jsx`, `ShareCardMockup2.jsx`, `ShareCardTiers.jsx`) and their routes in `App.jsx`.
+### Share Card (ShareCard.jsx)
+- **Fixed-viewport trading card** — always fits one screen (max 380px wide, no scrolling).
+- **5 rarity tiers** based on workout streak from `getWorkoutStreak()`:
+  - Common (0–5): user's accent color border/glow
+  - Rare (6–14): silver
+  - Epic (15–19): gold
+  - Legendary (20–49): animated shimmer gradient border (orange/red/gold)
+  - Mythic (50+): animated shimmer border (purple/cyan/pink) + sparkle particles
+- **Layout (top to bottom):** tier badge row → 4:3 photo window (selfie or placeholder) → workout title + meta → exercise list (max 6 + overflow) → stats bar (VOL / SETS / STREAK 🔥 / GRADE).
+- **JPEG export:** Share button captures card via `html2canvas` at 2× scale, exports via Web Share API (iOS) or download fallback.
+- **Share/Done buttons** are outside the `cardRef` div and not captured in the JPEG.
+- **Data shape:** `data` prop includes `streak` (number) in addition to the standard fields. Both `BbLogger.jsx` and `History.jsx` pass `streak: getWorkoutStreak(sessions, activeSplit?.rotation)`.
+- **Dependency:** `html2canvas` (installed).
 
 ### Session Comparison (in BbLogger.jsx)
 - Shown automatically after saving a session (before share card), if a previous session of the same workout type exists.
@@ -338,7 +343,6 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 | `/splits` | SplitManager | Split list & management |
 | `/splits/new` | SplitBuilder | New split wizard |
 | `/splits/edit/:id` | SplitBuilder | Edit existing split |
-| `/mockup/:tier` | ShareCardTiers | TEMP: share card mockups (delete after redesign) |
 
 ---
 
@@ -423,3 +427,13 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 27. **Pause persists across navigation:** Tapping the back arrow auto-pauses the session. All timer state (`sessionStarted`, `startTimestamp`, `isPaused`, `totalPausedMs`, `pauseStartedAt`) is persisted in `activeSession` via Zustand, so navigating away and returning preserves exact timer state. Timer stays paused until manually resumed.
 28. **Accurate elapsed time with pause tracking:** Elapsed seconds now calculated as `(now - startTimestamp - totalPausedMs) / 1000`, properly subtracting all accumulated pause durations. Duration saved to the session remains accurate.
 29. **Dashboard "Resume Workout" CTA:** When an active session exists (started but not finished), the Dashboard CTA card changes to show the in-progress workout name/emoji, a pulsing "In Progress" or "Paused" indicator, a count of exercises logged so far, and a "Resume Workout →" button that navigates back to the logger. This replaces the normal "Start Session" CTA so users always know their progress is preserved.
+
+### Batch 6 (April 6, 2026) — Share Card redesign
+
+30. **Share Card full rewrite (`ShareCard.jsx`):** Replaced old scrollable card with a fixed-viewport trading card design (max 380px, no scrolling). Uses all-inline styles (no Tailwind) matching the approved mockup.
+31. **5-tier rarity system:** Tier determined by `getWorkoutStreak()` at render time — Common (0–5, user accent color), Rare (6–14, silver), Epic (15–19, gold), Legendary (20–49, animated shimmer orange/gold gradient border), Mythic (50+, animated shimmer purple/cyan border + 12 sparkle particles). CSS keyframes injected via `<style>` tag.
+32. **JPEG export + Web Share API:** "Share ↗" button captures the card via `html2canvas` (scale:2, retina quality), exports as JPEG via `navigator.share({ files })` on iOS; falls back to download on unsupported browsers. Share/Done buttons are outside `cardRef` so they don't appear in the exported image.
+33. **New stat bar:** VOL / SETS / STREAK 🔥 / GRADE — replacing old PRs slot with streak. Per-exercise PR badges still shown in exercise list.
+34. **`streak` added to share data:** Both `BbLogger.jsx` (uses `getWorkoutStreak(sessions, activeSplit?.rotation)`) and `History.jsx` (`buildShareData` now accepts `sessions` + `activeSplitId`) pass streak into the data object.
+35. **Cleanup:** Deleted `ShareCardMockup1.jsx`, `ShareCardMockup2.jsx`, `ShareCardTiers.jsx` and removed their routes from `App.jsx`.
+36. **New dependency:** `html2canvas` added to `package.json`.

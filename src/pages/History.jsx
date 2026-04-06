@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { formatDate, formatTime } from '../utils/helpers'
+import { formatDate, formatTime, getWorkoutStreak } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../data/exercises'
 import ShareCard from './log/ShareCard'
 
@@ -158,7 +158,7 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme 
 
 // ── Session detail modal ───────────────────────────────────────────────────────
 
-function buildShareData(session, settings, theme, splits, attachedCardio) {
+function buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId) {
   const exercises = session.data?.exercises || []
   const totalVolume = exercises.reduce((t, ex) =>
     t + ex.sets.reduce((s, set) => s + (set.reps || 0) * (set.weight || 0), 0), 0)
@@ -204,6 +204,7 @@ function buildShareData(session, settings, theme, splits, attachedCardio) {
           }
         : { completed: session.completedCardio || false },
     theme,
+    streak: getWorkoutStreak(sessions || [], splits.find(s => s.id === activeSplitId)?.rotation),
   }
 }
 
@@ -222,7 +223,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showShareCard, setShowShareCard] = useState(false)
   const [showGradePicker, setShowGradePicker] = useState(false)
-  const { settings, updateSession, cardioSessions, splits } = useStore()
+  const { settings, updateSession, cardioSessions, splits, sessions, activeSplitId } = useStore()
   const theme = getTheme(settings.accentColor)
   const d        = session.data || {}
   const isBb     = session.mode === 'bb'
@@ -235,7 +236,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   if (showShareCard) {
     return (
       <ShareCard
-        data={buildShareData(session, settings, theme, splits, attachedCardio)}
+        data={buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId)}
         onDone={() => setShowShareCard(false)}
         sessionId={session.id}
         onUpdateSession={updateSession}

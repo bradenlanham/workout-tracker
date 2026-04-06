@@ -16,9 +16,6 @@ import SplitEditor from './pages/SplitEditor'
 import SplitManager from './pages/SplitManager'
 import SplitBuilder from './pages/SplitBuilder'
 import Welcome from './pages/Welcome'
-import ShareCardMockup1 from './pages/log/ShareCardMockup1'
-import ShareCardMockup2 from './pages/log/ShareCardMockup2'
-import ShareCardTiers from './pages/log/ShareCardTiers'
 
 function ThemedApp() {
   const { settings, initSplits, sessions, hasCompletedOnboarding } = useStore()
@@ -54,10 +51,6 @@ function ThemedApp() {
         <Route path="/splits" element={<SplitManager />} />
         <Route path="/splits/new" element={<SplitBuilder />} />
         <Route path="/splits/edit/:id" element={<SplitBuilder />} />
-        {/* TEMP: Share card mockups for design review */}
-        <Route path="/mockup1" element={<ShareCardMockup1 />} />
-        <Route path="/mockup2" element={<ShareCardMockup2 />} />
-        <Route path="/mockup/:tier" element={<ShareCardTiers />} />
       </Routes>
       <HamburgerMenu />
       <BottomNav />

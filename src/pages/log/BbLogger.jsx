@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../data/exercises'
 import {
-  getLastBbSession, getExercisePRs,
+  getLastBbSession, getExercisePRs, getWorkoutStreak,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -1747,6 +1747,7 @@ export default function BbLogger() {
     const durationStr = h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`
     const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 
+    const activeSplit = splits.find(s => s.id === activeSplitId)
     setSummaryData({
       userName: settings.userName || '',
       workoutName,
@@ -1760,6 +1761,7 @@ export default function BbLogger() {
       grade,
       cardio,
       theme,
+      streak: getWorkoutStreak(sessions, activeSplit?.rotation),
     })
     setShowConfirm(false)
     setComparisonData(exerciseData)
