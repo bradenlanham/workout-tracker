@@ -25,13 +25,8 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     const current = currentValueRef.current
     let newValue = current
 
-    if (key === '.') {
-      if (!config.isDecimalAllowed || current.includes('.')) return
-      newValue = current === '' ? '0.' : current + '.'
-    } else {
-      if (current.length >= 7) return
-      newValue = current + key
-    }
+    if (current.length >= 7) return
+    newValue = current + key
 
     currentValueRef.current = newValue
     config.onChange(newValue)
@@ -93,7 +88,6 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
   const themeColor        = config?.themeHex          || '#22c55e'
   const themeContrastText = config?.themeContrastText || '#0a0a0a'
-  const decimalActive     = config?.isDecimalAllowed
 
   const digitStyle = {
     height: 44,
@@ -216,36 +210,24 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           </button>
         ))}
 
-        {/* Bottom-left: Decimal (when allowed) or Hide ↓ button */}
-        {decimalActive ? (
-          <button
-            onPointerDown={e => { e.preventDefault(); handleKey('.') }}
-            style={{
-              ...digitStyle,
-              fontSize: 24,
-            }}
-          >
-            .
-          </button>
-        ) : (
-          <button
-            onPointerDown={handleHide}
-            style={{
-              ...digitStyle,
-              backgroundColor: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.14)',
-              color: 'var(--text-secondary)',
-              fontSize: 13,
-              fontWeight: 600,
-              gap: 4,
-            }}
-          >
-            Hide
-            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" style={{ marginLeft: 2 }}>
-              <path d="M5 8L10 13L15 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
+        {/* Bottom-left: Hide ⌄ — always, for both weight and reps */}
+        <button
+          onPointerDown={handleHide}
+          style={{
+            ...digitStyle,
+            backgroundColor: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.14)',
+            color: 'var(--text-secondary)',
+            fontSize: 13,
+            fontWeight: 600,
+            gap: 4,
+          }}
+        >
+          Hide
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" style={{ marginLeft: 2 }}>
+            <path d="M5 8L10 13L15 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
 
         {/* 0 */}
         <button
@@ -256,67 +238,16 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
         </button>
 
         {/* Backspace – short tap deletes last char, long press clears */}
-        {decimalActive ? (
-          /* When decimal is active (weight field), show backspace normally */
-          <button
-            onPointerDown={startLongPress}
-            onPointerUp={endLongPress}
-            onPointerLeave={cancelLongPress}
-            onPointerCancel={cancelLongPress}
-            style={{ ...digitStyle, color: 'var(--text-secondary)', fontSize: 18 }}
-          >
-            ⌫
-          </button>
-        ) : (
-          /* When decimal NOT active (reps field), backspace takes 2/3 width, Hide takes remaining */
-          <button
-            onPointerDown={startLongPress}
-            onPointerUp={endLongPress}
-            onPointerLeave={cancelLongPress}
-            onPointerCancel={cancelLongPress}
-            style={{ ...digitStyle, color: 'var(--text-secondary)', fontSize: 18 }}
-          >
-            ⌫
-          </button>
-        )}
-      </div>
-
-      {/* ── Bottom row for weight fields: Hide button alongside decimal ── */}
-      {decimalActive && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            padding: '0 12px 10px',
-          }}
+        <button
+          onPointerDown={startLongPress}
+          onPointerUp={endLongPress}
+          onPointerLeave={cancelLongPress}
+          onPointerCancel={cancelLongPress}
+          style={{ ...digitStyle, color: 'var(--text-secondary)', fontSize: 18 }}
         >
-          <button
-            onPointerDown={handleHide}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              width: '100%',
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.14)',
-              color: 'var(--text-secondary)',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              WebkitTapHighlightColor: 'transparent',
-              touchAction: 'manipulation',
-            }}
-          >
-            Hide
-            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" style={{ marginLeft: 2 }}>
-              <path d="M5 8L10 13L15 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-      )}
+          ⌫
+        </button>
+      </div>
     </div>
   )
 }

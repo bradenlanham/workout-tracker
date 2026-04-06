@@ -1423,18 +1423,19 @@ export default function BbLogger() {
   const [showConfirm,    setShowConfirm]    = useState(false)
 
   // ── Custom numpad state ───────────────────────────────────────────────────
-  // isOpen drives the slide animation; config stays populated during slide-out
-  // so the numpad content doesn't disappear mid-animation.
-  const [numpadIsOpen,  setNumpadIsOpen]  = useState(false)
-  const [numpadConfig,  setNumpadConfig]  = useState(null)
+  // Single state object so openNumpad is atomic — no intermediate render where
+  // isOpen is true but config is stale (or vice-versa). This prevents the iOS
+  // race where tapping "Next →" caused a brief close/re-open flicker.
+  const [numpad, setNumpad] = useState({ isOpen: false, config: null })
+  const numpadIsOpen = numpad.isOpen
+  const numpadConfig = numpad.config
 
   const openNumpad = useCallback((config) => {
-    setNumpadConfig(config)
-    setNumpadIsOpen(true)
+    setNumpad({ isOpen: true, config })
   }, [])
 
   const closeNumpad = useCallback(() => {
-    setNumpadIsOpen(false)
+    setNumpad(s => ({ ...s, isOpen: false }))
   }, [])
 
   const numpadCtxValue = { numpadConfig, numpadIsOpen, openNumpad, closeNumpad }
@@ -1970,11 +1971,14 @@ export default function BbLogger() {
           </button>
         )}
 
-        {/* Focus mode exit zone – tap to dismiss numpad and return to full list */}
+        {/* Focus mode exit zone – tap to dismiss numpad and return to full list.
+            Uses onPointerDown (not onClick) so that ghost/delayed click events
+            from the numpad's "Next →" button can never accidentally trigger this
+            and collapse the numpad mid-transition. */}
         {numpadIsOpen && (
           <button
             type="button"
-            onClick={() => { document.activeElement?.blur(); closeNumpad() }}
+            onPointerDown={(e) => { e.preventDefault(); closeNumpad() }}
             className="w-full flex flex-col items-center justify-center gap-2 py-8 mt-2 rounded-2xl"
             style={{ backgroundColor: 'transparent' }}
           >
