@@ -274,19 +274,14 @@ export default function Dashboard() {
   }
 
   // ── Full rotation item N days from today (includes 'rest') ────────────────
-  // Used by the calendar to show rest-day indicators on future dates.
-  // Advances one slot per calendar day from the last logged session's position.
+  // Delegates to getRotationItemOnDate which uses UTC-midnight date strings on
+  // both sides — avoids the timezone bug of comparing new Date() (with time)
+  // against new Date('YYYY-MM-DD') (UTC midnight).
   function getFullRotationItem(daysAhead) {
     if (daysAhead < 0) return null
-    const bbSessions = sessions.filter(s => s.mode === 'bb' && s.type !== 'custom' && !s.type?.startsWith('tpl_'))
-    if (!bbSessions.length) return rotation[daysAhead % rotation.length]
-    const sorted     = [...bbSessions].sort((a, b) => new Date(b.date) - new Date(a.date))
-    const anchor     = sorted[0]
-    const anchorIdx  = rotation.indexOf(anchor.type)
-    if (anchorIdx === -1) return rotation[daysAhead % rotation.length]
-    const daysSinceAnchor = Math.round((today - new Date(anchor.date.split('T')[0])) / 86400000)
-    const todayIdx   = ((anchorIdx + daysSinceAnchor) % rotation.length + rotation.length) % rotation.length
-    return rotation[(todayIdx + daysAhead) % rotation.length]
+    const d = new Date(today)
+    d.setDate(today.getDate() + daysAhead)
+    return getRotationItemOnDate(toDateStr(d), sessions, rotation)
   }
 
   // ── Per-day info ─────────────────────────────────────────────────────────
@@ -313,6 +308,11 @@ export default function Dashboard() {
       if (rotItem === 'rest') return { type: 'future-rest' }
       const planned = rotItem || getPlannedWorkout(ahead)
       return { type: 'future', planned, emoji: planned ? getWorkoutEmoji(planned) : null }
+    }
+    // Past day with no session — check if it was a scheduled rest day
+    if (rotation?.length && sessions.length) {
+      const rotItem = getRotationItemOnDate(dStr, sessions, rotation)
+      if (rotItem === 'rest') return { type: 'past-rest' }
     }
     return { type: 'empty' }
   }
@@ -532,6 +532,7 @@ export default function Dashboard() {
             const isTodayCardio  = info.type === 'today-cardio'
             const isFuture       = info.type === 'future'
             const isFutureRest   = info.type === 'future-rest'
+            const isPastRest     = info.type === 'past-rest'
 
             let cellBg = 'bg-white/5'
             if (isTodayDone) cellBg = theme.bg
@@ -573,9 +574,11 @@ export default function Dashboard() {
                             ? <span className="text-[9px] text-c-muted font-semibold">R</span>
                             : isFutureRest
                               ? <span className="text-[9px] font-semibold" style={{ opacity: 0.5 }}>R</span>
-                              : isFuture && info.planned
-                                ? <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.5 }}>{getShortName(info.planned)}</span>
-                                : <span className="text-[8px] text-c-muted">·</span>}
+                              : isPastRest
+                                ? <span className="text-[9px] font-semibold" style={{ opacity: 0.3 }}>R</span>
+                                : isFuture && info.planned
+                                  ? <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.5 }}>{getShortName(info.planned)}</span>
+                                  : <span className="text-[8px] text-c-muted">·</span>}
                 </span>
               </button>
             )
@@ -619,6 +622,7 @@ export default function Dashboard() {
                 const isTodayCardio  = info.type === 'today-cardio'
                 const isFuture       = info.type === 'future'
                 const isFutureRest   = info.type === 'future-rest'
+                const isPastRest     = info.type === 'past-rest'
 
                 let cellBg  = 'bg-white/5'
                 let textCol = 'text-c-muted'
@@ -648,8 +652,14 @@ export default function Dashboard() {
                     {isTodayPending && (
                       <span className="text-[9px] leading-none mt-0.5 opacity-50">{info.emoji}</span>
                     )}
-                    {(isFuture || isFutureRest) && info.emoji && (
+                    {isFuture && info.emoji && (
                       <span className="text-[9px] leading-none mt-0.5 opacity-25">{info.emoji}</span>
+                    )}
+                    {isFutureRest && (
+                      <span className="text-[9px] leading-none mt-0.5 opacity-40 font-semibold">R</span>
+                    )}
+                    {isPastRest && (
+                      <span className="text-[9px] leading-none mt-0.5 opacity-30 font-semibold">R</span>
                     )}
                     {info.hasCardio && (isDone || isTodayDone) && (
                       <span style={{ fontSize: 6, color: '#60a5fa', lineHeight: 1 }}>●</span>
