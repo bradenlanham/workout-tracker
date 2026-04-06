@@ -100,7 +100,7 @@ function daysBetween(a, b) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings } = useStore()
+  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession } = useStore()
   const theme = getTheme(settings.accentColor)
   const [showMonth, setShowMonth] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -413,7 +413,32 @@ export default function Dashboard() {
 
       {/* ── Main CTA ────────────────────────────────────────────────────────── */}
       <div className="px-4 mb-6">
-        {isRestDay ? (
+        {activeSession?.sessionStarted ? (
+          <div className={`${theme.bg} rounded-3xl p-6`} style={{ position: 'relative', color: theme.contrastText, textAlign: 'center' }}>
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: theme.contrastText }} />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: theme.contrastText, opacity: 0.8 }} />
+              </span>
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ opacity: 0.7, textAlign: 'center' }}>
+                {activeSession.isPaused ? 'Paused' : 'In Progress'}
+              </p>
+            </div>
+            <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>
+              {getWorkoutEmoji(activeSession.type)} {getWorkoutName(activeSession.type)}
+            </p>
+            <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6, textAlign: 'center' }}>
+              {activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length || 0} exercise{activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length === 1 ? '' : 's'} logged so far
+            </p>
+            <button
+              onClick={() => navigate(`/log/bb/${activeSession.type}`)}
+              className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+              style={{ textAlign: 'center' }}
+            >
+              Resume Workout →
+            </button>
+          </div>
+        ) : isRestDay ? (
           <div className="bg-card rounded-3xl p-6" style={{ textAlign: 'center' }}>
             <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted" style={{ textAlign: 'center' }}>Today</p>
             <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>Rest Day</p>
