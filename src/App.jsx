@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import useStore from './store/useStore'
 import HamburgerMenu from './components/HamburgerMenu'
@@ -19,6 +19,7 @@ import Welcome from './pages/Welcome'
 
 function ThemedApp() {
   const { settings, initSplits, sessions, hasCompletedOnboarding } = useStore()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     const theme = settings.backgroundTheme === 'daylight' ? 'daylight' : 'obsidian'
@@ -52,8 +53,8 @@ function ThemedApp() {
         <Route path="/splits/new" element={<SplitBuilder />} />
         <Route path="/splits/edit/:id" element={<SplitBuilder />} />
       </Routes>
-      <HamburgerMenu />
-      <BottomNav />
+      <HamburgerMenu open={menuOpen} setOpen={setMenuOpen} />
+      <BottomNav onMenuOpen={() => setMenuOpen(true)} menuOpen={menuOpen} />
       <RestTimer />
     </div>
   )

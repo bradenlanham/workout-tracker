@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+
 import useStore from '../store/useStore'
 import { THEMES, getTheme } from '../theme'
 
-export default function HamburgerMenu() {
+export default function HamburgerMenu({ open, setOpen }) {
   const loc       = useLocation()
   const navigate  = useNavigate()
   const { settings, updateSettings, exportData, importData } = useStore()
   const theme     = getTheme(settings.accentColor)
-  const [open, setOpen]                 = useState(false)
   const [subScreen, setSubScreen]       = useState(null) // null | 'settings' | 'info'
   const [showDataSection, setShowDataSection] = useState(false)
   const [showTrackingInfo, setShowTrackingInfo] = useState(false)
@@ -52,27 +52,6 @@ export default function HamburgerMenu() {
 
   return (
     <>
-      {/* ── Hamburger trigger ─────────────────────────────────────────────────── */}
-      <button
-        onClick={() => setOpen(true)}
-        style={{
-          top: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
-          right: '1rem',
-          background: `${theme.hex}1a`,
-          border: `2px solid ${theme.hex}`,
-          borderRadius: '10px',
-          padding: '8px 10px',
-          minWidth: '44px',
-          minHeight: '44px',
-        }}
-        className="fixed z-50 flex flex-col items-center justify-center gap-1.5"
-        aria-label="Open menu"
-      >
-        <span style={{ backgroundColor: theme.hex }} className="w-5 h-0.5 rounded-full" />
-        <span style={{ backgroundColor: theme.hex }} className="w-5 h-0.5 rounded-full" />
-        <span style={{ backgroundColor: theme.hex }} className="w-3.5 h-0.5 rounded-full self-start ml-[5px]" />
-      </button>
-
       {/* ── Slide-in menu ─────────────────────────────────────────────────────── */}
       {open && (
         <>
