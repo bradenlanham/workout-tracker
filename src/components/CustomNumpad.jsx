@@ -79,10 +79,13 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     onClose()
   }, [config, onClose])
 
-  // "Hide ↓": just closes the numpad without marking done
+  // "Hide ↓": just closes the numpad without marking done.
+  // Lock scroll position before blurring to prevent layout-shift jump.
   const handleHide = useCallback((e) => {
     e.preventDefault()
+    const y = window.scrollY
     document.activeElement?.blur()
+    window.scrollTo({ top: y, behavior: 'instant' })
     onClose()
   }, [onClose])
 

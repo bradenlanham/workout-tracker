@@ -460,7 +460,7 @@ function ExerciseItem({
   const activeFieldKey = numpadCtx?.numpadConfig?.fieldKey || ''
   const ownsActiveField = activeFieldKey.includes(exercise.name)
   const numpadOpen = numpadCtx?.numpadIsOpen || false
-  const focusCollapsed = numpadOpen && !ownsActiveField && !exercise.done
+  const focusCollapsed = numpadOpen && !ownsActiveField
 
   // Scope session history to the current workout type so that an exercise like
   // "Pull-ups" in Back Day and Full Body tracks PRs and notes independently.
@@ -1810,7 +1810,7 @@ export default function BbLogger() {
   // ── Render helpers ───────────────────────────────────────────────────────
 
   const loggedSets    = exercises.reduce((t, ex) => t + ex.sets.filter(s => s.reps || s.weight).length, 0)
-  const completedExes = exercises.filter(ex => ex.done)
+  const completedExes = exercises.filter(ex => ex.done).sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0))
   const pendingExes   = exercises.filter(ex => !ex.done)
 
   const formatElapsed = (secs) => {
@@ -1868,54 +1868,50 @@ export default function BbLogger() {
           color: theme.contrastText,
         }}
       >
-        <div className="flex justify-center pb-1">
-          <ClipGraphic />
-        </div>
-
-        <div className="flex items-center px-4 pb-2">
+        <div className="flex items-center px-4 pb-1.5 pt-0.5">
           <div className="flex-1 flex justify-start">
             <button
               onClick={() => {
                 if (sessionStarted && !isPaused) handlePause()
                 navigate(-1)
               }}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-black/25"
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-black/25"
             >
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </button>
           </div>
-          <span className="text-sm font-semibold text-center" style={{ opacity: 0.7 }}>
+          <span className="text-xs font-semibold text-center" style={{ opacity: 0.7 }}>
             {loggedSets} set{loggedSets !== 1 ? 's' : ''} logged
           </span>
           <div className="flex-1 flex justify-end items-center gap-2">
             {sessionStarted && (
               <button
                 onClick={isPaused ? handleResume : handlePause}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-black/25"
+                className="w-7 h-7 flex items-center justify-center rounded-full bg-black/25"
               >
                 {isPaused ? (
-                  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                   </svg>
                 )}
               </button>
             )}
-            <div className={`rounded-full px-3 py-1.5 ${isPaused ? 'bg-white/30' : 'bg-black/25'}`}>
-              <span className="text-base font-mono font-extrabold tracking-tight text-white" style={{ letterSpacing: '0.02em' }}>
+            <div className={`rounded-full px-2.5 py-1 ${isPaused ? 'bg-white/30' : 'bg-black/25'}`}>
+              <span className="text-sm font-mono font-extrabold tracking-tight text-white" style={{ letterSpacing: '0.02em' }}>
                 {formatElapsed(elapsedSeconds)}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="px-5 pb-4">
-          <h1 className="text-2xl font-bold leading-tight">
+        <div className="px-5 pb-2">
+          <h1 className="text-lg font-bold leading-tight">
             {workoutEmoji} {workoutName}
           </h1>
           {savedSession && (

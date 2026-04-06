@@ -48,6 +48,18 @@
   --chart-tooltip-text:   #1a1a1a;
 }
 
+/* Landscape fallback: show a black overlay so the app looks intentional */
+@media (orientation: landscape) {
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #0a0a0a;
+    display: block;
+  }
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
