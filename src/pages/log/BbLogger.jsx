@@ -293,10 +293,14 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   const onChgRef      = useRef(onChange)
   const onAdvanceRef  = useRef(onAdvance)
   const onDoneRef     = useRef(onDone)
+  const numpadCtxRef  = useRef(numpadCtx)
+  const themeRef      = useRef(theme)
   setRef.current      = set
   onChgRef.current    = onChange
   onAdvanceRef.current = onAdvance
   onDoneRef.current    = onDone
+  numpadCtxRef.current = numpadCtx
+  themeRef.current     = theme
 
   // Stable onChange handlers – recreated only when the field context changes
   const handleWeightChange = useCallback((v) => {
@@ -316,20 +320,39 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
     }
   }, [])
 
-  // Focus reps from weight field — numpad passes value but we ignore it here.
-  // Deferred via requestAnimationFrame so the pointerdown event on the Next
-  // button fully settles before we move focus; without this, iOS Safari can
-  // drop the focus transfer and the numpad collapses instead of advancing.
-  const handleFocusReps = useCallback(() => {
-    requestAnimationFrame(() => {
-      localRepsRef.current?.focus({ preventScroll: true })
-    })
-  }, [])
-
   // Mark exercise done (stable ref so it never goes stale)
   const handleDone = useCallback(() => {
     onDoneRef.current?.()
   }, [])
+
+  // Focus reps from weight field.
+  // We must explicitly open the numpad with the reps config here rather than
+  // relying on the reps input's onFocus handler alone. On iOS Safari the
+  // deferred focus (requestAnimationFrame) lands outside the original pointer-
+  // event gesture, so the browser's event processing can dismiss the numpad
+  // between the weight blur and the reps focus. By calling openNumpad directly
+  // we guarantee the numpad stays visible through the transition.
+  const repsFieldKeyRef = useRef(`reps-${exerciseName}-${setIndex}`)
+  repsFieldKeyRef.current = `reps-${exerciseName}-${setIndex}`
+
+  const handleFocusReps = useCallback(() => {
+    // Immediately open numpad with reps config (keeps it visible)
+    numpadCtxRef.current?.openNumpad({
+      fieldKey: repsFieldKeyRef.current,
+      label: 'Reps',
+      isDecimalAllowed: false,
+      initialValue: setRef.current.reps,
+      onChange: handleRepsChange,
+      onNext: handleNextSet,
+      onDone: handleDone,
+      themeHex: themeRef.current.hex,
+      themeContrastText: themeRef.current.contrastText,
+    })
+    // Then transfer focus (deferred so pointer event settles first)
+    requestAnimationFrame(() => {
+      localRepsRef.current?.focus({ preventScroll: true })
+    })
+  }, [handleRepsChange, handleNextSet, handleDone])
 
   if (plateLoaded) {
     return (
