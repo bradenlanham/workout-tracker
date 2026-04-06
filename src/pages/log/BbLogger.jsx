@@ -1430,12 +1430,18 @@ export default function BbLogger() {
   const [numpadIsOpen,  setNumpadIsOpen]  = useState(false)
   const [numpadConfig,  setNumpadConfig]  = useState(null)
 
+  // ── DEBUG: track every open/close call with caller info ──
+  const debugLogRef = useRef([])
   const openNumpad = useCallback((config) => {
+    const caller = new Error().stack?.split('\n')?.[2]?.trim()?.slice(0, 60) || '?'
+    debugLogRef.current = [...debugLogRef.current.slice(-8), { t: Date.now(), a: 'OPEN', f: config?.fieldKey, c: caller }]
     setNumpadConfig(config)
     setNumpadIsOpen(true)
   }, [])
 
   const closeNumpad = useCallback(() => {
+    const caller = new Error().stack?.split('\n')?.[2]?.trim()?.slice(0, 60) || '?'
+    debugLogRef.current = [...debugLogRef.current.slice(-8), { t: Date.now(), a: 'CLOSE', c: caller }]
     setNumpadIsOpen(false)
   }, [])
 
@@ -2068,6 +2074,21 @@ export default function BbLogger() {
 
       {/* Custom numpad – always in DOM for slide animation */}
       <CustomNumpad config={numpadConfig} isOpen={numpadIsOpen} onClose={closeNumpad} />
+
+      {/* ── DEBUG OVERLAY – remove after diagnosing ── */}
+      <div style={{
+        position: 'fixed', top: 50, left: 8, right: 8, zIndex: 9999,
+        background: 'rgba(0,0,0,0.9)', color: '#0f0', fontSize: 10,
+        fontFamily: 'monospace', padding: 6, borderRadius: 8, maxHeight: 160,
+        overflow: 'auto', pointerEvents: 'none',
+      }}>
+        <div>numpadIsOpen: <b style={{color: numpadIsOpen ? '#0f0' : '#f00'}}>{String(numpadIsOpen)}</b> | config: {numpadConfig?.fieldKey || 'null'}</div>
+        {debugLogRef.current.map((e, i) => (
+          <div key={i} style={{ color: e.a === 'CLOSE' ? '#f44' : '#4f4', marginTop: 2 }}>
+            {new Date(e.t).toLocaleTimeString()}.{String(e.t % 1000).padStart(3,'0')} {e.a} {e.f || ''} {e.c}
+          </div>
+        ))}
+      </div>
     </div>
     </NumpadContext.Provider>
   )
