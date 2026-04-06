@@ -326,17 +326,19 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   }, [])
 
   // Focus reps from weight field.
-  // We must explicitly open the numpad with the reps config here rather than
-  // relying on the reps input's onFocus handler alone. On iOS Safari the
-  // deferred focus (requestAnimationFrame) lands outside the original pointer-
-  // event gesture, so the browser's event processing can dismiss the numpad
-  // between the weight blur and the reps focus. By calling openNumpad directly
-  // we guarantee the numpad stays visible through the transition.
+  // We do NOT call .focus() on the reps DOM element. All inputs use
+  // inputMode="none" (no system keyboard), and our custom numpad is fully
+  // controlled by React state (numpadConfig + numpadIsOpen). Calling .focus()
+  // caused a 60ms-delayed click event from the Next button's pointerdown to
+  // land on the "Tap to show all exercises" zone after the re-render shifted
+  // the layout, which called closeNumpad and collapsed the keyboard.
+  // Instead we just swap the numpad config to the reps field — the accent
+  // ring shows via isRepsActive (config-driven), and typing goes through
+  // handleRepsChange. No DOM focus needed.
   const repsFieldKeyRef = useRef(`reps-${exerciseName}-${setIndex}`)
   repsFieldKeyRef.current = `reps-${exerciseName}-${setIndex}`
 
   const handleFocusReps = useCallback(() => {
-    // Immediately open numpad with reps config (keeps it visible)
     numpadCtxRef.current?.openNumpad({
       fieldKey: repsFieldKeyRef.current,
       label: 'Reps',
@@ -347,10 +349,6 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
       onDone: handleDone,
       themeHex: themeRef.current.hex,
       themeContrastText: themeRef.current.contrastText,
-    })
-    // Then transfer focus (deferred so pointer event settles first)
-    requestAnimationFrame(() => {
-      localRepsRef.current?.focus({ preventScroll: true })
     })
   }, [handleRepsChange, handleNextSet, handleDone])
 
@@ -1430,18 +1428,12 @@ export default function BbLogger() {
   const [numpadIsOpen,  setNumpadIsOpen]  = useState(false)
   const [numpadConfig,  setNumpadConfig]  = useState(null)
 
-  // ── DEBUG: track every open/close call with caller info ──
-  const debugLogRef = useRef([])
   const openNumpad = useCallback((config) => {
-    const caller = new Error().stack?.split('\n')?.[2]?.trim()?.slice(0, 60) || '?'
-    debugLogRef.current = [...debugLogRef.current.slice(-8), { t: Date.now(), a: 'OPEN', f: config?.fieldKey, c: caller }]
     setNumpadConfig(config)
     setNumpadIsOpen(true)
   }, [])
 
   const closeNumpad = useCallback(() => {
-    const caller = new Error().stack?.split('\n')?.[2]?.trim()?.slice(0, 60) || '?'
-    debugLogRef.current = [...debugLogRef.current.slice(-8), { t: Date.now(), a: 'CLOSE', c: caller }]
     setNumpadIsOpen(false)
   }, [])
 
@@ -2074,21 +2066,6 @@ export default function BbLogger() {
 
       {/* Custom numpad – always in DOM for slide animation */}
       <CustomNumpad config={numpadConfig} isOpen={numpadIsOpen} onClose={closeNumpad} />
-
-      {/* ── DEBUG OVERLAY – remove after diagnosing ── */}
-      <div style={{
-        position: 'fixed', top: 50, left: 8, right: 8, zIndex: 9999,
-        background: 'rgba(0,0,0,0.9)', color: '#0f0', fontSize: 10,
-        fontFamily: 'monospace', padding: 6, borderRadius: 8, maxHeight: 160,
-        overflow: 'auto', pointerEvents: 'none',
-      }}>
-        <div>numpadIsOpen: <b style={{color: numpadIsOpen ? '#0f0' : '#f00'}}>{String(numpadIsOpen)}</b> | config: {numpadConfig?.fieldKey || 'null'}</div>
-        {debugLogRef.current.map((e, i) => (
-          <div key={i} style={{ color: e.a === 'CLOSE' ? '#f44' : '#4f4', marginTop: 2 }}>
-            {new Date(e.t).toLocaleTimeString()}.{String(e.t % 1000).padStart(3,'0')} {e.a} {e.f || ''} {e.c}
-          </div>
-        ))}
-      </div>
     </div>
     </NumpadContext.Provider>
   )

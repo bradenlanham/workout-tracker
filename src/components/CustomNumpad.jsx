@@ -113,6 +113,10 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
   return (
     <div
+      // Swallow click events so delayed clicks from pointerdown-driven buttons
+      // don't bleed through to elements repositioned behind the numpad after a
+      // React re-render (e.g. the "Tap to show all exercises" zone).
+      onClick={e => { e.preventDefault(); e.stopPropagation() }}
       style={{
         position: 'fixed',
         bottom: 0,
