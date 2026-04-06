@@ -110,6 +110,14 @@ export default function Log() {
   const getWorkoutName  = (wId) => activeSplit?.workouts?.find(w => w.id === wId)?.name  || BB_WORKOUT_NAMES[wId]  || wId
   const getWorkoutEmoji = (wId) => activeSplit?.workouts?.find(w => w.id === wId)?.emoji || BB_WORKOUT_EMOJI[wId] || '🏋️'
 
+  const getLastCompletedDate = (wId) => {
+    const match = sessions
+      .filter(s => s.type === wId && s.date)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))[0]
+    if (!match) return null
+    return new Date(match.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
   // Sequence for the split reorder modal (uses built-in rotation incl. rest days)
   const effectiveSequence = activeSplit?.rotation ||
     (workoutSequence && workoutSequence.length ? workoutSequence : BB_WORKOUT_SEQUENCE)
@@ -121,24 +129,6 @@ export default function Log() {
       </div>
 
       <div className="px-4 space-y-5">
-        {/* Quick start */}
-        <div>
-          <SectionHeader>Quick Start</SectionHeader>
-          <button
-            onClick={() => navigate(`/log/bb/${nextBb}`)}
-            className={`w-full ${theme.bg} ${theme.bgHover} text-white rounded-2xl p-5 flex items-center justify-between transition-colors`}
-            style={{ color: theme.contrastText }}
-          >
-            <div className="text-left">
-              <p className="text-xs font-semibold opacity-80 mb-0.5">NEXT WORKOUT</p>
-              <p className="text-2xl font-bold">{getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}</p>
-            </div>
-            <svg className="w-7 h-7 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-
         {/* Active split workouts */}
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -171,6 +161,12 @@ export default function Log() {
                     {w.id === nextBb && (
                       <p className={`text-xs ${theme.text}`}>Suggested next</p>
                     )}
+                    {(() => {
+                      const lastDate = getLastCompletedDate(w.id)
+                      return lastDate
+                        ? <p className="text-xs text-c-muted">{lastDate}</p>
+                        : null
+                    })()}
                   </div>
                 </div>
                 <svg className="w-5 h-5 text-c-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -227,13 +223,6 @@ export default function Log() {
           </div>
         )}
 
-        {/* Create template button */}
-        <button
-          onClick={() => navigate('/templates/new')}
-          className="w-full py-4 rounded-2xl border-2 border-dashed border-c-base text-c-muted font-semibold flex items-center justify-center gap-2"
-        >
-          <span className="text-xl">+</span> Create Template
-        </button>
       </div>
 
       {/* Split order modal */}
