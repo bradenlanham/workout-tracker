@@ -533,17 +533,21 @@ function ExerciseItem({
   }
 
   const markDone = () => {
+    numpadCtx?.closeNumpad()
     onUpdate({ ...exercise, done: true, completedAt: Date.now() })
     setExpanded(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // Stable ref-backed version for the numpad Done button (avoids stale closures)
-  const exerciseRef = useRef(exercise)
-  const onUpdateRef = useRef(onUpdate)
-  exerciseRef.current = exercise
-  onUpdateRef.current = onUpdate
+  const exerciseRef    = useRef(exercise)
+  const onUpdateRef    = useRef(onUpdate)
+  const closeNumpadRef = useRef(numpadCtx?.closeNumpad)
+  exerciseRef.current    = exercise
+  onUpdateRef.current    = onUpdate
+  closeNumpadRef.current = numpadCtx?.closeNumpad
   const stableMarkDone = useCallback(() => {
+    closeNumpadRef.current?.()
     const ex = exerciseRef.current
     onUpdateRef.current({ ...ex, done: true, completedAt: Date.now() })
     setExpanded(false)
@@ -1869,6 +1873,7 @@ export default function BbLogger() {
         className="sticky top-0 z-30"
         style={{
           backgroundColor: theme.hex,
+          backgroundImage: `linear-gradient(to bottom, ${theme.hex}22 0%, transparent 100%)`,
           paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
           color: theme.contrastText,
           borderBottom: '1px solid rgba(255,255,255,0.08)',
