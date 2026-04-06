@@ -233,12 +233,15 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - Grades drive the color of heatmap cells in History: A+ = accent color, A = emerald, B = amber, C = red, D = dark red.
 - **Editable after save:** The grade badge in History session detail is tappable and shows a picker to set/change grade anytime.
 
-### Share Card (ShareCard.jsx)
-- Shows post-session summary: workout name, date, duration, total volume, sets, PRs, grade.
-- Per-exercise breakdown: set count, top set weight × reps, per-exercise volume.
-- Cardio section if completed (inline or attached).
-- Selfie support via CameraCapture component.
-- When accessed from History, it pulls in attached cardio data even if the session didn't have inline cardio.
+### Share Card (ShareCard.jsx) — PENDING REDESIGN
+- **Full spec:** See `SHARE_CARD_SPEC.md` in repo root.
+- **Current state:** Old scrollable card (to be fully replaced).
+- **Approved mockup:** `src/pages/log/ShareCardTiers.jsx` — viewable at `/#/mockup/common` through `/#/mockup/mythic`.
+- **Redesign summary:** Fixed-viewport trading card with 5 rarity tiers based on workout streak. Photo window (4:3), compact exercise list (max 6 + overflow), stat bar (VOL/SETS/STREAK/GRADE), JPEG export via html2canvas + Web Share API.
+- **Tier system:** Common (0–5 streak, accent color), Rare (6–14, silver), Epic (15–19, gold), Legendary (20–49, animated orange gradient), Mythic (50+, animated holographic + sparkle particles).
+- **New dependency:** `html2canvas` (needs `npm install`).
+- **Caller changes:** Both `BbLogger.jsx` and `History.jsx` must pass `streak` via `getWorkoutStreak(sessions, rotation)` in the share data object.
+- **Cleanup after implementation:** Delete mockup files (`ShareCardMockup1.jsx`, `ShareCardMockup2.jsx`, `ShareCardTiers.jsx`) and their routes in `App.jsx`.
 
 ### Session Comparison (in BbLogger.jsx)
 - Shown automatically after saving a session (before share card), if a previous session of the same workout type exists.
@@ -335,6 +338,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 | `/splits` | SplitManager | Split list & management |
 | `/splits/new` | SplitBuilder | New split wizard |
 | `/splits/edit/:id` | SplitBuilder | Edit existing split |
+| `/mockup/:tier` | ShareCardTiers | TEMP: share card mockups (delete after redesign) |
 
 ---
 
@@ -410,3 +414,12 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 21. **Compact numpad:** Keys 44px tall (down from 56px), gap 6px (down from 8px), reclaiming ~60px vertical space.
 22. **Stable ref callbacks:** All numpad config callbacks (`onChange`, `onNext`, `onDone`) use ref-backed patterns to avoid stale closures when set state changes while an input is focused.
 23. **Next button stale-state fix:** The numpad now passes `currentValueRef.current` (the live numpad buffer) as an argument to `onNext(value)`. This fixes the critical bug where pressing Next on the reps field did nothing because `setRef.current.reps` was stale (React hadn't re-rendered yet after the last `onChange`). The `handleNextSet` callbacks in both SetRow and PlateSetRow now use this passed value instead of reading from the stale ref.
+
+### Batch 5 (April 5, 2026) — Session timer UX overhaul
+
+24. **"Start Session" overlay:** When entering BbLogger, a full-screen overlay appears with the workout emoji, name, and a "Start Session" button. Timer stays at 0:00 until tapped. Includes "Go back" link. Overlay does not appear when resuming a saved session (already started).
+25. **Timer repositioned & bolder:** The elapsed timer badge in the clipboard header is now `text-base font-extrabold` (up from `text-sm font-bold`) with tighter tracking. Positioned in the top-right of the header bar alongside a new pause/play button.
+26. **Pause/resume button:** A play/pause toggle button appears next to the timer once the session has started. Pausing switches the timer badge to a `bg-white/30` style to visually indicate paused state.
+27. **Pause persists across navigation:** Tapping the back arrow auto-pauses the session. All timer state (`sessionStarted`, `startTimestamp`, `isPaused`, `totalPausedMs`, `pauseStartedAt`) is persisted in `activeSession` via Zustand, so navigating away and returning preserves exact timer state. Timer stays paused until manually resumed.
+28. **Accurate elapsed time with pause tracking:** Elapsed seconds now calculated as `(now - startTimestamp - totalPausedMs) / 1000`, properly subtracting all accumulated pause durations. Duration saved to the session remains accurate.
+29. **Dashboard "Resume Workout" CTA:** When an active session exists (started but not finished), the Dashboard CTA card changes to show the in-progress workout name/emoji, a pulsing "In Progress" or "Paused" indicator, a count of exercises logged so far, and a "Resume Workout →" button that navigates back to the logger. This replaces the normal "Start Session" CTA so users always know their progress is preserved.
