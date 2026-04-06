@@ -429,6 +429,7 @@ function ExerciseItem({
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
   const { settings, setRestEndTimestamp } = useStore()
+  const { closeNumpad } = useContext(NumpadContext)
 
   // Scope session history to the current workout type so that an exercise like
   // "Pull-ups" in Back Day and Full Body tracks PRs and notes independently.
@@ -438,13 +439,16 @@ function ExerciseItem({
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
 
   // Always-fresh refs so stableMarkDone never holds a stale closure
-  const exerciseRef = useRef(exercise)
-  const onUpdateRef = useRef(onUpdate)
-  exerciseRef.current = exercise
-  onUpdateRef.current = onUpdate
+  const exerciseRef    = useRef(exercise)
+  const onUpdateRef    = useRef(onUpdate)
+  const closeNumpadRef = useRef(closeNumpad)
+  exerciseRef.current    = exercise
+  onUpdateRef.current    = onUpdate
+  closeNumpadRef.current = closeNumpad
 
   // Stable callback passed to SetRow → numpad config.onDone
   const stableMarkDone = useCallback(() => {
+    closeNumpadRef.current?.()
     onUpdateRef.current({ ...exerciseRef.current, done: true, completedAt: Date.now() })
     setExpanded(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -514,6 +518,7 @@ function ExerciseItem({
   }
 
   const markDone = () => {
+    closeNumpad()
     onUpdate({ ...exercise, done: true, completedAt: Date.now() })
     setExpanded(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
