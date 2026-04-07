@@ -209,7 +209,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           })}
           placeholder="reps"
           className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
-          style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}` } : {}}
+          style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
         />
         {set.reps && total > 0 ? (
           <button
@@ -405,7 +405,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         })}
         placeholder="lbs"
         className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
-        style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}` } : {}}
+        style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
       />
       {/* Reps SECOND */}
       <input
@@ -427,7 +427,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         })}
         placeholder="reps"
         className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
-        style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}` } : {}}
+        style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
       />
       <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
       <button
