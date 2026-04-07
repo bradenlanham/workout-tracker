@@ -492,6 +492,7 @@ function SessionCard({ session, onClick, splits }) {
   const emoji = resolveWorkoutEmoji(session.type, splits)
   const setCount = d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0
   const hasPR = d.exercises?.some(e => e.sets.some(s => s.isNewPR))
+  const dateLabel = new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   return (
     <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 bg-card rounded-xl text-left">
@@ -502,7 +503,7 @@ function SessionCard({ session, onClick, splits }) {
           {hasPR && <span className="text-xs text-amber-400 shrink-0">🏆</span>}
         </div>
         <span className="text-xs text-c-muted">
-          {setCount} sets{session.duration ? ` · ${session.duration}m` : ''}{session.grade ? ` · ${session.grade}` : ''}
+          {dateLabel}{setCount ? ` · ${setCount} sets` : ''}{session.duration ? ` · ${session.duration}m` : ''}{session.grade ? ` · ${session.grade}` : ''}
         </span>
       </div>
       <svg className="w-3.5 h-3.5 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -515,13 +516,14 @@ function SessionCard({ session, onClick, splits }) {
 // ── Cardio session card ────────────────────────────────────────────────────────
 
 function CardioSessionCard({ session, onClick }) {
+  const dateLabel = new Date(session.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   return (
     <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 bg-card rounded-xl text-left">
       <span className="text-base shrink-0 w-5 text-center">🏃</span>
       <div className="flex-1 min-w-0">
         <span className="text-sm font-semibold truncate block">{session.type}</span>
         <span className="text-xs text-c-muted">
-          {formatCardioTime(session.duration)}{session.distance ? ` · ${session.distance} ${session.distanceUnit}` : ''}{session.intensity ? ` · ${INTENSITY_LABELS[session.intensity] || session.intensity}` : ''}
+          {dateLabel} · {formatCardioTime(session.duration)}{session.distance ? ` · ${session.distance} ${session.distanceUnit}` : ''}{session.intensity ? ` · ${INTENSITY_LABELS[session.intensity] || session.intensity}` : ''}
         </span>
       </div>
       <svg className="w-3.5 h-3.5 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -592,14 +594,14 @@ export default function History() {
     <div className="pb-10 min-h-screen">
 
       {/* Sticky header */}
-      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-3">
+      <div className="sticky top-0 bg-base z-30 px-4 pb-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)' }}>
         <h1 className="text-2xl font-bold">History</h1>
       </div>
 
       <div className="px-4">
 
-        {/* Session list grouped by day */}
-        <div>
+        {/* Session list — flat, date inline in each row */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {!hasAny && (
             <div className="text-center py-16">
               <p className="text-4xl mb-3">📋</p>
@@ -607,23 +609,16 @@ export default function History() {
               <p className="text-c-faint text-sm mt-1">Log a workout or cardio session to see your history</p>
             </div>
           )}
-          {sortedKeys.map((dateKey, i) => {
+          {sortedKeys.flatMap(dateKey => {
             const group = groups[dateKey]
-            return (
-              <div key={dateKey} className={i > 0 ? 'mt-4' : ''}>
-                <p className="text-xs text-c-faint font-medium mb-1 px-1">
-                  {formatDate(group.date)}
-                </p>
-                <div className="space-y-px">
-                  {group.strength.map(s => (
-                    <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} splits={splits} />
-                  ))}
-                  {group.cardio.map(s => (
-                    <CardioSessionCard key={s.id} session={s} onClick={() => setSelectedCardio(s.id)} />
-                  ))}
-                </div>
-              </div>
-            )
+            return [
+              ...group.strength.map(s => (
+                <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} splits={splits} />
+              )),
+              ...group.cardio.map(s => (
+                <CardioSessionCard key={s.id} session={s} onClick={() => setSelectedCardio(s.id)} />
+              )),
+            ]
           })}
         </div>
       </div>

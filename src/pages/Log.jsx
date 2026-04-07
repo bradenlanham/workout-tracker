@@ -124,7 +124,7 @@ export default function Log() {
 
   return (
     <div className="pb-nav min-h-screen">
-      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-4">
+      <div className="sticky top-0 bg-base z-30 px-4 pb-4" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)' }}>
         <h1 className="text-2xl font-bold mb-4">Log Session</h1>
       </div>
 

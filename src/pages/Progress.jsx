@@ -120,7 +120,7 @@ function WeeklyLoadChart({ sessions, splits, accentHex }) {
   const plotW = W - PL - PR, plotH = H - PT - PB
   const groupW = plotW / data.length
   const barW = Math.max(5, (groupW - 12) / 3)
-  const weekColors = [accentHex, accentHex + 'AA', accentHex + '55']
+  const weekColors = ['#4ADE80', '#60A5FA', '#F472B6']
   const weekLabels = ['This wk', 'Last wk', '2 wks ago']
   const yTicks = [0, 0.5, 1.0].map(f => ({ val: Math.round(f * maxVol), y: PT + plotH * (1 - f) }))
 
@@ -224,7 +224,7 @@ function DurationChart({ sessions, accentHex }) {
           </g>
         )
       })}
-      <path d={avgPath} fill="none" stroke="white" strokeWidth={1.5} strokeOpacity={0.5} strokeDasharray="4 2" />
+      <path d={avgPath} fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} strokeDasharray="4 2" />
       {sorted.map((s, i) => {
         const step = Math.max(1, Math.floor(n / 4))
         if (i % step !== 0) return null
@@ -236,7 +236,7 @@ function DurationChart({ sessions, accentHex }) {
         )
       })}
       <g transform={`translate(${W - 86}, ${H - 20})`}>
-        <line x1={0} y1={5} x2={12} y2={5} stroke="white" strokeWidth={1.5} strokeOpacity={0.5} strokeDasharray="4 2" />
+        <line x1={0} y1={5} x2={12} y2={5} stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} strokeDasharray="4 2" />
         <text x={15} y={9} fontSize={8} fill="var(--text-faint)">7-session avg</text>
       </g>
     </svg>
@@ -320,16 +320,20 @@ function RadarChart({ sessions, accentHex }) {
       })}
       {/* Mini bar chart on right */}
       <g transform="translate(205, 26)">
-        {RADAR_AXES.map((label, i) => (
-          <g key={i} transform={`translate(0, ${i * 30})`}>
-            <text x={0} y={9} fontSize={9.5} fill="var(--text-muted)">{label}</text>
-            <rect x={0} y={13} width={82} height={5} rx={2} fill="var(--bg-item)" />
-            <rect x={0} y={13} width={Math.max(2, norm[i] * 82)} height={5} rx={2} fill={accentHex + 'CC'} />
-            <text x={86} y={19} textAnchor="start" fontSize={8} fill="var(--text-faint)">
-              {Math.round(norm[i] * 100)}%
-            </text>
-          </g>
-        ))}
+        {RADAR_AXES.map((label, i) => {
+          const barColors = ['#4ADE80','#60A5FA','#F472B6','#FBBF24','#A78BFA','#FB923C']
+          const barColor = barColors[i % barColors.length]
+          return (
+            <g key={i} transform={`translate(0, ${i * 30})`}>
+              <text x={0} y={9} fontSize={9.5} fill="var(--text-muted)">{label}</text>
+              <rect x={0} y={13} width={82} height={5} rx={2} fill="var(--bg-item)" />
+              <rect x={0} y={13} width={Math.max(2, norm[i] * 82)} height={5} rx={2} fill={barColor} />
+              <text x={86} y={19} textAnchor="start" fontSize={8} fill="var(--text-faint)">
+                {Math.round(norm[i] * 100)}%
+              </text>
+            </g>
+          )
+        })}
       </g>
     </svg>
   )
@@ -338,6 +342,8 @@ function RadarChart({ sessions, accentHex }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Visual 4 — Personal Records Timeline
 // ─────────────────────────────────────────────────────────────────────────────
+
+const PR_COLORS = ['#4ADE80','#60A5FA','#F472B6','#FBBF24','#A78BFA','#FB923C']
 
 function PRTimeline({ sessions, accentHex }) {
   // Collect PRs, deduplicated to best per exercise per session date
@@ -384,13 +390,14 @@ function PRTimeline({ sessions, accentHex }) {
         const y = PT + i * rowH + rowH / 2
         const short = ex.length > 14 ? ex.slice(0, 13) + '…' : ex
         const prs = filtered.filter(e => e.exercise === ex)
+        const dotColor = PR_COLORS[i % PR_COLORS.length]
         return (
           <g key={ex}>
             <text x={PL - 6} y={y + 4} textAnchor="end" fontSize={8.5} fill="var(--text-muted)">{short}</text>
             <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="var(--border-subtle)" strokeWidth={0.5} strokeDasharray="3 3" />
             {prs.map((pr, j) => (
               <g key={j}>
-                <circle cx={toX(pr.date)} cy={y} r={7} fill={accentHex} fillOpacity={0.88} />
+                <circle cx={toX(pr.date)} cy={y} r={7} fill={dotColor} fillOpacity={0.88} />
                 <text x={toX(pr.date)} y={y + 3.5} textAnchor="middle" fontSize={6.5} fill="white" fontWeight={700}>
                   {pr.weight > 0 ? pr.weight : '✓'}
                 </text>
@@ -525,7 +532,7 @@ export default function Progress() {
 
   return (
     <div style={{ paddingBottom: 100, minHeight: '100vh' }}>
-      <div className="sticky top-0 bg-base z-30 px-4 pt-12 pb-3">
+      <div className="sticky top-0 bg-base z-30 px-4 pb-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)' }}>
         <h1 className="text-2xl font-bold">Progress</h1>
       </div>
       <div className="px-4" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
