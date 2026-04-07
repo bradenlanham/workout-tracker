@@ -1887,9 +1887,10 @@ export default function BbLogger() {
                 if (sessionStarted && !isPaused) handlePause()
                 navigate(-1)
               }}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-black/25"
+              className="w-8 h-8 flex items-center justify-center rounded-full"
+              style={{ background: 'var(--bg-item)' }}
             >
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 text-c-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </button>
@@ -1898,21 +1899,22 @@ export default function BbLogger() {
             {sessionStarted && (
               <button
                 onClick={isPaused ? handleResume : handlePause}
-                className="w-7 h-7 flex items-center justify-center rounded-full bg-black/25"
+                className="w-7 h-7 flex items-center justify-center rounded-full"
+                style={{ background: 'var(--bg-item)' }}
               >
                 {isPaused ? (
-                  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <svg className="w-3.5 h-3.5 text-c-primary" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 ) : (
-                  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <svg className="w-3.5 h-3.5 text-c-primary" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                   </svg>
                 )}
               </button>
             )}
-            <div className={`rounded-full px-2.5 py-1 ${isPaused ? 'bg-white/30' : 'bg-black/25'}`}>
-              <span className="text-sm font-mono font-extrabold tracking-tight text-white" style={{ letterSpacing: '0.02em' }}>
+            <div className={`rounded-full px-2.5 py-1 ${isPaused ? 'opacity-60' : ''}`} style={{ background: 'var(--bg-item)' }}>
+              <span className="text-sm font-mono font-extrabold tracking-tight" style={{ color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
                 {formatElapsed(elapsedSeconds)}
               </span>
             </div>
@@ -1922,7 +1924,7 @@ export default function BbLogger() {
         <div className="px-5 pb-2">
           <h1
             className="font-bold leading-tight"
-            style={{ fontSize: 21, color: '#fff', textShadow: '0 0 20px rgba(255,255,255,0.15)' }}
+            style={{ fontSize: 21, color: 'var(--text-primary)' }}
           >
             {workoutEmoji} {workoutName}
           </h1>
