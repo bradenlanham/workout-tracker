@@ -139,71 +139,36 @@ export default function RestTimer() {
           right: 'auto',
           bottom: 'auto',
         } : {
-          right: 12,
-          bottom: 64,
+          right: 16,
+          top: 70,
         }),
         zIndex: 50,
         touchAction: 'none',
       }}
       className="flex flex-col items-end gap-2"
     >
-      {expanded && (
-        <div className="bg-card border border-c-base rounded-2xl p-4 shadow-xl w-52">
-          <p className="text-xs text-c-dim mb-2 font-medium">REST DURATION</p>
-          <div className="flex gap-2 items-center">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={customDuration}
-              onChange={e => setCustomDuration(e.target.value)}
-              className="flex-1 bg-item rounded-lg px-3 py-2 text-c-primary text-center text-lg font-bold"
-              min={10}
-              max={600}
-            />
-            <span className="text-c-dim text-sm">sec</span>
-          </div>
-          <div className="flex gap-2 mt-3">
-            {[60, 90, 120, 180].map(d => (
-              <button
-                key={d}
-                onClick={() => setCustomDuration(d)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  customDuration == d ? 'bg-blue-500 text-white' : 'bg-item text-c-secondary'
-                }`}
-              >
-                {d}s
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={saveDuration}
-            className="w-full mt-3 bg-blue-500 text-white py-2 rounded-lg text-sm font-semibold"
-          >
-            Save
-          </button>
-        </div>
-      )}
-
       <div className="flex items-center gap-2">
-        {/* Cog — fixed size, never scales with the timer */}
-        <button
-          onClick={() => setExpanded(v => !v)}
-          style={{ width: 32, height: 32, flexShrink: 0, padding: 7 }}
-          className="flex items-center justify-center rounded-full bg-item text-c-secondary shadow"
-          aria-label="Timer settings"
-        >
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
+        {/* Cog — hidden while timer is running */}
+        {!isRunning && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            style={{ width: 32, height: 32, flexShrink: 0, padding: 7 }}
+            className="flex items-center justify-center rounded-full bg-item text-c-secondary shadow"
+            aria-label="Timer settings"
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        )}
 
         {/* Timer button — scales when running */}
         <div
           style={{
             transition: 'transform 0.3s ease',
             transform: isRunning && timeLeft > 0 ? 'scale(1.5)' : 'scale(1)',
-            transformOrigin: 'bottom right',
+            transformOrigin: 'top right',
           }}
         >
         <button
@@ -239,6 +204,43 @@ export default function RestTimer() {
         </button>
         </div>
       </div>
+
+      {expanded && !isRunning && (
+        <div className="bg-card border border-c-base rounded-2xl p-4 shadow-xl w-52">
+          <p className="text-xs text-c-dim mb-2 font-medium">REST DURATION</p>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={customDuration}
+              onChange={e => setCustomDuration(e.target.value)}
+              className="flex-1 bg-item rounded-lg px-3 py-2 text-c-primary text-center text-lg font-bold"
+              min={10}
+              max={600}
+            />
+            <span className="text-c-dim text-sm">sec</span>
+          </div>
+          <div className="flex gap-2 mt-3">
+            {[60, 90, 120, 180].map(d => (
+              <button
+                key={d}
+                onClick={() => setCustomDuration(d)}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  customDuration == d ? 'bg-blue-500 text-white' : 'bg-item text-c-secondary'
+                }`}
+              >
+                {d}s
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={saveDuration}
+            className="w-full mt-3 bg-blue-500 text-white py-2 rounded-lg text-sm font-semibold"
+          >
+            Save
+          </button>
+        </div>
+      )}
     </div>
   )
 }
