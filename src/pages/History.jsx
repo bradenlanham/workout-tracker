@@ -486,37 +486,26 @@ function CardioSessionDetail({ session, onClose, onDelete }) {
 
 // ── Session card ───────────────────────────────────────────────────────────────
 
-function SessionCard({ session, onClick, themeHex, splits }) {
+function SessionCard({ session, onClick, splits }) {
   const d    = session.data || {}
-
   const name  = resolveWorkoutName(session.type, splits)
   const emoji = resolveWorkoutEmoji(session.type, splits)
-
-  const subtitle = `${d.exercises?.filter(e => e.sets.some(s => s.reps)).length || 0} exercises · ${d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0} sets`
-
+  const setCount = d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0
   const hasPR = d.exercises?.some(e => e.sets.some(s => s.isNewPR))
 
   return (
-    <button onClick={onClick} className="w-full bg-card rounded-2xl p-4 flex items-center gap-4 text-left">
-      <div
-        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
-        style={{ backgroundColor: `${themeHex}22`, border: `1px solid ${themeHex}33` }}
-      >
-        {emoji}
-      </div>
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 bg-card rounded-xl text-left">
+      <span className="text-base shrink-0 w-5 text-center">{emoji}</span>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="font-semibold truncate">{name}</p>
-          {hasPR && <span className="text-xs text-amber-400 shrink-0">🏆 PR</span>}
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-semibold truncate">{name}</span>
+          {hasPR && <span className="text-xs text-amber-400 shrink-0">🏆</span>}
         </div>
-        <p className="text-sm text-c-dim truncate">{subtitle}</p>
-        <p className="text-xs text-c-faint">
-          {formatTime(session.date)}
-          {session.duration ? ` · ${session.duration}min` : ''}
-          {session.grade    ? ` · ${session.grade}`       : ''}
-        </p>
+        <span className="text-xs text-c-muted">
+          {setCount} sets{session.duration ? ` · ${session.duration}m` : ''}{session.grade ? ` · ${session.grade}` : ''}
+        </span>
       </div>
-      <svg className="w-4 h-4 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-3.5 h-3.5 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
       </svg>
     </button>
@@ -527,22 +516,15 @@ function SessionCard({ session, onClick, themeHex, splits }) {
 
 function CardioSessionCard({ session, onClick }) {
   return (
-    <button onClick={onClick} className="w-full bg-card rounded-2xl p-4 flex items-center gap-4 text-left">
-      <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 bg-blue-500/20 border border-blue-500/30">
-        🏃
-      </div>
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-2.5 bg-card rounded-xl text-left">
+      <span className="text-base shrink-0 w-5 text-center">🏃</span>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold truncate">{session.type}</p>
-        <p className="text-sm text-c-dim truncate">
-          {formatCardioTime(session.duration)}
-          {session.distance ? ` · ${session.distance} ${session.distanceUnit}` : ''}
-        </p>
-        <p className="text-xs text-c-faint">
-          {formatTime(session.createdAt)}
-          {session.intensity ? ` · ${INTENSITY_LABELS[session.intensity] || session.intensity}` : ''}
-        </p>
+        <span className="text-sm font-semibold truncate block">{session.type}</span>
+        <span className="text-xs text-c-muted">
+          {formatCardioTime(session.duration)}{session.distance ? ` · ${session.distance} ${session.distanceUnit}` : ''}{session.intensity ? ` · ${INTENSITY_LABELS[session.intensity] || session.intensity}` : ''}
+        </span>
       </div>
-      <svg className="w-4 h-4 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <svg className="w-3.5 h-3.5 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
       </svg>
     </button>
@@ -574,7 +556,6 @@ function resolveWorkoutEmoji(type, splits) {
 export default function History() {
   const { sessions, settings, deleteSession, cardioSessions, deleteCardioSession, splits } = useStore()
   const theme = getTheme(settings.accentColor)
-  const backgroundTheme = settings.backgroundTheme
 
   const [selected, setSelected] = useState(null)
   const [selectedCardio, setSelectedCardio] = useState(null)
@@ -617,18 +598,8 @@ export default function History() {
 
       <div className="px-4">
 
-        {/* Calendar heatmap */}
-        <div className="mt-2">
-          <CalendarHeatmap
-            sessions={sessions}
-            onSelectSession={id => setSelected(id)}
-            themeHex={theme.hex}
-            backgroundTheme={backgroundTheme}
-          />
-        </div>
-
         {/* Session list grouped by day */}
-        <div className="space-y-6">
+        <div>
           {!hasAny && (
             <div className="text-center py-16">
               <p className="text-4xl mb-3">📋</p>
@@ -636,16 +607,16 @@ export default function History() {
               <p className="text-c-faint text-sm mt-1">Log a workout or cardio session to see your history</p>
             </div>
           )}
-          {sortedKeys.map(dateKey => {
+          {sortedKeys.map((dateKey, i) => {
             const group = groups[dateKey]
             return (
-              <div key={dateKey}>
-                <p className="text-xs text-c-muted font-semibold uppercase tracking-wide mb-2">
+              <div key={dateKey} className={i > 0 ? 'mt-4' : ''}>
+                <p className="text-xs text-c-faint font-medium mb-1 px-1">
                   {formatDate(group.date)}
                 </p>
-                <div className="space-y-2">
+                <div className="space-y-px">
                   {group.strength.map(s => (
-                    <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} themeHex={theme.hex} splits={splits} />
+                    <SessionCard key={s.id} session={s} onClick={() => setSelected(s.id)} splits={splits} />
                   ))}
                   {group.cardio.map(s => (
                     <CardioSessionCard key={s.id} session={s} onClick={() => setSelectedCardio(s.id)} />
