@@ -1872,10 +1872,10 @@ export default function BbLogger() {
       <div
         className="sticky top-0 z-30"
         style={{
-          backgroundColor: theme.hex,
-          backgroundImage: `linear-gradient(to bottom, ${theme.hex}22 0%, transparent 100%)`,
+          backgroundColor: 'var(--bg-card)',
+          backgroundImage: `linear-gradient(to bottom, ${theme.hex}55 0%, ${theme.hex}11 60%, transparent 100%)`,
           paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
-          color: theme.contrastText,
+          color: 'var(--text-primary)',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
         }}
