@@ -1873,7 +1873,7 @@ export default function BbLogger() {
         className="sticky top-0 z-30"
         style={{
           backgroundColor: 'var(--bg-card)',
-          backgroundImage: `linear-gradient(to bottom, ${theme.hex}55 0%, ${theme.hex}11 60%, transparent 100%)`,
+          backgroundImage: `linear-gradient(to top, ${theme.hex}55 0%, ${theme.hex}11 60%, transparent 100%)`,
           paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
           color: 'var(--text-primary)',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
