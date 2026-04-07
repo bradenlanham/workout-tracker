@@ -35,28 +35,30 @@ function ThemedApp() {
   const isNewUser = !hasCompletedOnboarding && sessions.length === 0
 
   return (
-    <div className="min-h-screen bg-base text-c-primary max-w-lg mx-auto relative">
-      <Routes>
-        <Route path="/" element={<Navigate to={isNewUser ? '/welcome' : '/dashboard'} replace />} />
-        <Route path="/welcome" element={isNewUser ? <Welcome /> : <Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/log" element={<Log />} />
-        <Route path="/log/bb/:type" element={<BbLogger />} />
-        <Route path="/cardio" element={<CardioLogger />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/progress" element={<Progress />} />
-        <Route path="/guide" element={<Guide />} />
-        <Route path="/templates/new" element={<TemplateEditor />} />
-        <Route path="/templates/:id" element={<TemplateEditor />} />
-        <Route path="/split" element={<SplitEditor />} />
-        <Route path="/splits" element={<SplitManager />} />
-        <Route path="/splits/new" element={<SplitBuilder />} />
-        <Route path="/splits/edit/:id" element={<SplitBuilder />} />
-      </Routes>
+    <>
+      <div className="min-h-screen bg-base text-c-primary max-w-lg mx-auto relative">
+        <Routes>
+          <Route path="/" element={<Navigate to={isNewUser ? '/welcome' : '/dashboard'} replace />} />
+          <Route path="/welcome" element={isNewUser ? <Welcome /> : <Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/log" element={<Log />} />
+          <Route path="/log/bb/:type" element={<BbLogger />} />
+          <Route path="/cardio" element={<CardioLogger />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/progress" element={<Progress />} />
+          <Route path="/guide" element={<Guide />} />
+          <Route path="/templates/new" element={<TemplateEditor />} />
+          <Route path="/templates/:id" element={<TemplateEditor />} />
+          <Route path="/split" element={<SplitEditor />} />
+          <Route path="/splits" element={<SplitManager />} />
+          <Route path="/splits/new" element={<SplitBuilder />} />
+          <Route path="/splits/edit/:id" element={<SplitBuilder />} />
+        </Routes>
+      </div>
       <HamburgerMenu open={menuOpen} setOpen={setMenuOpen} />
       <BottomNav onMenuOpen={() => setMenuOpen(true)} menuOpen={menuOpen} />
       <RestTimer />
-    </div>
+    </>
   )
 }
 

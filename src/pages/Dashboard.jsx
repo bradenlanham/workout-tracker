@@ -167,11 +167,6 @@ export default function Dashboard() {
   }
   const getShortName = (wId) => getWorkoutName(wId).split(' ')[0]
 
-  // ── Preview data ─────────────────────────────────────────────────────────
-  const activePreviewId = previewWorkoutId || nextBb
-  const previewWorkout = activeSplit?.workouts?.find(w => w.id === activePreviewId)
-  const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[activePreviewId] || []
-
   function getLastExerciseData(exName) {
     const name = typeof exName === 'string' ? exName : exName?.name
     if (!name) return null
@@ -196,6 +191,23 @@ export default function Dashboard() {
   const yesterday    = new Date(today)
   yesterday.setDate(today.getDate() - 1)
   const yesterdayStr = toDateStr(yesterday)
+
+  // ── Missed workout carry-forward ────────────────────────────────────────
+  // If yesterday had a scheduled (non-rest) workout and no session was logged,
+  // recommend that missed workout today instead of advancing the rotation.
+  const yesterdayRotationItem = rotation?.length && sessions.length
+    ? getRotationItemOnDate(yesterdayStr, sessions, rotation)
+    : null
+  const yesterdayLogged = sessions.some(s => s.date?.split('T')[0] === yesterdayStr)
+  const missedYesterdayWorkout = (!todayLogged && yesterdayRotationItem && yesterdayRotationItem !== 'rest' && !yesterdayLogged)
+    ? yesterdayRotationItem
+    : null
+  const recommendedWorkout = missedYesterdayWorkout ?? nextBb
+
+  // ── Preview data ─────────────────────────────────────────────────────────
+  const activePreviewId = previewWorkoutId || recommendedWorkout
+  const previewWorkout = activeSplit?.workouts?.find(w => w.id === activePreviewId)
+  const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[activePreviewId] || []
 
   // Find a workout from yesterday that hasn't had soreness offered yet
   const pendingSorenessSession = sessions.find(s => {
@@ -241,7 +253,7 @@ export default function Dashboard() {
     })
     setShowSorenessModal(false)
   }
-  const isRestDay = nextRotationItem === 'rest' && !todayLogged
+  const isRestDay = nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout
 
   // ── Session map: dateStr → most-recent session that day ───────────────────
   const sessionByDate = {}
@@ -458,10 +470,10 @@ export default function Dashboard() {
               Preview
             </button>
             <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6, textAlign: 'center' }}>
-              {todayLogged ? 'Next in your split' : 'Next Up'}
+              {todayLogged ? 'Next in your split' : missedYesterdayWorkout ? 'Missed Yesterday' : 'Next Up'}
             </p>
             <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>
-              {getWorkoutName(nextBb)}
+              {getWorkoutName(recommendedWorkout)}
             </p>
             {todayLogged ? (
               <p className="text-sm mt-1" style={{ opacity: 0.6, textAlign: 'center' }}>
@@ -473,7 +485,7 @@ export default function Dashboard() {
                   {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
                 </p>
                 <button
-                  onClick={() => navigate(`/log/bb/${nextBb}`)}
+                  onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
                   className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
                   style={{ textAlign: 'center' }}
                 >

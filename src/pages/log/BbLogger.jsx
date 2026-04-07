@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../data/exercises'
@@ -2015,20 +2016,21 @@ export default function BbLogger() {
       </div>
 
       {/* ── Sticky footer – hidden when numpad is open ───────────────────── */}
-      {!numpadIsOpen && (
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-3 pt-3 safe-bottom z-40">
-        {loggedSets === 0 ? (
-          <p className="text-center text-sm text-c-muted py-1">Log at least one set to save</p>
-        ) : (
-          <button
-            onClick={() => setShowConfirm(true)}
-            className={`w-full ${theme.bg} text-white py-4 rounded-2xl font-bold text-lg`}
-            style={{ color: theme.contrastText }}
-          >
-            Finish Session · {loggedSets} sets
-          </button>
-        )}
-      </div>
+      {!numpadIsOpen && createPortal(
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-3 pt-3 safe-bottom z-40">
+          {loggedSets === 0 ? (
+            <p className="text-center text-sm text-c-muted py-1">Log at least one set to save</p>
+          ) : (
+            <button
+              onClick={() => setShowConfirm(true)}
+              className={`w-full ${theme.bg} text-white py-4 rounded-2xl font-bold text-lg`}
+              style={{ color: theme.contrastText }}
+            >
+              Finish Session · {loggedSets} sets
+            </button>
+          )}
+        </div>,
+        document.body
       )}
 
       {/* ── Panels & modals ──────────────────────────────────────────────── */}
