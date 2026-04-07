@@ -82,7 +82,7 @@ export default function BottomNav({ onMenuOpen, menuOpen }) {
   const isWelcome = location.pathname === '/welcome'
   if (isLogging || isWelcome) return null
 
-  const inactiveColor = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)'
+  const inactiveColor = 'rgba(255,255,255,0.45)'
 
   return (
     <nav
@@ -95,10 +95,10 @@ export default function BottomNav({ onMenuOpen, menuOpen }) {
         width: '94%',
         maxWidth: '500px',
         zIndex: 40,
-        background: isDark ? 'rgba(18,18,22,0.88)' : 'rgba(245,245,248,0.88)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+        background: 'rgba(20,20,24,0.92)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        border: '1px solid rgba(255,255,255,0.1)',
         borderRadius: '100px',
         display: 'flex',
         alignItems: 'center',
