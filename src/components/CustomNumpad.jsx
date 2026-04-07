@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 
 // CustomNumpad – fully replaces the iOS system keyboard for reps/weight inputs.
 // Props:
@@ -12,6 +12,10 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
   const currentValueRef   = useRef('')
   const longPressTimerRef = useRef(null)
   const longPressFiredRef = useRef(false)
+  const [pressedKey, setPressedKey] = useState(null)
+
+  const press   = useCallback((key) => setPressedKey(key), [])
+  const release = useCallback(() => setPressedKey(null), [])
 
   // Reset value buffer when switching to a new field
   useEffect(() => {
@@ -106,7 +110,39 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     justifyContent: 'center',
     WebkitTapHighlightColor: 'transparent',
     touchAction: 'manipulation',
+    transition: 'transform 80ms ease, background-color 80ms ease',
   }
+
+  const keyStyle = (key) => ({
+    ...digitStyle,
+    backgroundColor: pressedKey === key ? 'rgba(255,255,255,0.28)' : 'var(--bg-item)',
+    transform: pressedKey === key ? 'scale(0.88)' : 'scale(1)',
+  })
+
+  const outlineKeyStyle = (key) => ({
+    ...digitStyle,
+    backgroundColor: pressedKey === key ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)',
+    border: '1px solid rgba(255,255,255,0.14)',
+    color: 'var(--text-secondary)',
+    transform: pressedKey === key ? 'scale(0.88)' : 'scale(1)',
+  })
+
+  const accentKeyStyle = (key) => ({
+    backgroundColor: themeColor,
+    color: themeContrastText,
+    fontWeight: 700,
+    fontSize: 14,
+    padding: '8px 18px',
+    borderRadius: 12,
+    border: 'none',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    WebkitTapHighlightColor: 'transparent',
+    touchAction: 'manipulation',
+    transition: 'transform 80ms ease, filter 80ms ease',
+    transform: pressedKey === key ? 'scale(0.91)' : 'scale(1)',
+    filter: pressedKey === key ? 'brightness(0.82)' : 'brightness(1)',
+  })
 
   return (
     <div
@@ -155,19 +191,18 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
         {/* Next → – secondary outlined */}
         <button
-          onPointerDown={handleNext}
+          onPointerDown={(e) => { press('next'); handleNext(e) }}
+          onPointerUp={release}
+          onPointerLeave={release}
+          onPointerCancel={release}
           style={{
-            backgroundColor: 'rgba(255,255,255,0.08)',
-            color: 'var(--text-secondary)',
-            fontWeight: 600,
+            ...outlineKeyStyle('next'),
             fontSize: 14,
+            fontWeight: 600,
             padding: '8px 18px',
             borderRadius: 12,
-            border: '1px solid rgba(255,255,255,0.14)',
-            cursor: 'pointer',
+            height: 'auto',
             whiteSpace: 'nowrap',
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation',
           }}
         >
           Next →
@@ -175,20 +210,11 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
         {/* Done ✓ – primary accent — marks exercise as completed + closes numpad */}
         <button
-          onPointerDown={handleDone}
-          style={{
-            backgroundColor: themeColor,
-            color: themeContrastText,
-            fontWeight: 700,
-            fontSize: 14,
-            padding: '8px 18px',
-            borderRadius: 12,
-            border: 'none',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            WebkitTapHighlightColor: 'transparent',
-            touchAction: 'manipulation',
-          }}
+          onPointerDown={(e) => { press('done'); handleDone(e) }}
+          onPointerUp={release}
+          onPointerLeave={release}
+          onPointerCancel={release}
+          style={accentKeyStyle('done')}
         >
           Done ✓
         </button>
@@ -206,8 +232,11 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => (
           <button
             key={k}
-            onPointerDown={e => { e.preventDefault(); handleKey(k) }}
-            style={digitStyle}
+            onPointerDown={e => { e.preventDefault(); press(k); handleKey(k) }}
+            onPointerUp={release}
+            onPointerLeave={release}
+            onPointerCancel={release}
+            style={keyStyle(k)}
           >
             {k}
           </button>
@@ -215,12 +244,12 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
         {/* Bottom-left: Hide ⌄ — always, for both weight and reps */}
         <button
-          onPointerDown={handleHide}
+          onPointerDown={(e) => { press('hide'); handleHide(e) }}
+          onPointerUp={release}
+          onPointerLeave={release}
+          onPointerCancel={release}
           style={{
-            ...digitStyle,
-            backgroundColor: 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.14)',
-            color: 'var(--text-secondary)',
+            ...outlineKeyStyle('hide'),
             fontSize: 13,
             fontWeight: 600,
             gap: 4,
@@ -234,19 +263,22 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
 
         {/* 0 */}
         <button
-          onPointerDown={e => { e.preventDefault(); handleKey('0') }}
-          style={digitStyle}
+          onPointerDown={e => { e.preventDefault(); press('0'); handleKey('0') }}
+          onPointerUp={release}
+          onPointerLeave={release}
+          onPointerCancel={release}
+          style={keyStyle('0')}
         >
           0
         </button>
 
         {/* Backspace – short tap deletes last char, long press clears */}
         <button
-          onPointerDown={startLongPress}
-          onPointerUp={endLongPress}
-          onPointerLeave={cancelLongPress}
-          onPointerCancel={cancelLongPress}
-          style={{ ...digitStyle, color: 'var(--text-secondary)', fontSize: 18 }}
+          onPointerDown={(e) => { press('backspace'); startLongPress(e) }}
+          onPointerUp={() => { release(); endLongPress() }}
+          onPointerLeave={() => { release(); cancelLongPress() }}
+          onPointerCancel={() => { release(); cancelLongPress() }}
+          style={{ ...keyStyle('backspace'), color: 'var(--text-secondary)', fontSize: 18 }}
         >
           ⌫
         </button>
