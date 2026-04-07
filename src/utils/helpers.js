@@ -144,25 +144,30 @@ export function getRotationItemOnDate(dateStr, sessions, rotation) {
 export function getWorkoutStreak(sessions, rotation) {
   if (!sessions.length) return 0
 
-  const toStr = d =>
+  // Use LOCAL date methods to avoid UTC-midnight vs local-midnight mismatch.
+  // new Date('2026-04-07') parses as UTC midnight; in UTC-5 that's local Apr 6 19:00,
+  // so .getDate() would return 6 instead of 7. Using 'T00:00:00' forces local midnight.
+  const toLocalStr = d =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-  const sessionDaySet = new Set(sessions.map(s => s.date.split('T')[0]))
+  const sessionDaySet = new Set(sessions.map(s => toLocalStr(new Date(s.date))))
   const today         = new Date()
-  const todayStr      = toStr(today)
+  const todayStr      = toLocalStr(today)
 
-  const mostRecentDay = [...sessions]
-    .sort((a, b) => new Date(b.date) - new Date(a.date))[0]
-    .date.split('T')[0]
+  const mostRecentDay = toLocalStr(
+    new Date([...sessions].sort((a, b) => new Date(b.date) - new Date(a.date))[0].date)
+  )
 
   // Streak is live only if every day from mostRecentDay → today is either a
   // session or a rest day in the rotation (no missed workout days in between).
-  const msrDate     = new Date(mostRecentDay)
-  const daysToToday = Math.round((new Date(todayStr) - msrDate) / 86400000)
+  // Use 'T00:00:00' (local midnight) so date arithmetic is always exactly 24h.
+  const msrDate     = new Date(mostRecentDay + 'T00:00:00')
+  const todayMid    = new Date(todayStr + 'T00:00:00')
+  const daysToToday = Math.round((todayMid - msrDate) / 86400000)
   for (let d = 1; d <= daysToToday; d++) {
     const checkD = new Date(msrDate)
     checkD.setDate(msrDate.getDate() + d)
-    const checkStr = toStr(checkD)
+    const checkStr = toLocalStr(checkD)
     if (sessionDaySet.has(checkStr)) continue
     const rotItem = rotation?.length ? getRotationItemOnDate(checkStr, sessions, rotation) : null
     if (rotItem !== 'rest') return 0
@@ -170,9 +175,9 @@ export function getWorkoutStreak(sessions, rotation) {
 
   // Count backwards from mostRecentDay, skipping rest days
   let streak  = 0
-  let current = new Date(mostRecentDay)
+  let current = new Date(mostRecentDay + 'T00:00:00')
   for (let i = 0; i < 730; i++) {
-    const dStr = toStr(current)
+    const dStr = toLocalStr(current)
     if (sessionDaySet.has(dStr)) {
       streak++
     } else {

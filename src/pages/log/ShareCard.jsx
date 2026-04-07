@@ -153,7 +153,8 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
   const [selfie, setSelfie]     = useState(initialSelfie || null)
   const [showCamera, setShowCamera] = useState(false)
   const [sharing, setSharing]   = useState(false)
-  const cardRef = useRef(null)
+  const cardRef    = useRef(null)
+  const shimmerRef = useRef(null)
 
   const tier      = getTier(streak)
   const allTiers  = buildTierConfig(theme?.hex)
@@ -185,11 +186,16 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
   async function handleShare() {
     if (!cardRef.current || sharing) return
     setSharing(true)
+    // Hide shimmer div during capture: html2canvas doesn't support CSS masks
+    // (WebkitMask/maskComposite), causing it to render as a full opaque gradient overlay.
+    if (shimmerRef.current) shimmerRef.current.style.display = 'none'
     try {
       const canvas = await html2canvas(cardRef.current, {
         backgroundColor: '#050505',
         scale: 2,
         useCORS: true,
+        allowTaint: true,
+        logging: false,
       })
       const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.92))
       const file = new File([blob], 'gains-workout.jpg', { type: 'image/jpeg' })
@@ -207,6 +213,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
     } catch (err) {
       console.error('Share failed:', err)
     } finally {
+      if (shimmerRef.current) shimmerRef.current.style.display = ''
       setSharing(false)
     }
   }
@@ -246,6 +253,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
           {/* Animated gradient border — Legendary & Mythic */}
           {t.shimmer && (
             <div
+              ref={shimmerRef}
               style={{
                 position: 'absolute',
                 inset: 0,
