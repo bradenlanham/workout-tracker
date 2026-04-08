@@ -111,6 +111,15 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession } = useStore()
   const theme = getTheme(settings.accentColor)
+
+  // Determine if accent color is light (needs dark text)
+  const accentIsLight = (() => {
+    const hex = (theme.hex || '#000000').replace('#', '')
+    const r = parseInt(hex.slice(0, 2), 16)
+    const g = parseInt(hex.slice(2, 4), 16)
+    const b = parseInt(hex.slice(4, 6), 16)
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 160
+  })()
   const [showMonth, setShowMonth] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [previewWorkoutId, setPreviewWorkoutId] = useState(null)
@@ -799,12 +808,12 @@ export default function Dashboard() {
               textAlign: 'center',
               boxShadow: `0 8px 32px ${theme.hex}40`,
             }}>
-              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, color: 'rgba(255,255,255,0.6)' }}>Today</p>
-              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, color: '#fff' }}>Rest Day</p>
-              <p style={{ fontSize: 13, marginTop: 8, color: 'rgba(255,255,255,0.85)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, color: accentIsLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.6)' }}>Today</p>
+              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, color: accentIsLight ? 'rgba(0,0,0,0.9)' : '#fff' }}>Rest Day</p>
+              <p style={{ fontSize: 13, marginTop: 8, color: accentIsLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)' }}>
                 Recovery is part of the plan. Come back stronger tomorrow.
               </p>
-              <p style={{ fontSize: 13, marginTop: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
+              <p style={{ fontSize: 13, marginTop: 12, fontWeight: 600, color: accentIsLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)' }}>
                 Next: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
               </p>
             </div>
@@ -827,7 +836,7 @@ export default function Dashboard() {
                 {getWorkoutName(recommendedWorkout)}
               </p>
               {ctaExercises.length > 0 && (
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 6, marginBottom: 20 }}>
+                <p style={{ fontSize: 12, color: accentIsLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.65)', marginTop: 6, marginBottom: 20 }}>
                   {ctaExercises.join(' · ')}
                 </p>
               )}
