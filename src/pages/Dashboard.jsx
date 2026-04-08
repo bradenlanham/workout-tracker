@@ -184,6 +184,17 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
+function polarToCart(cx, cy, r, angleDeg) {
+  const rad = (angleDeg - 90) * Math.PI / 180
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
+}
+function describeArc(cx, cy, r, startAngle, endAngle) {
+  const s = polarToCart(cx, cy, r, startAngle)
+  const e = polarToCart(cx, cy, r, endAngle)
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0
+  return `M ${s.x} ${s.y} A ${r} ${r} 0 ${largeArc} 1 ${e.x} ${e.y}`
+}
+
 function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -246,6 +257,8 @@ export default function Dashboard() {
   const [showSorenessModal, setShowSorenessModal] = useState(false)
   const [tutorialStep, setTutorialStep] = useState(() => settings.hasSeenTutorial ? null : 0)
   const [pressedDay, setPressedDay] = useState(null)
+  const [pressedStreak, setPressedStreak] = useState(false)
+  const [showTierModal, setShowTierModal] = useState(false)
   const [selectedDaySession, setSelectedDaySession] = useState(null)
   const [selectedFutureDay, setSelectedFutureDay] = useState(null) // { dateStr, workoutId, isRest }
 
@@ -351,6 +364,24 @@ export default function Dashboard() {
   }).length
 
   const streak = getWorkoutStreak(sessions, rotation)
+
+  const RING_TIERS = [
+    { name: 'Common',    startAngle: 0,     endAngle: 51.4,  color: theme.hex,  minStreak: 0  },
+    { name: 'Rare',      startAngle: 51.4,  endAngle: 144,   color: '#A8A8B3',  minStreak: 6  },
+    { name: 'Epic',      startAngle: 144,   endAngle: 195.4, color: '#F5C842',  minStreak: 15 },
+    { name: 'Legendary', startAngle: 195.4, endAngle: 298,   color: '#F97316',  minStreak: 20 },
+    { name: 'Mythic',    startAngle: 298,   endAngle: 360,   color: '#A855F7',  minStreak: 30 },
+  ]
+  const TIER_MAX_DISPLAY = 35
+  const currentTier = getStreakTier(streak, theme.hex)
+  const nextTierText = (() => {
+    if (streak >= 30) return "You've reached Mythic"
+    const steps = [{ at: 6, name: 'Rare' }, { at: 15, name: 'Epic' }, { at: 20, name: 'Legendary' }, { at: 30, name: 'Mythic' }]
+    const n = steps.find(t => streak < t.at)
+    if (!n) return "You've reached Mythic"
+    const days = n.at - streak
+    return `${days} day${days === 1 ? '' : 's'} to ${n.name}`
+  })()
 
   const nextBb           = getNextBbWorkout(sessions, rotation)
   const nextRotationItem = getRotationItemOnDate(toDateStr(new Date()), sessions, rotation) ?? rotation[0]
@@ -746,7 +777,17 @@ export default function Dashboard() {
           <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
             {headline}
           </h1>
-          <StreakBadge streak={streak} themeHex={theme.hex} />
+          {streak > 0 && (
+            <div
+              onPointerDown={() => setPressedStreak(true)}
+              onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
+              onPointerLeave={() => setPressedStreak(false)}
+              onPointerCancel={() => setPressedStreak(false)}
+              style={{ transform: pressedStreak ? 'scale(0.88)' : 'scale(1)', transition: 'transform 80ms ease', cursor: 'pointer' }}
+            >
+              <StreakBadge streak={streak} themeHex={theme.hex} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -1231,6 +1272,82 @@ export default function Dashboard() {
       </div>
 
       </div>{/* end content wrapper */}
+
+      {/* ── Tier Progress Ring Modal ─────────────────────────────────────────── */}
+      {showTierModal && (
+        <div
+          onClick={() => setShowTierModal(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 300, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ backgroundColor: 'rgba(20,18,28,0.95)', borderRadius: 28, padding: '32px 28px', width: 300, textAlign: 'center', position: 'relative' }}
+          >
+            <button
+              onClick={() => setShowTierModal(false)}
+              style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: 'rgba(255,255,255,0.4)', lineHeight: 1, padding: '4px 8px' }}
+            >×</button>
+
+            <svg width="240" height="240" viewBox="0 0 240 240" style={{ overflow: 'visible' }}>
+              {/* Background track */}
+              <circle cx="120" cy="120" r="90" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="14" />
+
+              {/* Tier arc segments */}
+              {RING_TIERS.map((tier, i) => {
+                const next = RING_TIERS[i + 1]
+                const isCurrent = streak >= tier.minStreak && (!next || streak < next.minStreak)
+                const isPast    = next ? streak >= next.minStreak : false
+                const opacity   = isCurrent ? 1 : isPast ? 0.2 : 0.12
+                const sw        = isCurrent ? 18 : 14
+                return (
+                  <path
+                    key={tier.name}
+                    d={describeArc(120, 120, 90, tier.startAngle, tier.endAngle)}
+                    fill="none"
+                    stroke={tier.color}
+                    strokeWidth={sw}
+                    strokeLinecap="round"
+                    opacity={opacity}
+                    style={isCurrent ? { filter: `drop-shadow(0 0 6px ${tier.color}88)` } : undefined}
+                  />
+                )
+              })}
+
+              {/* Tick marks at tier boundaries */}
+              {[51.4, 144, 195.4, 298].map((angle, i) => {
+                const pos = polarToCart(120, 120, 90, angle)
+                return <circle key={i} cx={pos.x} cy={pos.y} r={4} fill="white" opacity={0.6} />
+              })}
+
+              {/* Progress dot */}
+              {(() => {
+                const progressAngle = Math.min(streak, TIER_MAX_DISPLAY) / TIER_MAX_DISPLAY * 360
+                const pos = polarToCart(120, 120, 90, progressAngle)
+                return (
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r={8}
+                    fill="white"
+                    style={{ filter: 'drop-shadow(0 0 6px rgba(255,255,255,0.9))' }}
+                  />
+                )
+              })()}
+
+              {/* Center text */}
+              <text x="120" y="108" textAnchor="middle" fill="white" fontSize="42" fontWeight="800">{streak}</text>
+              <text x="120" y="132" textAnchor="middle" fill="rgba(255,255,255,0.5)" fontSize="13">days</text>
+            </svg>
+
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 1, color: currentTier.color, marginTop: 8 }}>
+              {currentTier.name}
+            </div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>
+              {nextTierText}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Soreness Modal ───────────────────────────────────────────────────── */}
       {showSorenessModal && pendingSorenessSession && (
