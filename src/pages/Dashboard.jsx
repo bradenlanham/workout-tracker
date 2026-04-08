@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
@@ -92,7 +92,6 @@ function toDateStr(d) {
 }
 
 function daysBetween(a, b) {
-  // Integer days from date a to date b (b - a)
   const aMs = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()
   const bMs = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime()
   return Math.round((bMs - aMs) / 86400000)
@@ -107,6 +106,25 @@ export default function Dashboard() {
   const [previewWorkoutId, setPreviewWorkoutId] = useState(null)
   const [showSorenessModal, setShowSorenessModal] = useState(false)
   const [tutorialStep, setTutorialStep] = useState(() => settings.hasSeenTutorial ? null : 0)
+
+  // ── Count-up animation (runs once on mount) ───────────────────────────────
+  const animRef = useRef(false)
+  const [animProgress, setAnimProgress] = useState(0)
+  useEffect(() => {
+    if (animRef.current) return
+    animRef.current = true
+    const start = performance.now()
+    const duration = 700
+    function tick(now) {
+      const elapsed = now - start
+      const p = Math.min(elapsed / duration, 1)
+      const ease = 1 - Math.pow(1 - p, 3) // ease-out cubic
+      setAnimProgress(ease)
+      if (p < 1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, [])
+  const anim = (v) => Math.round(v * animProgress)
 
   const totalSessions = sessions.length
 
@@ -139,6 +157,14 @@ export default function Dashboard() {
   const volumeThisWeek = getWeekVolume(0)
   const volumeLastWeek = getWeekVolume(-1)
 
+  const totalVolume = sessions.reduce((total, s) => {
+    return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
+      return exTotal + (ex.sets || []).reduce((setTotal, set) => {
+        return setTotal + ((set.weight || 0) * (set.reps || 0))
+      }, 0)
+    }, 0)
+  }, 0)
+
   const hour = new Date().getHours()
   const timeGreeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
@@ -152,10 +178,10 @@ export default function Dashboard() {
     return new Date(s.date) >= new Date(activeSplit.createdAt)
   }).length
 
-  const streak        = getWorkoutStreak(sessions, rotation)
+  const streak = getWorkoutStreak(sessions, rotation)
 
-  const nextBb            = getNextBbWorkout(sessions, rotation)
-  const nextRotationItem  = getRotationItemOnDate(toDateStr(new Date()), sessions, rotation) ?? rotation[0]
+  const nextBb           = getNextBbWorkout(sessions, rotation)
+  const nextRotationItem = getRotationItemOnDate(toDateStr(new Date()), sessions, rotation) ?? rotation[0]
 
   const getWorkoutName = (wId) => {
     const w = activeSplit?.workouts?.find(w => w.id === wId)
@@ -180,6 +206,15 @@ export default function Dashboard() {
     return `Last: ${lastWorking.weight}×${lastWorking.reps}`
   }
 
+  // Get first N exercise names from a workout for the CTA card (Improvement 7)
+  const getFirstExercises = (workoutId, count = 3) => {
+    const workout = activeSplit?.workouts?.find(w => w.id === workoutId)
+    const sections = workout?.sections || BB_EXERCISE_GROUPS[workoutId] || []
+    const primarySection = sections.find(s => s.label === 'Primary') || sections[0]
+    if (!primarySection) return []
+    return (primarySection.exercises || []).slice(0, count).map(ex => typeof ex === 'string' ? ex : ex.name)
+  }
+
   // ── Soreness check-in (yesterday's session) ───────────────────────────────
   const today    = new Date()
   const todayStr = toDateStr(today)
@@ -192,9 +227,6 @@ export default function Dashboard() {
   yesterday.setDate(today.getDate() - 1)
   const yesterdayStr = toDateStr(yesterday)
 
-  // ── Missed workout carry-forward ────────────────────────────────────────
-  // If yesterday had a scheduled (non-rest) workout and no session was logged,
-  // recommend that missed workout today instead of advancing the rotation.
   const yesterdayRotationItem = rotation?.length && sessions.length
     ? getRotationItemOnDate(yesterdayStr, sessions, rotation)
     : null
@@ -209,7 +241,6 @@ export default function Dashboard() {
   const previewWorkout = activeSplit?.workouts?.find(w => w.id === activePreviewId)
   const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[activePreviewId] || []
 
-  // Find a workout from yesterday that hasn't had soreness offered yet
   const pendingSorenessSession = sessions.find(s => {
     const d = s.date ? s.date.split('T')[0] : null
     return d === yesterdayStr && s.mode === 'bb' && !s.soreness
@@ -226,7 +257,6 @@ export default function Dashboard() {
     return w?.name || BB_WORKOUT_NAMES[session.type] || session.type
   }
 
-  // Check if a cardio session is attached to the pending soreness session
   const attachedCardio = pendingSorenessSession
     ? cardioSessions?.find(c => c.attachedToSessionId === pendingSorenessSession.id)
     : null
@@ -247,13 +277,19 @@ export default function Dashboard() {
 
   const handleSorenessSkip = () => {
     if (!pendingSorenessSession) return
-    // Mark as offered-but-skipped so it doesn't re-appear
     updateSession(pendingSorenessSession.id, {
       soreness: { skipped: true, date: yesterdayStr },
     })
     setShowSorenessModal(false)
   }
+
   const isRestDay = nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout
+
+  // ── PR count ──────────────────────────────────────────────────────────────
+  const prCount = sessions.filter(s => {
+    if (activeSplit?.createdAt && new Date(s.date) < new Date(activeSplit.createdAt)) return false
+    return (s.data?.exercises || []).some(ex => ex.sets?.some(set => set.isNewPR))
+  }).length
 
   // ── Session map: dateStr → most-recent session that day ───────────────────
   const sessionByDate = {}
@@ -265,7 +301,6 @@ export default function Dashboard() {
     }
   })
 
-  // Cardio session dates (standalone only)
   const cardioDateSet = new Set(
     (cardioSessions || [])
       .filter(c => !c.attachedToSessionId)
@@ -275,7 +310,6 @@ export default function Dashboard() {
     (cardioSessions || []).map(c => c.date)
   )
 
-  // ── Planned workout N days from today (non-rest only, for the CTA card) ──
   function getPlannedWorkout(daysAhead) {
     if (daysAhead < 0) return null
     const startIdx = workoutSeq.indexOf(nextBb)
@@ -285,10 +319,6 @@ export default function Dashboard() {
     return workoutSeq[(base + offset) % workoutSeq.length]
   }
 
-  // ── Full rotation item N days from today (includes 'rest') ────────────────
-  // Delegates to getRotationItemOnDate which uses UTC-midnight date strings on
-  // both sides — avoids the timezone bug of comparing new Date() (with time)
-  // against new Date('YYYY-MM-DD') (UTC midnight).
   function getFullRotationItem(daysAhead) {
     if (daysAhead < 0) return null
     const d = new Date(today)
@@ -296,7 +326,6 @@ export default function Dashboard() {
     return getRotationItemOnDate(toDateStr(d), sessions, rotation)
   }
 
-  // ── Per-day info ─────────────────────────────────────────────────────────
   function getDayInfo(date) {
     const dStr       = toDateStr(date)
     const isToday    = dStr === todayStr
@@ -321,7 +350,6 @@ export default function Dashboard() {
       const planned = rotItem || getPlannedWorkout(ahead)
       return { type: 'future', planned, emoji: planned ? getWorkoutEmoji(planned) : null }
     }
-    // Past day with no session — check if it was a scheduled rest day
     if (rotation?.length && sessions.length) {
       const rotItem = getRotationItemOnDate(dStr, sessions, rotation)
       if (rotItem === 'rest') return { type: 'past-rest' }
@@ -336,7 +364,6 @@ export default function Dashboard() {
     return d
   })
 
-  // ── Month days (with leading nulls for alignment) ─────────────────────────
   function getMonthDays() {
     const year     = today.getFullYear()
     const month    = today.getMonth()
@@ -348,66 +375,122 @@ export default function Dashboard() {
     return days
   }
 
+  // ── Momentum line (Improvement 4) ─────────────────────────────────────────
+  let momentumLine = ''
+  if (isRestDay) {
+    momentumLine = `Rest day · ${getWorkoutName(nextBb)} up next`
+  } else if (todayLogged) {
+    momentumLine = `${totalSessions} sessions and counting`
+  } else if (totalSessions > 0 && totalVolume > 0) {
+    momentumLine = `${totalSessions} sessions logged · ${formatVolume(totalVolume)} lbs moved`
+  } else if (totalSessions > 0) {
+    momentumLine = `${totalSessions} sessions logged`
+  } else {
+    momentumLine = 'Your first session starts here'
+  }
+
+  // ── CTA card exercise preview (Improvement 7) ─────────────────────────────
+  const ctaExercises = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
+    ? getFirstExercises(recommendedWorkout, 3)
+    : []
+
+  // ── Card shared styles ────────────────────────────────────────────────────
+  const accentCardStyle = {
+    background: theme.hex,
+    borderRadius: 20,
+    padding: '24px 20px',
+    position: 'relative',
+    color: theme.contrastText,
+    textAlign: 'center',
+    overflow: 'hidden',
+    boxShadow: `0 8px 32px ${theme.hex}40, 0 2px 8px rgba(0,0,0,0.3)`,
+    borderTop: '1px solid rgba(255,255,255,0.25)',
+  }
+
   return (
     <div className="min-h-screen pb-28">
 
       {/* ── Greeting ────────────────────────────────────────────────────────── */}
-      <div className="px-4 pt-14 pb-5" style={{ paddingTop: 'max(56px, calc(env(safe-area-inset-top) + 24px))' }}>
-        <p className="text-c-muted text-sm font-medium">
+      <div className="px-4 pb-5" style={{ paddingTop: 'max(64px, calc(env(safe-area-inset-top) + 28px))' }}>
+        <p className="text-c-muted text-sm font-medium tracking-wide">
           {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
-        <h1 className="text-3xl font-bold mt-0.5">
+        <h1 className="text-3xl font-bold mt-0.5 mb-1">
           {todayLogged ? 'Your work here is done.' : 'Ready to train?'}
         </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{momentumLine}</p>
       </div>
 
-      {/* ── Stats rows ──────────────────────────────────────────────────────── */}
-      <div className="px-4 mb-5">
-        <div className="bg-card rounded-2xl px-3 py-2.5 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex-1 text-center">
-              <p className={`text-lg font-bold leading-none ${theme.text}`}>{formatVolume(volumeLastWeek)}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Last Week</p>
+      {/* ── Streak Hero (Improvement 1) ──────────────────────────────────────── */}
+      <div className="px-4 mb-6 flex justify-center">
+        {streak > 0 ? (
+          <div style={{ textAlign: 'center', padding: '4px 32px' }}>
+            <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>🔥</div>
+            <div style={{
+              fontSize: 38,
+              fontWeight: 900,
+              lineHeight: 1,
+              color: 'var(--text-primary)',
+              textShadow: `0 0 20px ${theme.hex}99`,
+              letterSpacing: '-0.02em',
+            }}>
+              {streak}
             </div>
-            <div className="w-px h-6 bg-white/10 mx-1.5" />
-            <div className="flex-1 text-center">
-              <p className="text-lg font-bold leading-none text-c-primary">{formatVolume(volumeThisWeek)}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">This Week</p>
-            </div>
-            <div className="w-px h-6 bg-white/10 mx-1.5" />
-            <div className="flex-1 text-center">
-              <p className="text-lg font-bold leading-none text-c-primary">{splitSessionCount}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Sessions (Split)</p>
+            <div style={{
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              marginTop: 5,
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+            }}>
+              day streak
             </div>
           </div>
-          <div className="w-full h-px bg-white/10" />
-          <div className="flex items-center justify-between">
-            <div className="flex-1 text-center">
-              <p className="text-lg font-bold leading-none text-c-primary">{streak > 0 ? `🔥 ${streak}` : '—'}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Day Streak</p>
-            </div>
-            <div className="w-px h-6 bg-white/10 mx-1.5" />
-            <div className="flex-1 text-center">
-              <p className="text-lg font-bold leading-none text-c-primary">{totalSessions}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">Total Sessions</p>
-            </div>
-            <div className="w-px h-6 bg-white/10 mx-1.5" />
-            <div className="flex-1 text-center">
-              <p className="text-lg font-bold leading-none text-c-primary">
-                {sessions.filter(s => {
-                  if (activeSplit?.createdAt && new Date(s.date) < new Date(activeSplit.createdAt)) return false
-                  return (s.data?.exercises || []).some(ex => ex.sets?.some(set => set.isNewPR))
-                }).length || '—'}
-              </p>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-1">PRs This Split</p>
-            </div>
+        ) : (
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, padding: '12px 0' }}>
+            Start your streak today
+          </p>
+        )}
+      </div>
+
+      {/* ── Stat grid (Improvement 9 — hierarchy) ───────────────────────────── */}
+      <div className="px-4 mb-6">
+        {/* Volume row — two larger tiles */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-2xl font-bold leading-none text-c-primary">
+              {formatVolume(anim(volumeLastWeek))}
+            </p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-2">Last Week</p>
+          </div>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-2xl font-bold leading-none" style={{ color: theme.hex }}>
+              {formatVolume(anim(volumeThisWeek))}
+            </p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-2">This Week</p>
+          </div>
+        </div>
+        {/* Secondary stats row */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-lg font-bold leading-none text-c-secondary">{anim(splitSessionCount)}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Sessions</p>
+          </div>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-lg font-bold leading-none text-c-secondary">{anim(totalSessions)}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Total</p>
+          </div>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-lg font-bold leading-none text-c-secondary">{prCount > 0 ? anim(prCount) : '—'}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">PRs</p>
           </div>
         </div>
       </div>
 
       {/* ── Active split label ──────────────────────────────────────────────── */}
       {activeSplit && (
-        <div className="px-4 mb-3">
+        <div className="px-4 mb-5">
           <p className="text-xs text-c-muted">
             Split: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
             {' · '}
@@ -423,83 +506,123 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Main CTA ────────────────────────────────────────────────────────── */}
-      <div className="px-4 mb-6">
-        {activeSession?.sessionStarted ? (
-          <div className={`${theme.bg} rounded-3xl p-6`} style={{ position: 'relative', color: theme.contrastText, textAlign: 'center' }}>
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: theme.contrastText }} />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: theme.contrastText, opacity: 0.8 }} />
-              </span>
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ opacity: 0.7, textAlign: 'center' }}>
-                {activeSession.isPaused ? 'Paused' : 'In Progress'}
+      {/* ── Main CTA (Improvements 2, 7, 10) ────────────────────────────────── */}
+      <div className="px-4 mb-7" style={{ position: 'relative' }}>
+        {/* Atmospheric glow behind card (Improvement 10) */}
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '75%',
+          height: '70%',
+          background: theme.hex,
+          filter: 'blur(60px)',
+          opacity: 0.22,
+          borderRadius: '50%',
+          pointerEvents: 'none',
+          zIndex: 0,
+        }} />
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          {activeSession?.sessionStarted ? (
+            /* ── Resume in-progress session ── */
+            <div style={accentCardStyle}>
+              <div style={{
+                position: 'absolute', inset: 0, pointerEvents: 'none',
+                background: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
+              }} />
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: theme.contrastText }} />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: theme.contrastText, opacity: 0.8 }} />
+                </span>
+                <p className="text-xs font-bold uppercase tracking-widest" style={{ opacity: 0.7 }}>
+                  {activeSession.isPaused ? 'Paused' : 'In Progress'}
+                </p>
+              </div>
+              <p className="text-3xl font-bold leading-tight">
+                {getWorkoutEmoji(activeSession.type)} {getWorkoutName(activeSession.type)}
+              </p>
+              <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
+                {activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length || 0} exercise{activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length === 1 ? '' : 's'} logged so far
+              </p>
+              <button
+                onClick={() => navigate(`/log/bb/${activeSession.type}`)}
+                className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+              >
+                Resume Workout →
+              </button>
+            </div>
+          ) : isRestDay ? (
+            /* ── Rest day ── */
+            <div style={{
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: 20,
+              padding: '24px 20px',
+              textAlign: 'center',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
+            }}>
+              <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted">Today</p>
+              <p className="text-3xl font-bold leading-tight">Rest Day</p>
+              <p className="text-sm mt-2 text-c-muted">
+                Recovery is part of the plan. Come back stronger tomorrow.
+              </p>
+              <p className="text-sm mt-4 font-semibold text-c-dim">
+                Next workout: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
               </p>
             </div>
-            <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>
-              {getWorkoutEmoji(activeSession.type)} {getWorkoutName(activeSession.type)}
-            </p>
-            <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6, textAlign: 'center' }}>
-              {activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length || 0} exercise{activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length === 1 ? '' : 's'} logged so far
-            </p>
-            <button
-              onClick={() => navigate(`/log/bb/${activeSession.type}`)}
-              className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
-              style={{ textAlign: 'center' }}
-            >
-              Resume Workout →
-            </button>
-          </div>
-        ) : isRestDay ? (
-          <div className="bg-card rounded-3xl p-6" style={{ textAlign: 'center' }}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted" style={{ textAlign: 'center' }}>Today</p>
-            <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>Rest Day</p>
-            <p className="text-sm mt-2 text-c-muted" style={{ textAlign: 'center' }}>
-              Recovery is part of the plan. Come back stronger tomorrow.
-            </p>
-            <p className="text-sm mt-4 font-semibold text-c-dim" style={{ textAlign: 'center' }}>
-              Next workout: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
-            </p>
-          </div>
-        ) : (
-          <div className={`${theme.bg} rounded-3xl p-6`} style={{ position: 'relative', color: theme.contrastText, textAlign: 'center' }}>
-            <button
-              onClick={() => setShowPreview(true)}
-              style={{ position: 'absolute', top: 12, right: 16, fontSize: 11, color: theme.contrastText, opacity: 0.7, background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Preview
-            </button>
-            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6, textAlign: 'center' }}>
-              {todayLogged ? 'Next in your split' : missedYesterdayWorkout ? 'Missed Yesterday' : 'Next Up'}
-            </p>
-            <p className="text-3xl font-bold leading-tight" style={{ textAlign: 'center' }}>
-              {getWorkoutName(recommendedWorkout)}
-            </p>
-            {todayLogged ? (
-              <p className="text-sm mt-1" style={{ opacity: 0.6, textAlign: 'center' }}>
-                Rest up — come back tomorrow.
+          ) : (
+            /* ── Upcoming workout ── */
+            <div style={accentCardStyle}>
+              <div style={{
+                position: 'absolute', inset: 0, pointerEvents: 'none',
+                background: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
+              }} />
+              <button
+                onClick={() => setShowPreview(true)}
+                style={{ position: 'absolute', top: 12, right: 16, fontSize: 11, color: theme.contrastText, opacity: 0.7, background: 'none', border: 'none', cursor: 'pointer', zIndex: 1 }}
+              >
+                Preview
+              </button>
+              <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
+                {todayLogged ? 'Next in your split' : missedYesterdayWorkout ? 'Missed Yesterday' : 'Next Up'}
               </p>
-            ) : (
-              <>
-                <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6, textAlign: 'center' }}>
-                  {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
+              <p className="text-3xl font-bold leading-tight">
+                {getWorkoutName(recommendedWorkout)}
+              </p>
+              {/* Exercise preview line */}
+              {ctaExercises.length > 0 && (
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 6, marginBottom: 20 }}>
+                  {ctaExercises.join(' · ')}
                 </p>
-                <button
-                  onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
-                  className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
-                  style={{ textAlign: 'center' }}
-                >
-                  Start Session →
-                </button>
-              </>
-            )}
-          </div>
-        )}
+              )}
+              {todayLogged ? (
+                <p className="text-sm mt-3" style={{ opacity: 0.6 }}>
+                  Rest up — come back tomorrow.
+                </p>
+              ) : (
+                <>
+                  {ctaExercises.length === 0 && (
+                    <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
+                      {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
+                    </p>
+                  )}
+                  <button
+                    onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
+                    className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+                  >
+                    Start Session →
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Soreness check-in prompt ────────────────────────────────────────── */}
       {pendingSorenessSession && (
-        <div className="px-4 mb-4">
+        <div className="px-4 mb-5">
           <button
             onClick={() => setShowSorenessModal(true)}
             className="w-full bg-card rounded-2xl p-4 flex items-center gap-3 text-left border border-c-subtle"
@@ -518,21 +641,21 @@ export default function Dashboard() {
       )}
 
       {/* ── Log Cardio card ──────────────────────────────────────────────────── */}
-      <div className="px-4 mb-5">
+      <div className="px-4 mb-7">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-2">Cardio</p>
         <button
           onClick={() => navigate('/cardio')}
           className="w-full rounded-2xl p-4"
           style={{ backgroundColor: theme.hex + '80', color: theme.contrastText, textAlign: 'center' }}
         >
-          <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ opacity: 0.6, textAlign: 'center' }}>Cardio</p>
-          <p className="font-semibold" style={{ textAlign: 'center' }}>Log Cardio ›</p>
+          <p className="font-semibold">Log Cardio ›</p>
         </button>
       </div>
 
-      {/* ── Weekly calendar strip ───────────────────────────────────────────── */}
+      {/* ── Weekly calendar strip (Improvement 5) ───────────────────────────── */}
       <div className="px-4 mb-1">
-        <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-3">This week</p>
-        <div className="flex gap-1">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-3">This week</p>
+        <div className="flex gap-1.5">
           {weekDays.map((day, i) => {
             const info           = getDayInfo(day)
             const isToday        = toDateStr(day) === todayStr
@@ -551,6 +674,12 @@ export default function Dashboard() {
             else if (isDone) cellBg = theme.bgSubtle
             else if (isCardio || isTodayCardio) cellBg = 'bg-blue-500/20'
 
+            const todayStyle = isTodayPending
+              ? { outline: `2.5px solid ${theme.hex}`, outlineOffset: '-2px', boxShadow: `0 0 12px ${theme.hex}80` }
+              : (isTodayRest || isTodayCardio || isTodayDone)
+                ? { outline: `2px solid rgba(255,255,255,0.15)`, outlineOffset: '-2px' }
+                : {}
+
             return (
               <button
                 key={i}
@@ -558,19 +687,29 @@ export default function Dashboard() {
                   if (isDone || isTodayDone || isCardio || isTodayCardio) navigate('/history')
                   else if (isFuture && info.planned) { setPreviewWorkoutId(info.planned); setShowPreview(true) }
                 }}
-                className={`flex-1 flex flex-col items-center py-2 rounded-xl transition-colors ${cellBg}`}
-                style={isTodayPending ? { outline: `2px solid ${theme.hex}`, outlineOffset: '-2px' } : {}}
+                className={`flex-1 flex flex-col items-center rounded-xl transition-colors ${cellBg}`}
+                style={{ minHeight: 56, paddingTop: 8, paddingBottom: 8, ...todayStyle }}
               >
-                <span className={`text-[10px] font-semibold mb-0.5 ${isToday ? theme.text : 'text-c-muted'}`}>
+                <span style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  marginBottom: 2,
+                  color: isToday ? theme.hex : 'var(--text-muted)',
+                }}>
                   {DAY_LABELS[i]}
                 </span>
-                <span className={`text-xs font-bold mb-1.5 ${isToday ? 'text-white' : 'text-c-dim'}`}>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  marginBottom: 4,
+                  color: isToday ? 'var(--text-primary)' : 'var(--text-dim)',
+                }}>
                   {day.getDate()}
                 </span>
                 <span className={`text-sm leading-none ${info.type === 'empty' ? 'opacity-25' : ''}`}>
                   {isTodayDone
                     ? <span className="flex flex-col items-center gap-0.5">
-                        <span>✓</span>
+                        <span>{info.emoji || '✓'}</span>
                         {info.hasCardio && <span style={{ fontSize: 8, color: '#60a5fa' }}>●</span>}
                       </span>
                     : isDone
@@ -609,17 +748,14 @@ export default function Dashboard() {
 
         {showMonth && (
           <div className="mt-2">
-            {/* Month header */}
             <p className="text-sm font-bold mb-3 text-c-primary">
               {MONTH_NAMES[today.getMonth()]} {today.getFullYear()}
             </p>
-            {/* Day-of-week header */}
             <div className="grid grid-cols-7 gap-1 mb-1">
               {DAY_LABELS.map((l, i) => (
                 <div key={i} className="text-center text-[10px] font-semibold text-c-muted">{l}</div>
               ))}
             </div>
-            {/* Calendar grid */}
             <div className="grid grid-cols-7 gap-1">
               {getMonthDays().map((day, i) => {
                 if (!day) return <div key={i} className="aspect-square" />
