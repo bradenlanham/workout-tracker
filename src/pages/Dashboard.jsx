@@ -176,6 +176,14 @@ const MONTH_NAMES = [
   'July','August','September','October','November','December',
 ]
 
+function hexToRgba(hex, alpha) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
 function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -622,7 +630,9 @@ export default function Dashboard() {
 
   // ── CTA card styles ───────────────────────────────────────────────────────
   const accentCardStyle = {
-    background: theme.hex,
+    backgroundColor: hexToRgba(theme.hex, 0.82),
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
     borderRadius: 20,
     padding: '32px 20px',
     position: 'relative',
@@ -1005,8 +1015,10 @@ export default function Dashboard() {
             </div>
           ) : isRestDay ? (
             <div style={{
-              backgroundColor: theme.hex,
+              backgroundColor: hexToRgba(theme.hex, 0.82),
               backgroundImage: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
               borderRadius: 20,
               padding: '32px 20px',
               textAlign: 'center',
@@ -1075,10 +1087,10 @@ export default function Dashboard() {
             onClick={() => setShowSorenessModal(true)}
             className="w-full rounded-2xl p-4 flex items-center gap-3 text-left"
             style={{
-              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.06)',
+              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+              backdropFilter: 'blur(18px)',
+              WebkitBackdropFilter: 'blur(18px)',
+              border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.06)',
             }}
           >
             <div className="flex-1 min-w-0">
@@ -1101,10 +1113,10 @@ export default function Dashboard() {
           {/* Volume card */}
           <div style={{
             flex: 1,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.06)',
+            backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
+            border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.06)',
             borderRadius: 16,
             padding: 14,
           }}>
@@ -1146,10 +1158,10 @@ export default function Dashboard() {
           {/* Time in Gym card */}
           <div style={{
             flex: 1,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.06)',
+            backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
+            border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.06)',
             borderRadius: 16,
             padding: 14,
           }}>
