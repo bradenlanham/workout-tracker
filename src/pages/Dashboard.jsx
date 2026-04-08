@@ -195,6 +195,28 @@ function Checkmark({ color = '#fff' }) {
   )
 }
 
+// ── Ambient particles (static — no re-render jitter) ─────────────────────────
+const PARTICLES = [
+  { w:3, left:'5%',  dur:'14s', delay:'-3s',  drift:'-15px', op:0.5 },
+  { w:2, left:'12%', dur:'19s', delay:'-8s',  drift:'20px',  op:0.35 },
+  { w:5, left:'18%', dur:'11s', delay:'-1s',  drift:'-25px', op:0.6 },
+  { w:2, left:'25%', dur:'22s', delay:'-14s', drift:'10px',  op:0.3 },
+  { w:4, left:'33%', dur:'16s', delay:'-6s',  drift:'-20px', op:0.55 },
+  { w:3, left:'40%', dur:'13s', delay:'-11s', drift:'30px',  op:0.4 },
+  { w:6, left:'47%', dur:'18s', delay:'-4s',  drift:'-10px', op:0.25 },
+  { w:2, left:'54%', dur:'21s', delay:'-16s', drift:'15px',  op:0.5 },
+  { w:4, left:'60%', dur:'12s', delay:'-7s',  drift:'-30px', op:0.45 },
+  { w:3, left:'67%', dur:'17s', delay:'-2s',  drift:'20px',  op:0.6 },
+  { w:5, left:'73%', dur:'20s', delay:'-13s', drift:'-15px', op:0.35 },
+  { w:2, left:'79%', dur:'15s', delay:'-9s',  drift:'25px',  op:0.5 },
+  { w:4, left:'85%', dur:'23s', delay:'-5s',  drift:'-20px', op:0.4 },
+  { w:3, left:'90%', dur:'10s', delay:'-17s', drift:'10px',  op:0.55 },
+  { w:2, left:'95%', dur:'16s', delay:'-3s',  drift:'-25px', op:0.3 },
+  { w:5, left:'8%',  dur:'19s', delay:'-12s', drift:'15px',  op:0.45 },
+  { w:3, left:'44%', dur:'14s', delay:'-8s',  drift:'-10px', op:0.5 },
+  { w:4, left:'70%', dur:'21s', delay:'-1s',  drift:'20px',  op:0.35 },
+]
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession } = useStore()
@@ -641,8 +663,62 @@ export default function Dashboard() {
           0%, 100% { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 4px VAR_REPLACE_20; }
           50%       { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 6px VAR_REPLACE_10; }
         }
+        @keyframes particleDrift {
+          0%   { transform: translateY(100vh) translateX(0px); opacity: 0; }
+          10%  { opacity: 1; }
+          85%  { opacity: 0.7; }
+          100% { transform: translateY(-60px) translateX(var(--drift)); opacity: 0; }
+        }
         ${STREAK_BADGE_CSS}
       `}</style>
+
+      {/* ── Floating particles overlay ───────────────────────────────────────── */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'hidden', opacity: isDark ? 1 : 0.4 }}>
+        {PARTICLES.map((p, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: p.left,
+              width: p.w,
+              height: p.w,
+              borderRadius: p.w <= 3 ? 1 : '50%',
+              backgroundColor: theme.hex,
+              opacity: p.op,
+              animationName: 'particleDrift',
+              animationDuration: p.dur,
+              animationDelay: p.delay,
+              animationTimingFunction: 'linear',
+              animationIterationCount: 'infinite',
+              '--drift': p.drift,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* ── Top radial glow ──────────────────────────────────────────────────── */}
+      <div style={{
+        position: 'fixed', top: -120, left: '50%',
+        transform: 'translateX(-50%)',
+        width: 500, height: 400,
+        background: `radial-gradient(ellipse at center, ${theme.hex}${isDark ? '20' : '0D'} 0%, ${theme.hex}${isDark ? '08' : '04'} 40%, transparent 70%)`,
+        pointerEvents: 'none', zIndex: 1,
+      }} />
+
+      {/* ── Bottom radial glow (dark only) ───────────────────────────────────── */}
+      {isDark && (
+        <div style={{
+          position: 'fixed', bottom: -80, left: '50%',
+          transform: 'translateX(-50%)',
+          width: 600, height: 350,
+          background: 'radial-gradient(ellipse at center, rgba(30,20,60,0.5) 0%, transparent 70%)',
+          pointerEvents: 'none', zIndex: 1,
+        }} />
+      )}
+
+      {/* ── Page content (above ambient layer) ───────────────────────────────── */}
+      <div style={{ position: 'relative', zIndex: 2 }}>
 
       {/* ── SECTION 1: Hero Header ──────────────────────────────────────────── */}
       <div
@@ -997,7 +1073,13 @@ export default function Dashboard() {
         <div style={{ ...fadeIn(280), padding: '0 16px', marginBottom: 10 }}>
           <button
             onClick={() => setShowSorenessModal(true)}
-            className="w-full bg-card rounded-2xl p-4 flex items-center gap-3 text-left border border-c-subtle"
+            className="w-full rounded-2xl p-4 flex items-center gap-3 text-left"
+            style={{
+              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.06)',
+            }}
           >
             <div className="flex-1 min-w-0">
               <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-0.5">Check-in</p>
@@ -1017,7 +1099,15 @@ export default function Dashboard() {
         <div style={{ display: 'flex', gap: 10 }}>
 
           {/* Volume card */}
-          <div style={{ flex: 1, backgroundColor: 'var(--bg-card)', borderRadius: 16, padding: 14 }}>
+          <div style={{
+            flex: 1,
+            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.06)',
+            borderRadius: 16,
+            padding: 14,
+          }}>
             <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
               Volume
             </p>
@@ -1054,7 +1144,15 @@ export default function Dashboard() {
           </div>
 
           {/* Time in Gym card */}
-          <div style={{ flex: 1, backgroundColor: 'var(--bg-card)', borderRadius: 16, padding: 14 }}>
+          <div style={{
+            flex: 1,
+            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.06)',
+            borderRadius: 16,
+            padding: 14,
+          }}>
             <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
               Time in Gym
             </p>
@@ -1119,6 +1217,8 @@ export default function Dashboard() {
           Log Cardio
         </button>
       </div>
+
+      </div>{/* end content wrapper */}
 
       {/* ── Soreness Modal ───────────────────────────────────────────────────── */}
       {showSorenessModal && pendingSorenessSession && (
