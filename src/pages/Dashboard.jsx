@@ -538,18 +538,20 @@ export default function Dashboard() {
           padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 16px 20px',
         }}
       >
-        {streak > 0 && (
-          <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1 }}>
-            <span style={{ fontSize: 28, fontWeight: 800, color: theme.hex, textShadow: `0 0 16px ${theme.hex}99`, lineHeight: 1 }}>{streak}</span>
-            <span style={{ fontSize: 26, lineHeight: 1 }}>🔥</span>
-          </div>
-        )}
         <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em' }}>
           {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
-        <h1 style={{ fontSize: 28, fontWeight: 800, marginTop: 2, marginBottom: 4, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
-          {headline}
-        </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, marginBottom: 4 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
+            {headline}
+          </h1>
+          {streak > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1, flexShrink: 0 }}>
+              <span style={{ fontSize: 28, fontWeight: 800, color: theme.hex, textShadow: `0 0 16px ${theme.hex}99`, lineHeight: 1 }}>{streak}</span>
+              <span style={{ fontSize: 26, lineHeight: 1 }}>🔥</span>
+            </div>
+          )}
+        </div>
         <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{sub}</p>
       </div>
 
@@ -797,12 +799,12 @@ export default function Dashboard() {
               textAlign: 'center',
               boxShadow: `0 8px 32px ${theme.hex}40`,
             }}>
-              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, color: 'var(--text-muted)' }}>Today</p>
-              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, color: 'var(--text-primary)' }}>Rest Day</p>
-              <p style={{ fontSize: 13, marginTop: 8, color: 'var(--text-muted)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, color: 'rgba(255,255,255,0.6)' }}>Today</p>
+              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, color: '#fff' }}>Rest Day</p>
+              <p style={{ fontSize: 13, marginTop: 8, color: 'rgba(255,255,255,0.85)' }}>
                 Recovery is part of the plan. Come back stronger tomorrow.
               </p>
-              <p style={{ fontSize: 13, marginTop: 12, fontWeight: 600, color: 'var(--text-dim)' }}>
+              <p style={{ fontSize: 13, marginTop: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
                 Next: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
               </p>
             </div>
