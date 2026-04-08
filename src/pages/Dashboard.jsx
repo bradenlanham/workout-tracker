@@ -129,6 +129,7 @@ export default function Dashboard() {
   const [tutorialStep, setTutorialStep] = useState(() => settings.hasSeenTutorial ? null : 0)
   const [pressedDay, setPressedDay] = useState(null)
   const [selectedDaySession, setSelectedDaySession] = useState(null)
+  const [selectedFutureDay, setSelectedFutureDay] = useState(null) // { dateStr, workoutId, isRest }
 
   // ── Count-up animation (runs once on mount) ───────────────────────────────
   const animRef = useRef(false)
@@ -565,7 +566,6 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{sub}</p>
       </div>
 
       {/* ── SECTION 2: Circle Calendar ──────────────────────────────────────── */}
@@ -643,7 +643,11 @@ export default function Dashboard() {
                         if (isDone) {
                           const s = sessionByDate[dayKey]
                           if (s) setSelectedDaySession(s)
-                        } else {
+                        } else if (isFutureDay) {
+                          setSelectedFutureDay({ dateStr: dayKey, workoutId: info.planned, isRest: false })
+                        } else if (info.type === 'future-rest') {
+                          setSelectedFutureDay({ dateStr: dayKey, workoutId: null, isRest: true })
+                        } else if (info.type !== 'today-pending' && info.type !== 'today-rest') {
                           navigate('/history')
                         }
                       }}
@@ -1005,7 +1009,7 @@ export default function Dashboard() {
             alignItems: 'center',
             gap: 7,
             padding: '10px 20px',
-            color: 'rgba(255,255,255,0.35)',
+            color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
             fontSize: 12,
             fontWeight: 600,
             letterSpacing: '0.08em',
@@ -1103,6 +1107,85 @@ export default function Dashboard() {
                 )
               })}
             </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Future Day Bottom Sheet ─────────────────────────────────────────── */}
+      {selectedFutureDay && (
+        <>
+          <div
+            onClick={() => setSelectedFutureDay(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 200, backgroundColor: 'rgba(0,0,0,0.5)' }}
+          />
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0,
+            maxHeight: '75vh', overflowY: 'auto',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '20px 20px 0 0',
+            padding: '20px 16px 40px',
+            zIndex: 201,
+          }}>
+            <div style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 auto 16px' }} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                  {selectedFutureDay.isRest
+                    ? 'Rest Day'
+                    : `${getWorkoutEmoji(selectedFutureDay.workoutId)} ${getWorkoutName(selectedFutureDay.workoutId)}`}
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
+                  {new Date(selectedFutureDay.dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                  {' · '}
+                  <span style={{ color: theme.hex }}>Scheduled</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedFutureDay(null)}
+                style={{
+                  background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer',
+                  width: 32, height: 32, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 18, color: 'var(--text-secondary)', flexShrink: 0,
+                }}
+              >×</button>
+            </div>
+            {selectedFutureDay.isRest ? (
+              <div>
+                <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Recovery day — no lifting scheduled.
+                </p>
+                {nextBb && (
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Next workout: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+                  </p>
+                )}
+              </div>
+            ) : (() => {
+              const fw = activeSplit?.workouts?.find(w => w.id === selectedFutureDay.workoutId)
+              const sections = fw?.sections || BB_EXERCISE_GROUPS[selectedFutureDay.workoutId] || []
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {sections.map((section, si) => (
+                    <div key={si}>
+                      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>
+                        {section.label}
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {(section.exercises || []).map((ex, ei) => {
+                          const name = typeof ex === 'string' ? ex : ex.name
+                          return (
+                            <p key={ei} style={{ fontSize: 13, color: 'var(--text-secondary)', paddingBottom: 4, borderBottom: '1px solid var(--border-subtle)' }}>
+                              {name}
+                            </p>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         </>
       )}
