@@ -825,32 +825,40 @@ export default function Dashboard() {
                 position: 'absolute', inset: 0, pointerEvents: 'none',
                 background: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
               }} />
-              <button
-                onClick={() => setShowPreview(true)}
-                style={{ position: 'absolute', top: 12, right: 16, fontSize: 11, color: theme.contrastText, opacity: 0.7, background: 'none', border: 'none', cursor: 'pointer', zIndex: 1 }}
-              >
-                Preview
-              </button>
               <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, opacity: 0.6 }}>
                 {todayLogged ? 'Next in your split' : missedYesterdayWorkout ? 'Missed Yesterday' : 'Next Up'}
               </p>
               <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2 }}>
                 {getWorkoutName(recommendedWorkout)}
               </p>
-              {ctaExercises.length > 0 && (
-                <p style={{ fontSize: 12, color: accentIsLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.65)', marginTop: 6, marginBottom: 20 }}>
-                  {ctaExercises.join(' · ')}
-                </p>
-              )}
+              <div
+                onPointerDown={() => setShowPreview(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 8,
+                  marginBottom: 4,
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  border: `1px solid ${accentIsLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.35)'}`,
+                  backgroundColor: accentIsLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)',
+                  color: accentIsLight ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.9)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  letterSpacing: 0.3,
+                }}
+              >
+                <span style={{ fontSize: 12 }}>👁</span> Preview
+              </div>
               {todayLogged ? (
                 <p style={{ fontSize: 13, marginTop: 12, opacity: 0.6 }}>Rest up — come back tomorrow.</p>
               ) : (
                 <>
-                  {ctaExercises.length === 0 && (
-                    <p style={{ fontSize: 13, marginTop: 4, marginBottom: 20, opacity: 0.6 }}>
-                      {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
-                    </p>
-                  )}
+                  <p style={{ fontSize: 13, marginTop: 4, marginBottom: 20, opacity: 0.6 }}>
+                    {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
+                  </p>
                   <button
                     onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
                     style={{ width: '100%', background: 'rgba(0,0,0,0.2)', fontWeight: 700, fontSize: 17, padding: '16px 0', borderRadius: 16, border: 'none', cursor: 'pointer', color: theme.contrastText }}
