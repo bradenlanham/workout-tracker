@@ -5,6 +5,94 @@ import { getTheme } from '../theme'
 import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
+// ── Streak tier ───────────────────────────────────────────────────────────────
+const STREAK_BADGE_CSS = `
+@keyframes dashLegendaryShimmer {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes dashMythicShimmer {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+`
+
+function getStreakTier(streak, themeHex) {
+  if (streak >= 30) return {
+    name: 'Mythic', color: '#A855F7', isAnimated: true,
+    gradient: 'linear-gradient(90deg, #A855F7, #06B6D4, #EC4899, #A855F7)',
+    glow: 'drop-shadow(0 0 8px rgba(168,85,247,0.55))',
+    animName: 'dashMythicShimmer',
+  }
+  if (streak >= 20) return {
+    name: 'Legendary', color: '#F97316', isAnimated: true,
+    gradient: 'linear-gradient(90deg, #F97316, #FBBF24, #EF4444, #F97316)',
+    glow: null,
+    animName: 'dashLegendaryShimmer',
+  }
+  if (streak >= 15) return { name: 'Epic',      color: '#F5C842', isAnimated: false }
+  if (streak >= 6)  return { name: 'Rare',      color: '#A8A8B3', isAnimated: false }
+  return                   { name: 'Common',    color: themeHex,  isAnimated: false }
+}
+
+function StreakBadge({ streak, themeHex }) {
+  if (!streak || streak === 0) return null
+  const tier = getStreakTier(streak, themeHex)
+
+  if (tier.isAnimated) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+        {/* Animated gradient border wrapper */}
+        <div style={{
+          borderRadius: 20,
+          padding: 1.5,
+          background: tier.gradient,
+          backgroundSize: '300% 300%',
+          animation: `${tier.animName} 3s linear infinite`,
+          filter: tier.glow || undefined,
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '3px 9px',
+            borderRadius: 18,
+            backgroundColor: 'rgba(10,10,14,0.85)',
+          }}>
+            <span style={{ fontSize: 20, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>🔥</span>
+          </div>
+        </div>
+        <span style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
+          color: tier.color, textTransform: 'uppercase', lineHeight: 1, opacity: 0.9,
+        }}>
+          {tier.name}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '4px 10px',
+        borderRadius: 20,
+        border: `1.5px solid ${tier.color}`,
+        backgroundColor: 'rgba(0,0,0,0.25)',
+      }}>
+        <span style={{ fontSize: 20, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>🔥</span>
+      </div>
+      <span style={{
+        fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
+        color: tier.color, textTransform: 'uppercase', lineHeight: 1, opacity: 0.9,
+      }}>
+        {tier.name}
+      </span>
+    </div>
+  )
+}
+
 // ── Tutorial overlay ──────────────────────────────────────────────────────────
 const TUTORIAL_STEPS = [
   {
@@ -553,6 +641,7 @@ export default function Dashboard() {
           0%, 100% { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 4px VAR_REPLACE_20; }
           50%       { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 6px VAR_REPLACE_10; }
         }
+        ${STREAK_BADGE_CSS}
       `}</style>
 
       {/* ── SECTION 1: Hero Header ──────────────────────────────────────────── */}
@@ -571,12 +660,7 @@ export default function Dashboard() {
           <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
             {headline}
           </h1>
-          {streak > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1, flexShrink: 0 }}>
-              <span style={{ fontSize: 28, fontWeight: 800, color: theme.hex, textShadow: `0 0 16px ${theme.hex}99`, lineHeight: 1 }}>{streak}</span>
-              <span style={{ fontSize: 26, lineHeight: 1 }}>🔥</span>
-            </div>
-          )}
+          <StreakBadge streak={streak} themeHex={theme.hex} />
         </div>
       </div>
 
