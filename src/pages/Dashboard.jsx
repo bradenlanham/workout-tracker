@@ -41,7 +41,7 @@ function StreakBadge({ streak, themeHex }) {
 
   if (tier.isAnimated) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0, marginTop: 8, marginRight: 6 }}>
         {/* Animated gradient border wrapper */}
         <div style={{
           borderRadius: 20,
@@ -53,12 +53,12 @@ function StreakBadge({ streak, themeHex }) {
         }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 5,
-            padding: '3px 9px',
+            padding: '5px 13px',
             borderRadius: 18,
             backgroundColor: 'rgba(10,10,14,0.85)',
           }}>
-            <span style={{ fontSize: 20, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
-            <span style={{ fontSize: 18, lineHeight: 1 }}>🔥</span>
+            <span style={{ fontSize: 24, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
+            <span style={{ fontSize: 22, lineHeight: 1 }}>🔥</span>
           </div>
         </div>
         <span style={{
@@ -72,16 +72,16 @@ function StreakBadge({ streak, themeHex }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0, marginTop: 8, marginRight: 6 }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 5,
-        padding: '4px 10px',
+        padding: '6px 14px',
         borderRadius: 20,
         border: `1.5px solid ${tier.color}`,
         backgroundColor: 'rgba(0,0,0,0.25)',
       }}>
-        <span style={{ fontSize: 20, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
-        <span style={{ fontSize: 18, lineHeight: 1 }}>🔥</span>
+        <span style={{ fontSize: 24, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
+        <span style={{ fontSize: 22, lineHeight: 1 }}>🔥</span>
       </div>
       <span style={{
         fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
