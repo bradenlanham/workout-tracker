@@ -154,8 +154,30 @@ export default function Dashboard() {
     return lbs === 0 ? '—' : `${lbs}`
   }
 
+  const getWeekDuration = (weekOffset = 0) => {
+    const now = new Date()
+    const startOfThisWeek = new Date(now)
+    startOfThisWeek.setDate(now.getDate() - now.getDay() + (weekOffset * 7))
+    startOfThisWeek.setHours(0, 0, 0, 0)
+    const endOfWeek = new Date(startOfThisWeek)
+    endOfWeek.setDate(startOfThisWeek.getDate() + 7)
+    return sessions
+      .filter(s => { const d = new Date(s.date); return d >= startOfThisWeek && d < endOfWeek })
+      .reduce((total, s) => total + (s.duration || 0), 0)
+  }
+
+  const formatDuration = (mins) => {
+    if (!mins) return '—'
+    if (mins < 60) return `${mins}m`
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
   const volumeThisWeek = getWeekVolume(0)
   const volumeLastWeek = getWeekVolume(-1)
+  const durationThisWeek = getWeekDuration(0)
+  const durationLastWeek = getWeekDuration(-1)
 
   const totalVolume = sessions.reduce((total, s) => {
     return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
@@ -398,7 +420,7 @@ export default function Dashboard() {
   const accentCardStyle = {
     background: theme.hex,
     borderRadius: 20,
-    padding: '24px 20px',
+    padding: '16px 16px',
     position: 'relative',
     color: theme.contrastText,
     textAlign: 'center',
@@ -411,23 +433,25 @@ export default function Dashboard() {
     <div className="min-h-screen pb-28">
 
       {/* ── Greeting ────────────────────────────────────────────────────────── */}
-      <div className="px-4 pb-5" style={{ paddingTop: 'max(64px, calc(env(safe-area-inset-top) + 28px))' }}>
+      <div className="px-4 pb-2" style={{ paddingTop: 'max(44px, calc(env(safe-area-inset-top) + 16px))' }}>
         <p className="text-c-muted text-sm font-medium tracking-wide">
           {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
         <h1 className="text-3xl font-bold mt-0.5 mb-1">
-          {todayLogged ? 'Your work here is done.' : 'Ready to train?'}
+          {todayLogged ? 'Your work here is done.' : isRestDay ? 'Rest day.' : 'Ready to train?'}
+          {(todayLogged || isRestDay) && (
+            <span style={{ color: theme.hex, fontSize: 28, fontWeight: 'bold' }}> ✓</span>
+          )}
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{momentumLine}</p>
       </div>
 
-      {/* ── Streak Hero (Improvement 1) ──────────────────────────────────────── */}
-      <div className="px-4 mb-6 flex justify-center">
+      {/* ── Streak Hero ──────────────────────────────────────────────────────── */}
+      <div className="px-4 mb-3 flex justify-center">
         {streak > 0 ? (
-          <div style={{ textAlign: 'center', padding: '4px 32px' }}>
-            <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>🔥</div>
-            <div style={{
-              fontSize: 38,
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' }}>
+            <span style={{
+              fontSize: 34,
               fontWeight: 900,
               lineHeight: 1,
               color: 'var(--text-primary)',
@@ -435,62 +459,70 @@ export default function Dashboard() {
               letterSpacing: '-0.02em',
             }}>
               {streak}
-            </div>
-            <div style={{
+            </span>
+            <span style={{ fontSize: 32, lineHeight: 1 }}>🔥</span>
+            <span style={{
               fontSize: 11,
               color: 'var(--text-muted)',
-              marginTop: 5,
               fontWeight: 600,
               textTransform: 'uppercase',
               letterSpacing: '0.1em',
             }}>
               day streak
-            </div>
+            </span>
           </div>
         ) : (
-          <p style={{ color: 'var(--text-muted)', fontSize: 14, padding: '12px 0' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, padding: '8px 0' }}>
             Start your streak today
           </p>
         )}
       </div>
 
-      {/* ── Stat grid (Improvement 9 — hierarchy) ───────────────────────────── */}
-      <div className="px-4 mb-6">
-        {/* Volume row — two larger tiles */}
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-2xl font-bold leading-none text-c-primary">
-              {formatVolume(anim(volumeLastWeek))}
-            </p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-2">Last Week</p>
+      {/* ── Stat cards ──────────────────────────────────────────────────────── */}
+      <div className="px-4 mb-3">
+        <div className="grid grid-cols-2 gap-3">
+          {/* Volume card */}
+          <div className="rounded-2xl p-3" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mb-2">Volume</p>
+            <div className="flex gap-3">
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-c-muted mb-0.5">Last Wk</p>
+                <p className="text-base font-bold leading-none text-c-secondary">
+                  {formatVolume(anim(volumeLastWeek))}
+                </p>
+              </div>
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider mb-0.5" style={{ color: theme.hex }}>This Wk</p>
+                <p className="text-lg font-black leading-none" style={{ color: theme.hex }}>
+                  {formatVolume(anim(volumeThisWeek))}
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-2xl font-bold leading-none" style={{ color: theme.hex }}>
-              {formatVolume(anim(volumeThisWeek))}
-            </p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-2">This Week</p>
-          </div>
-        </div>
-        {/* Secondary stats row */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-lg font-bold leading-none text-c-secondary">{anim(splitSessionCount)}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Sessions</p>
-          </div>
-          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-lg font-bold leading-none text-c-secondary">{anim(totalSessions)}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Total</p>
-          </div>
-          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-lg font-bold leading-none text-c-secondary">{prCount > 0 ? anim(prCount) : '—'}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">PRs</p>
+          {/* Time in Gym card */}
+          <div className="rounded-2xl p-3" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mb-2">Time in Gym</p>
+            <div className="flex gap-3">
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-c-muted mb-0.5">Last Wk</p>
+                <p className="text-base font-bold leading-none text-c-secondary">
+                  {formatDuration(anim(durationLastWeek))}
+                </p>
+              </div>
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider mb-0.5" style={{ color: theme.hex }}>This Wk</p>
+                <p className="text-lg font-black leading-none" style={{ color: theme.hex }}>
+                  {formatDuration(anim(durationThisWeek))}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* ── Active split label ──────────────────────────────────────────────── */}
       {activeSplit && (
-        <div className="px-4 mb-5">
+        <div className="px-4 mb-2">
           <p className="text-xs text-c-muted">
             Split: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
             {' · '}
@@ -506,8 +538,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Main CTA (Improvements 2, 7, 10) ────────────────────────────────── */}
-      <div className="px-4 mb-7" style={{ position: 'relative' }}>
+      {/* ── Main CTA ────────────────────────────────────────────────────────── */}
+      <div className="px-4 mb-3" style={{ position: 'relative' }}>
         {/* Atmospheric glow behind card (Improvement 10) */}
         <div style={{
           position: 'absolute',
@@ -540,15 +572,15 @@ export default function Dashboard() {
                   {activeSession.isPaused ? 'Paused' : 'In Progress'}
                 </p>
               </div>
-              <p className="text-3xl font-bold leading-tight">
+              <p className="text-2xl font-bold leading-tight">
                 {getWorkoutEmoji(activeSession.type)} {getWorkoutName(activeSession.type)}
               </p>
-              <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
+              <p className="text-sm mt-1 mb-3" style={{ opacity: 0.6 }}>
                 {activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length || 0} exercise{activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length === 1 ? '' : 's'} logged so far
               </p>
               <button
                 onClick={() => navigate(`/log/bb/${activeSession.type}`)}
-                className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+                className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-3 rounded-2xl transition-colors"
               >
                 Resume Workout →
               </button>
@@ -558,12 +590,12 @@ export default function Dashboard() {
             <div style={{
               backgroundColor: 'var(--bg-card)',
               borderRadius: 20,
-              padding: '24px 20px',
+              padding: '16px 16px',
               textAlign: 'center',
               boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
             }}>
               <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted">Today</p>
-              <p className="text-3xl font-bold leading-tight">Rest Day</p>
+              <p className="text-2xl font-bold leading-tight">Rest Day</p>
               <p className="text-sm mt-2 text-c-muted">
                 Recovery is part of the plan. Come back stronger tomorrow.
               </p>
@@ -587,12 +619,12 @@ export default function Dashboard() {
               <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
                 {todayLogged ? 'Next in your split' : missedYesterdayWorkout ? 'Missed Yesterday' : 'Next Up'}
               </p>
-              <p className="text-3xl font-bold leading-tight">
+              <p className="text-2xl font-bold leading-tight">
                 {getWorkoutName(recommendedWorkout)}
               </p>
               {/* Exercise preview line */}
               {ctaExercises.length > 0 && (
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 6, marginBottom: 20 }}>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 4, marginBottom: 12 }}>
                   {ctaExercises.join(' · ')}
                 </p>
               )}
@@ -609,7 +641,7 @@ export default function Dashboard() {
                   )}
                   <button
                     onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
-                    className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+                    className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-3 rounded-2xl transition-colors"
                   >
                     Start Session →
                   </button>
@@ -622,7 +654,7 @@ export default function Dashboard() {
 
       {/* ── Soreness check-in prompt ────────────────────────────────────────── */}
       {pendingSorenessSession && (
-        <div className="px-4 mb-5">
+        <div className="px-4 mb-2">
           <button
             onClick={() => setShowSorenessModal(true)}
             className="w-full bg-card rounded-2xl p-4 flex items-center gap-3 text-left border border-c-subtle"
@@ -641,20 +673,20 @@ export default function Dashboard() {
       )}
 
       {/* ── Log Cardio card ──────────────────────────────────────────────────── */}
-      <div className="px-4 mb-7">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-2">Cardio</p>
+      <div className="px-4 mb-3">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-1.5">Cardio</p>
         <button
           onClick={() => navigate('/cardio')}
-          className="w-full rounded-2xl p-4"
+          className="w-full rounded-2xl p-3"
           style={{ backgroundColor: theme.hex + '80', color: theme.contrastText, textAlign: 'center' }}
         >
           <p className="font-semibold">Log Cardio ›</p>
         </button>
       </div>
 
-      {/* ── Weekly calendar strip (Improvement 5) ───────────────────────────── */}
+      {/* ── Weekly calendar strip ───────────────────────────────────────────── */}
       <div className="px-4 mb-1">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-3">This week</p>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-2">This week</p>
         <div className="flex gap-1.5">
           {weekDays.map((day, i) => {
             const info           = getDayInfo(day)
@@ -688,7 +720,7 @@ export default function Dashboard() {
                   else if (isFuture && info.planned) { setPreviewWorkoutId(info.planned); setShowPreview(true) }
                 }}
                 className={`flex-1 flex flex-col items-center rounded-xl transition-colors ${cellBg}`}
-                style={{ minHeight: 56, paddingTop: 8, paddingBottom: 8, ...todayStyle }}
+                style={{ minHeight: 50, paddingTop: 6, paddingBottom: 6, ...todayStyle }}
               >
                 <span style={{
                   fontSize: 13,
@@ -738,7 +770,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Month toggle ────────────────────────────────────────────────────── */}
-      <div className="px-4 mb-6">
+      <div className="px-4 mb-3">
         <button
           onClick={() => setShowMonth(v => !v)}
           className={`text-xs font-semibold ${theme.text} py-2`}
