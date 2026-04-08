@@ -810,9 +810,6 @@ export default function Dashboard() {
             }}>
               <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, color: accentIsLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.6)' }}>Today</p>
               <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, color: accentIsLight ? 'rgba(0,0,0,0.9)' : '#fff' }}>Rest Day</p>
-              <p style={{ fontSize: 13, marginTop: 8, color: accentIsLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)' }}>
-                Recovery is part of the plan. Come back stronger tomorrow.
-              </p>
               <p style={{ fontSize: 13, marginTop: 12, fontWeight: 600, color: accentIsLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)' }}>
                 Next: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
               </p>
