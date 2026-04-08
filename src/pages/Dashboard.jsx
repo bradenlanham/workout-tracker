@@ -397,12 +397,10 @@ export default function Dashboard() {
     return days
   }
 
-  // ── Momentum line (Improvement 4) ─────────────────────────────────────────
+  // ── Momentum line ─────────────────────────────────────────────────────────
   let momentumLine = ''
   if (isRestDay) {
     momentumLine = `Rest day · ${getWorkoutName(nextBb)} up next`
-  } else if (todayLogged) {
-    momentumLine = `${totalSessions} sessions and counting`
   } else if (totalSessions > 0 && totalVolume > 0) {
     momentumLine = `${totalSessions} sessions logged · ${formatVolume(totalVolume)} lbs moved`
   } else if (totalSessions > 0) {
@@ -433,7 +431,7 @@ export default function Dashboard() {
     <div className="min-h-screen pb-28">
 
       {/* ── Greeting ────────────────────────────────────────────────────────── */}
-      <div className="px-4 pb-2" style={{ paddingTop: 'max(44px, calc(env(safe-area-inset-top) + 16px))' }}>
+      <div className="px-4 pb-2" style={{ paddingTop: 'max(72px, calc(env(safe-area-inset-top) + 44px))' }}>
         <p className="text-c-muted text-sm font-medium tracking-wide">
           {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
@@ -447,7 +445,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Streak Hero ──────────────────────────────────────────────────────── */}
-      <div className="px-4 mb-3 flex justify-center">
+      <div className="px-4 mb-3">
         {streak > 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' }}>
             <span style={{
@@ -461,18 +459,9 @@ export default function Dashboard() {
               {streak}
             </span>
             <span style={{ fontSize: 32, lineHeight: 1 }}>🔥</span>
-            <span style={{
-              fontSize: 11,
-              color: 'var(--text-muted)',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-            }}>
-              day streak
-            </span>
           </div>
         ) : (
-          <p style={{ color: 'var(--text-muted)', fontSize: 14, padding: '8px 0' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, padding: '4px 0' }}>
             Start your streak today
           </p>
         )}
@@ -484,16 +473,16 @@ export default function Dashboard() {
           {/* Volume card */}
           <div className="rounded-2xl p-3" style={{ backgroundColor: 'var(--bg-card)' }}>
             <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mb-2">Volume</p>
-            <div className="flex gap-3">
-              <div>
+            <div className="flex">
+              <div className="flex-1 flex flex-col items-center">
                 <p className="text-[9px] font-semibold uppercase tracking-wider text-c-muted mb-0.5">Last Wk</p>
-                <p className="text-base font-bold leading-none text-c-secondary">
+                <p className="text-lg font-bold leading-none text-c-secondary">
                   {formatVolume(anim(volumeLastWeek))}
                 </p>
               </div>
-              <div>
+              <div className="flex-1 flex flex-col items-center">
                 <p className="text-[9px] font-semibold uppercase tracking-wider mb-0.5" style={{ color: theme.hex }}>This Wk</p>
-                <p className="text-lg font-black leading-none" style={{ color: theme.hex }}>
+                <p className="text-xl font-black leading-none" style={{ color: theme.hex }}>
                   {formatVolume(anim(volumeThisWeek))}
                 </p>
               </div>
@@ -502,16 +491,16 @@ export default function Dashboard() {
           {/* Time in Gym card */}
           <div className="rounded-2xl p-3" style={{ backgroundColor: 'var(--bg-card)' }}>
             <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mb-2">Time in Gym</p>
-            <div className="flex gap-3">
-              <div>
+            <div className="flex">
+              <div className="flex-1 flex flex-col items-center">
                 <p className="text-[9px] font-semibold uppercase tracking-wider text-c-muted mb-0.5">Last Wk</p>
-                <p className="text-base font-bold leading-none text-c-secondary">
+                <p className="text-lg font-bold leading-none text-c-secondary">
                   {formatDuration(anim(durationLastWeek))}
                 </p>
               </div>
-              <div>
+              <div className="flex-1 flex flex-col items-center">
                 <p className="text-[9px] font-semibold uppercase tracking-wider mb-0.5" style={{ color: theme.hex }}>This Wk</p>
-                <p className="text-lg font-black leading-none" style={{ color: theme.hex }}>
+                <p className="text-xl font-black leading-none" style={{ color: theme.hex }}>
                   {formatDuration(anim(durationThisWeek))}
                 </p>
               </div>
