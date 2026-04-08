@@ -850,15 +850,12 @@ export default function Dashboard() {
                   letterSpacing: 0.3,
                 }}
               >
-                <span style={{ fontSize: 12 }}>👁</span> Preview
+                Preview
               </div>
               {todayLogged ? (
                 <p style={{ fontSize: 13, marginTop: 12, opacity: 0.6 }}>Rest up — come back tomorrow.</p>
               ) : (
                 <>
-                  <p style={{ fontSize: 13, marginTop: 4, marginBottom: 20, opacity: 0.6 }}>
-                    {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
-                  </p>
                   <button
                     onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
                     style={{ width: '100%', background: 'rgba(0,0,0,0.2)', fontWeight: 700, fontSize: 17, padding: '16px 0', borderRadius: 16, border: 'none', cursor: 'pointer', color: theme.contrastText }}
