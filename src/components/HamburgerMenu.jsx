@@ -78,7 +78,7 @@ export default function HamburgerMenu({ open, setOpen }) {
               )}
               {subScreen && (
                 <span className="text-base font-bold absolute left-1/2 -translate-x-1/2">
-                  {subScreen === 'settings' ? 'Settings' : subScreen === 'info' ? 'Info' : 'Progress'}
+                  {subScreen === 'settings' ? 'Settings' : 'Info'}
                 </span>
               )}
               <button
@@ -99,11 +99,6 @@ export default function HamburgerMenu({ open, setOpen }) {
                 <>
                   <button className={rowClass} style={rowStyle} onClick={() => go('/splits')}>
                     <span>My Splits</span>
-                    <span className="text-c-dim">→</span>
-                  </button>
-
-                  <button className={rowClass} style={rowStyle} onClick={() => setSubScreen('progress')}>
-                    <span>Progress</span>
                     <span className="text-c-dim">→</span>
                   </button>
 
@@ -149,155 +144,157 @@ export default function HamburgerMenu({ open, setOpen }) {
               {/* ── Settings sub-screen ─────────────────────────────────────── */}
               {subScreen === 'settings' && (
                 <div className="space-y-6 pt-4">
-                  {/* Your Name */}
+
+                  {/* ── Appearance ──────────────────────────────────────────── */}
                   <div>
-                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Your Name</p>
-                    <input
-                      type="text"
-                      value={settings.userName || ''}
-                      onChange={e => updateSettings({ userName: e.target.value })}
-                      placeholder="Your name"
-                      className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-sm placeholder-gray-500 focus:outline-none"
-                    />
+                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Appearance</p>
+                    <div className="space-y-4">
+                      {/* Theme */}
+                      <div>
+                        <p className="text-sm font-semibold text-c-primary mb-2">Theme</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateSettings({ backgroundTheme: 'obsidian' })}
+                            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                              settings.backgroundTheme !== 'daylight'
+                                ? `${theme.bg} text-white`
+                                : 'bg-item text-c-secondary'
+                            }`}
+                            style={settings.backgroundTheme !== 'daylight' ? { color: theme.contrastText } : undefined}
+                          >
+                            Obsidian
+                          </button>
+                          <button
+                            onClick={() => updateSettings({ backgroundTheme: 'daylight' })}
+                            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                              settings.backgroundTheme === 'daylight'
+                                ? `${theme.bg} text-white`
+                                : 'bg-item text-c-secondary'
+                            }`}
+                            style={settings.backgroundTheme === 'daylight' ? { color: theme.contrastText } : undefined}
+                          >
+                            Daylight
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Accent Color */}
+                      <div>
+                        <p className="text-sm font-semibold text-c-primary mb-2">Accent Color</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                          {themeColors.map(t => (
+                            <button
+                              key={t.id}
+                              onClick={() => updateSettings({ accentColor: t.id })}
+                              title={t.name}
+                              style={{
+                                backgroundColor: t.hex,
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                outline: settings.accentColor === t.id
+                                  ? `2px solid ${t.id === 'white' ? '#888' : '#fff'}`
+                                  : 'none',
+                                outlineOffset: '2px',
+                                border: t.id === 'white' ? '1px solid #555' : 'none',
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Theme */}
+                  {/* ── Workout Defaults ─────────────────────────────────────── */}
                   <div>
-                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Theme</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => updateSettings({ backgroundTheme: 'obsidian' })}
-                        className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                          settings.backgroundTheme !== 'daylight'
-                            ? `${theme.bg} text-white`
-                            : 'bg-item text-c-secondary'
-                        }`}
-                        style={settings.backgroundTheme !== 'daylight' ? { color: theme.contrastText } : undefined}
-                      >
-                        Obsidian
-                      </button>
-                      <button
-                        onClick={() => updateSettings({ backgroundTheme: 'daylight' })}
-                        className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                          settings.backgroundTheme === 'daylight'
-                            ? `${theme.bg} text-white`
-                            : 'bg-item text-c-secondary'
-                        }`}
-                        style={settings.backgroundTheme === 'daylight' ? { color: theme.contrastText } : undefined}
-                      >
-                        Daylight
-                      </button>
-                    </div>
-                  </div>
+                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Workout Defaults</p>
+                    <div className="space-y-4">
+                      {/* Default first set type */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-c-primary">Default first set</p>
+                          <p className="text-xs text-c-dim mt-0.5">Warmup or working</p>
+                        </div>
+                        <div className="flex gap-1 bg-item rounded-xl p-0.5 shrink-0">
+                          <button
+                            onClick={() => updateSettings({ defaultFirstSetType: 'warmup' })}
+                            className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                            style={settings.defaultFirstSetType !== 'working'
+                              ? { backgroundColor: theme.hex, color: theme.contrastText }
+                              : undefined}
+                          >
+                            Warm
+                          </button>
+                          <button
+                            onClick={() => updateSettings({ defaultFirstSetType: 'working' })}
+                            className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                            style={settings.defaultFirstSetType === 'working'
+                              ? { backgroundColor: theme.hex, color: theme.contrastText }
+                              : undefined}
+                          >
+                            Work
+                          </button>
+                        </div>
+                      </div>
 
-                  {/* Auto-start rest timer */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-c-primary">Auto-start rest timer</p>
-                      <p className="text-xs text-c-dim mt-0.5">Start countdown after logging a set</p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ autoStartRest: !settings.autoStartRest })}
-                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
-                      style={{ backgroundColor: settings.autoStartRest ? theme.hex : undefined }}
-                      aria-label="Toggle auto-start rest timer"
-                    >
-                      {!settings.autoStartRest && <span className="absolute inset-0 rounded-full bg-item" />}
-                      <span
-                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
-                        style={{ transform: settings.autoStartRest ? 'translateX(22px)' : 'translateX(2px)' }}
-                      />
-                    </button>
-                  </div>
-
-                  {/* First set default type */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-c-primary">First set defaults to</p>
-                      <p className="text-xs text-c-dim mt-0.5">Type assigned to the first set of each exercise</p>
-                    </div>
-                    <div className="flex gap-1 bg-item rounded-xl p-0.5 shrink-0">
-                      <button
-                        onClick={() => updateSettings({ defaultFirstSetType: 'warmup' })}
-                        className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-                        style={settings.defaultFirstSetType !== 'working'
-                          ? { backgroundColor: theme.hex, color: theme.contrastText }
-                          : undefined}
-                      >
-                        Warm
-                      </button>
-                      <button
-                        onClick={() => updateSettings({ defaultFirstSetType: 'working' })}
-                        className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-                        style={settings.defaultFirstSetType === 'working'
-                          ? { backgroundColor: theme.hex, color: theme.contrastText }
-                          : undefined}
-                      >
-                        Work
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Rest timer chime */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-c-primary">Rest timer chime</p>
-                      <p className="text-xs text-c-dim mt-0.5">Play sound when timer ends</p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ restTimerChime: !settings.restTimerChime })}
-                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
-                      style={{ backgroundColor: settings.restTimerChime ? theme.hex : undefined }}
-                      aria-label="Toggle rest timer chime"
-                    >
-                      {!settings.restTimerChime && <span className="absolute inset-0 rounded-full bg-item" />}
-                      <span
-                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
-                        style={{ transform: settings.restTimerChime ? 'translateX(22px)' : 'translateX(2px)' }}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Accent Color */}
-                  <div>
-                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-2">Accent Color</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
-                      {themeColors.map(t => (
+                      {/* Auto-start rest timer */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-c-primary">Auto-start rest timer</p>
+                          <p className="text-xs text-c-dim mt-0.5">After logging a working set</p>
+                        </div>
                         <button
-                          key={t.id}
-                          onClick={() => updateSettings({ accentColor: t.id })}
-                          title={t.name}
-                          style={{
-                            backgroundColor: t.hex,
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '50%',
-                            outline: settings.accentColor === t.id
-                              ? `2px solid ${t.id === 'white' ? '#888' : '#fff'}`
-                              : 'none',
-                            outlineOffset: '2px',
-                            border: t.id === 'white' ? '1px solid #555' : 'none',
-                          }}
-                        />
-                      ))}
+                          onClick={() => updateSettings({ autoStartRest: !settings.autoStartRest })}
+                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                          style={{ backgroundColor: settings.autoStartRest ? theme.hex : undefined }}
+                          aria-label="Toggle auto-start rest timer"
+                        >
+                          {!settings.autoStartRest && <span className="absolute inset-0 rounded-full bg-item" />}
+                          <span
+                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                            style={{ transform: settings.autoStartRest ? 'translateX(22px)' : 'translateX(2px)' }}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Rest timer chime */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-c-primary">Rest timer chime</p>
+                          <p className="text-xs text-c-dim mt-0.5">Play sound when timer ends</p>
+                        </div>
+                        <button
+                          onClick={() => updateSettings({ restTimerChime: !settings.restTimerChime })}
+                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                          style={{ backgroundColor: settings.restTimerChime ? theme.hex : undefined }}
+                          aria-label="Toggle rest timer chime"
+                        >
+                          {!settings.restTimerChime && <span className="absolute inset-0 rounded-full bg-item" />}
+                          <span
+                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                            style={{ transform: settings.restTimerChime ? 'translateX(22px)' : 'translateX(2px)' }}
+                          />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* ── Progress sub-screen ─────────────────────────────────────── */}
-              {subScreen === 'progress' && (
-                <>
-                  <button className={rowClass} style={rowStyle} onClick={() => go('/history')}>
-                    <span>History</span>
-                    <span className="text-c-dim">→</span>
-                  </button>
-
-                  <div className={rowClass} style={{ ...rowStyle, cursor: 'default' }}>
-                    <span>Stats</span>
-                    <span className="text-c-muted text-sm">Coming soon</span>
+                  {/* ── Account ──────────────────────────────────────────────── */}
+                  <div>
+                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Account</p>
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary mb-2">Your Name</p>
+                      <input
+                        type="text"
+                        value={settings.userName || ''}
+                        onChange={e => updateSettings({ userName: e.target.value })}
+                        placeholder="Your name"
+                        className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-sm placeholder-gray-500 focus:outline-none"
+                      />
+                    </div>
                   </div>
-                </>
+
+                </div>
               )}
 
               {/* ── Info sub-screen ─────────────────────────────────────────── */}
