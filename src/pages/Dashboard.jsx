@@ -127,6 +127,8 @@ export default function Dashboard() {
   const [previewWorkoutId, setPreviewWorkoutId] = useState(null)
   const [showSorenessModal, setShowSorenessModal] = useState(false)
   const [tutorialStep, setTutorialStep] = useState(() => settings.hasSeenTutorial ? null : 0)
+  const [pressedDay, setPressedDay] = useState(null)
+  const [selectedDaySession, setSelectedDaySession] = useState(null)
 
   // ── Count-up animation (runs once on mount) ───────────────────────────────
   const animRef = useRef(false)
@@ -634,7 +636,20 @@ export default function Dashboard() {
                     }} />
                   ) : (
                     <button
-                      onPointerDown={(e) => { e.preventDefault(); navigate('/history') }}
+                      onPointerDown={(e) => {
+                        e.preventDefault()
+                        const dayKey = toDateStr(day)
+                        setPressedDay(dayKey)
+                        if (isDone) {
+                          const s = sessionByDate[dayKey]
+                          if (s) setSelectedDaySession(s)
+                        } else {
+                          navigate('/history')
+                        }
+                      }}
+                      onPointerUp={() => setPressedDay(null)}
+                      onPointerLeave={() => setPressedDay(null)}
+                      onPointerCancel={() => setPressedDay(null)}
                       style={{
                         width: 36,
                         height: 36,
@@ -645,7 +660,8 @@ export default function Dashboard() {
                         justifyContent: 'center',
                         border: 'none',
                         cursor: 'pointer',
-                        transition: 'transform 0.1s ease',
+                        transform: pressedDay === toDateStr(day) ? 'scale(0.82)' : 'scale(1)',
+                        transition: 'transform 80ms ease',
                         flexShrink: 0,
                         ...circleStyle,
                       }}
@@ -715,7 +731,14 @@ export default function Dashboard() {
                 return (
                   <button
                     key={i}
-                    onPointerDown={() => (isCompleted || isCardio || isTodayCard) && navigate('/history')}
+                    onPointerDown={() => {
+                      if (isCompleted) {
+                        const s = sessionByDate[toDateStr(day)]
+                        if (s) setSelectedDaySession(s)
+                      } else if (isCardio || isTodayCard) {
+                        navigate('/history')
+                      }
+                    }}
                     style={{
                       aspectRatio: '1',
                       display: 'flex',
@@ -1016,6 +1039,73 @@ export default function Dashboard() {
         }}
         theme={theme}
       />
+
+      {/* ── Session Detail Bottom Sheet ──────────────────────────────────────── */}
+      {selectedDaySession && (
+        <>
+          <div
+            onClick={() => setSelectedDaySession(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 200, backgroundColor: 'rgba(0,0,0,0.5)' }}
+          />
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0,
+            maxHeight: '75vh', overflowY: 'auto',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '20px 20px 0 0',
+            padding: '20px 16px 40px',
+            zIndex: 201,
+          }}>
+            {/* Drag handle */}
+            <div style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 auto 16px' }} />
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                  {getWorkoutEmoji(selectedDaySession.type)} {getWorkoutName(selectedDaySession.type)}
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
+                  {new Date(selectedDaySession.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                  {selectedDaySession.duration ? ` · ${selectedDaySession.duration}m` : ''}
+                  {selectedDaySession.grade ? ` · Grade ${selectedDaySession.grade}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedDaySession(null)}
+                style={{
+                  background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer',
+                  width: 32, height: 32, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 18, color: 'var(--text-secondary)', flexShrink: 0,
+                }}
+              >×</button>
+            </div>
+            {/* Exercise list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {(selectedDaySession.data?.exercises || []).map((ex, i) => {
+                const setsToShow = (ex.sets || []).filter(s => s.weight || s.reps)
+                if (!setsToShow.length) return null
+                return (
+                  <div key={i}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 5 }}>
+                      {ex.name}
+                      {ex.isNewPR && <span style={{ fontSize: 10, color: theme.hex, marginLeft: 6 }}>🏆 PR</span>}
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {setsToShow.map((set, j) => (
+                        <p key={j} style={{ fontSize: 12, color: set.type === 'warmup' ? 'var(--text-muted)' : 'var(--text-secondary)' }}>
+                          {set.type === 'warmup' ? 'Warm-up' : `Set ${setsToShow.filter((s, k) => k <= j && s.type !== 'warmup').length}`}:{' '}
+                          {set.weight ? `${set.weight} lbs` : '—'} × {set.reps || '—'}
+                          {set.isNewPR && <span style={{ fontSize: 10, color: theme.hex, marginLeft: 4 }}>🏆</span>}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── Workout Preview Overlay ──────────────────────────────────────────── */}
       {showPreview && (
