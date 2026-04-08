@@ -602,7 +602,7 @@ export default function Dashboard() {
   const accentCardStyle = {
     background: theme.hex,
     borderRadius: 20,
-    padding: '24px 20px',
+    padding: '32px 20px',
     position: 'relative',
     color: theme.contrastText,
     textAlign: 'center',
@@ -665,7 +665,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── SECTION 2: Circle Calendar ──────────────────────────────────────── */}
-      <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10 }}>
+      <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10, marginTop: -10 }}>
         {/* Header row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <button
@@ -932,7 +932,7 @@ export default function Dashboard() {
               backgroundColor: theme.hex,
               backgroundImage: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
               borderRadius: 20,
-              padding: '24px 20px',
+              padding: '32px 20px',
               textAlign: 'center',
               boxShadow: `0 8px 32px ${theme.hex}40`,
             }}>
