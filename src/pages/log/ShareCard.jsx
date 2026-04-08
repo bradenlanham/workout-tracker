@@ -17,7 +17,7 @@ const SHIMMER_CSS = `
 
 // ── Tier logic ─────────────────────────────────────────────────────────────────
 function getTier(streak) {
-  if (streak >= 50) return 'mythic'
+  if (streak >= 30) return 'mythic'
   if (streak >= 20) return 'legendary'
   if (streak >= 15) return 'epic'
   if (streak >= 6)  return 'rare'

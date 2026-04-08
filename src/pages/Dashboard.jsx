@@ -445,8 +445,9 @@ export default function Dashboard() {
       }
     }
     if (todayLogged) {
+      const postPhrases = ['Done. ✓', 'Work done. ✓', 'Locked in. ✓', 'Session logged. ✓']
       return {
-        headline: 'Your work here is done ✓',
+        headline: postPhrases[totalSessions % 4],
         sub: `${totalSessions} sessions and counting.`,
       }
     }
@@ -456,14 +457,25 @@ export default function Dashboard() {
         sub: `You were gone ${daysSinceLastWorkout} days. You showed up — that's what matters.`,
       }
     }
-    if (streak >= 7) {
-      return {
-        headline: `${streak} days strong.`,
-        sub: `You're building something. Don't stop now.`,
-      }
+    if (streak >= 30) {
+      const phrases = ["You're a myth.", 'Mythic.']
+      return { headline: phrases[totalSessions % 2], sub: `${streak} days. Unreal.` }
     }
+    if (streak >= 20) {
+      const phrases = ['Unstoppable.', `${streak} days strong.`]
+      return { headline: phrases[totalSessions % 2], sub: `${streak} days and counting.` }
+    }
+    if (streak >= 15) {
+      const phrases = ['On a tear.', `${streak} days straight.`]
+      return { headline: phrases[totalSessions % 2], sub: `Keep the streak alive.` }
+    }
+    if (streak >= 6) {
+      const phrases = [`${streak} days in.`, 'Keep stacking.']
+      return { headline: phrases[totalSessions % 2], sub: `${totalSessions} sessions logged.` }
+    }
+    const defaultPhrases = ["Let's work.", 'Time to build.', 'Get after it.']
     return {
-      headline: `Day ${streak || 1}. Let's build.`,
+      headline: defaultPhrases[totalSessions % 3],
       sub: `${totalSessions} sessions logged. Keep stacking.`,
     }
   }
