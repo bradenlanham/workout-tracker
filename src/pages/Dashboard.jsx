@@ -112,6 +112,8 @@ export default function Dashboard() {
   const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession } = useStore()
   const theme = getTheme(settings.accentColor)
 
+  const isDark = settings.backgroundTheme !== 'daylight'
+
   // Determine if accent color is light (needs dark text)
   const accentIsLight = (() => {
     const hex = (theme.hex || '#000000').replace('#', '')
@@ -592,7 +594,7 @@ export default function Dashboard() {
             const isFutureDay = info.type === 'future'
 
             let circleStyle = {}
-            let circleBg = 'rgba(255,255,255,0.08)'
+            let circleBg = isDark ? 'rgba(255,255,255,0.08)' : 'transparent'
             let circleSize = 36
 
             if (isDone) {
@@ -605,10 +607,13 @@ export default function Dashboard() {
               }
             } else if (isRestType) {
               circleSize = 10
-              circleBg = 'rgba(255,255,255,0.15)'
+              circleBg = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'
             } else {
               // future or empty
-              circleBg = 'rgba(255,255,255,0.06)'
+              circleBg = isDark ? 'rgba(255,255,255,0.06)' : 'transparent'
+              if (!isDark) {
+                circleStyle = { border: `1px solid ${theme.hex}4D` }
+              }
             }
 
             const isRestDot = isRestType
@@ -625,7 +630,7 @@ export default function Dashboard() {
                       width: 8,
                       height: 8,
                       borderRadius: '50%',
-                      backgroundColor: 'rgba(255,255,255,0.2)',
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
                     }} />
                   ) : (
                     <button
