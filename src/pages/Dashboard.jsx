@@ -16,7 +16,7 @@ const TUTORIAL_STEPS = [
     style: { top: 488, left: 16, right: 16 },
   },
   {
-    text: 'Your week at a glance. Tap any day to preview that workout.',
+    text: 'Your week at a glance. Tap any day to see your history.',
     style: { top: 566, left: 16, right: 16 },
   },
   {
@@ -81,6 +81,7 @@ function SorenessModal({ workoutLabel, onRate, onSkip }) {
   )
 }
 
+const MON_DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -95,6 +96,15 @@ function daysBetween(a, b) {
   const aMs = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()
   const bMs = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime()
   return Math.round((bMs - aMs) / 86400000)
+}
+
+// Checkmark SVG for completed circle
+function Checkmark({ color = '#fff' }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  )
 }
 
 export default function Dashboard() {
@@ -118,7 +128,7 @@ export default function Dashboard() {
     function tick(now) {
       const elapsed = now - start
       const p = Math.min(elapsed / duration, 1)
-      const ease = 1 - Math.pow(1 - p, 3) // ease-out cubic
+      const ease = 1 - Math.pow(1 - p, 3)
       setAnimProgress(ease)
       if (p < 1) requestAnimationFrame(tick)
     }
@@ -128,6 +138,7 @@ export default function Dashboard() {
 
   const totalSessions = sessions.length
 
+  // ── Volume computation ────────────────────────────────────────────────────
   const getWeekVolume = (weekOffset = 0) => {
     const now = new Date()
     const startOfThisWeek = new Date(now)
@@ -149,13 +160,42 @@ export default function Dashboard() {
       }, 0)
   }
 
+  // ── Time in gym computation ───────────────────────────────────────────────
+  const getWeekTime = (weekOffset = 0) => {
+    const now = new Date()
+    const startOfThisWeek = new Date(now)
+    startOfThisWeek.setDate(now.getDate() - now.getDay() + (weekOffset * 7))
+    startOfThisWeek.setHours(0, 0, 0, 0)
+    const endOfWeek = new Date(startOfThisWeek)
+    endOfWeek.setDate(startOfThisWeek.getDate() + 7)
+    return sessions
+      .filter(s => {
+        const d = new Date(s.date)
+        return d >= startOfThisWeek && d < endOfWeek && s.duration
+      })
+      .reduce((total, s) => total + (s.duration || 0), 0)
+  }
+
   const formatVolume = (lbs) => {
     if (lbs >= 1000) return `${(lbs / 1000).toFixed(1)}k`
     return lbs === 0 ? '—' : `${lbs}`
   }
 
+  const formatTime = (mins) => {
+    if (!mins || mins === 0) return '—'
+    if (mins < 60) return `${mins}m`
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
   const volumeThisWeek = getWeekVolume(0)
   const volumeLastWeek = getWeekVolume(-1)
+  const timeThisWeek   = getWeekTime(0)
+  const timeLastWeek   = getWeekTime(-1)
+
+  // Days into the current Sun-start week (1 = Sun, 7 = Sat)
+  const daysIntoWeek = new Date().getDay() + 1
 
   const totalVolume = sessions.reduce((total, s) => {
     return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
@@ -206,7 +246,6 @@ export default function Dashboard() {
     return `Last: ${lastWorking.weight}×${lastWorking.reps}`
   }
 
-  // Get first N exercise names from a workout for the CTA card (Improvement 7)
   const getFirstExercises = (workoutId, count = 3) => {
     const workout = activeSplit?.workouts?.find(w => w.id === workoutId)
     const sections = workout?.sections || BB_EXERCISE_GROUPS[workoutId] || []
@@ -236,7 +275,6 @@ export default function Dashboard() {
     : null
   const recommendedWorkout = missedYesterdayWorkout ?? nextBb
 
-  // ── Preview data ─────────────────────────────────────────────────────────
   const activePreviewId = previewWorkoutId || recommendedWorkout
   const previewWorkout = activeSplit?.workouts?.find(w => w.id === activePreviewId)
   const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[activePreviewId] || []
@@ -285,13 +323,7 @@ export default function Dashboard() {
 
   const isRestDay = nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout
 
-  // ── PR count ──────────────────────────────────────────────────────────────
-  const prCount = sessions.filter(s => {
-    if (activeSplit?.createdAt && new Date(s.date) < new Date(activeSplit.createdAt)) return false
-    return (s.data?.exercises || []).some(ex => ex.sets?.some(set => set.isNewPR))
-  }).length
-
-  // ── Session map: dateStr → most-recent session that day ───────────────────
+  // ── Session map ───────────────────────────────────────────────────────────
   const sessionByDate = {}
   sessions.forEach(s => {
     const d = s.date ? s.date.split('T')[0] : null
@@ -357,13 +389,21 @@ export default function Dashboard() {
     return { type: 'empty' }
   }
 
-  // ── Week days (Sun–Sat of current week) ──────────────────────────────────
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
+  // ── Mon-Sun week days for circle calendar ─────────────────────────────────
+  const mondayOffset = (today.getDay() + 6) % 7 // 0=Mon, 1=Tue, ..., 6=Sun
+  const mondayWeekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today)
-    d.setDate(today.getDate() - today.getDay() + i)
+    d.setDate(today.getDate() - mondayOffset + i)
     return d
   })
 
+  // Count completed workout days this Mon-Sun week
+  const weekCompletedCount = mondayWeekDays.filter(d => {
+    const info = getDayInfo(d)
+    return info.type === 'done' || info.type === 'today-done'
+  }).length
+
+  // ── Sun-Sat week days (for monthly calendar) ──────────────────────────────
   function getMonthDays() {
     const year     = today.getFullYear()
     const month    = today.getMonth()
@@ -375,26 +415,76 @@ export default function Dashboard() {
     return days
   }
 
-  // ── Momentum line (Improvement 4) ─────────────────────────────────────────
-  let momentumLine = ''
-  if (isRestDay) {
-    momentumLine = `Rest day · ${getWorkoutName(nextBb)} up next`
-  } else if (todayLogged) {
-    momentumLine = `${totalSessions} sessions and counting`
-  } else if (totalSessions > 0 && totalVolume > 0) {
-    momentumLine = `${totalSessions} sessions logged · ${formatVolume(totalVolume)} lbs moved`
-  } else if (totalSessions > 0) {
-    momentumLine = `${totalSessions} sessions logged`
-  } else {
-    momentumLine = 'Your first session starts here'
+  // ── Smart headline ────────────────────────────────────────────────────────
+  const lastSession = sessions.length > 0
+    ? sessions.slice().sort((a, b) => new Date(b.date) - new Date(a.date))[0]
+    : null
+  const daysSinceLastWorkout = lastSession
+    ? Math.round((new Date() - new Date(lastSession.date)) / 86400000)
+    : 999
+
+  function getSmartHeadline() {
+    if (isRestDay) {
+      return {
+        headline: 'Rest day.',
+        sub: `Recovery is part of the plan. ${getWorkoutName(nextBb)} is up next.`,
+      }
+    }
+    if (todayLogged) {
+      return {
+        headline: 'Your work here is done ✓',
+        sub: `${totalSessions} sessions and counting.`,
+      }
+    }
+    if (daysSinceLastWorkout > 7 && streak <= 2) {
+      return {
+        headline: `Welcome back${settings.userName ? `, ${settings.userName}` : ''}.`,
+        sub: `You were gone ${daysSinceLastWorkout} days. You showed up — that's what matters.`,
+      }
+    }
+    if (streak >= 7) {
+      return {
+        headline: `${streak} days strong.`,
+        sub: `You're building something. Don't stop now.`,
+      }
+    }
+    return {
+      headline: `Day ${streak || 1}. Let's build.`,
+      sub: `${totalSessions} sessions logged. Keep stacking.`,
+    }
   }
 
-  // ── CTA card exercise preview (Improvement 7) ─────────────────────────────
-  const ctaExercises = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
-    ? getFirstExercises(recommendedWorkout, 3)
-    : []
+  const { headline, sub } = getSmartHeadline()
 
-  // ── Card shared styles ────────────────────────────────────────────────────
+  // ── Volume & time insights ────────────────────────────────────────────────
+  function getVolumeInsight() {
+    if (volumeLastWeek === 0) {
+      if (volumeThisWeek > 0) return { text: '↑ Great start to the week.', color: '#34d399' }
+      return { text: 'No data yet.', color: 'var(--text-muted)' }
+    }
+    const pct = ((volumeThisWeek - volumeLastWeek) / volumeLastWeek) * 100
+    if (pct < -15) return { text: `↓ Volume down ${Math.round(Math.abs(pct))}% — but pace is fine.`, color: '#fbbf24' }
+    if (pct > 10)  return { text: `↑ Up ${Math.round(pct)}% from last week. Pushing harder.`, color: '#34d399' }
+    return { text: '≈ Tracking close to last week.', color: '#93c5fd' }
+  }
+
+  function getTimeInsight() {
+    if (timeLastWeek === 0) {
+      if (timeThisWeek > 0) return { text: '↑ Good start.', color: '#34d399' }
+      return { text: 'No data yet.', color: 'var(--text-muted)' }
+    }
+    const diff = timeThisWeek - timeLastWeek
+    const absDiff = Math.abs(diff)
+    const label = absDiff < 60 ? `${absDiff}m` : `${Math.floor(absDiff/60)}h ${absDiff%60 > 0 ? `${absDiff%60}m` : ''}`
+    if (diff > 5)  return { text: `↑ ${label.trim()} more than last week.`, color: '#34d399' }
+    if (diff < -5) return { text: `↓ ${label.trim()} less than last week.`, color: '#fbbf24' }
+    return { text: '≈ About the same as last week.', color: '#93c5fd' }
+  }
+
+  const volumeInsight = getVolumeInsight()
+  const timeInsight   = getTimeInsight()
+
+  // ── CTA card styles ───────────────────────────────────────────────────────
   const accentCardStyle = {
     background: theme.hex,
     borderRadius: 20,
@@ -407,108 +497,247 @@ export default function Dashboard() {
     borderTop: '1px solid rgba(255,255,255,0.25)',
   }
 
-  return (
-    <div className="min-h-screen pb-28">
+  const ctaExercises = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
+    ? getFirstExercises(recommendedWorkout, 3)
+    : []
 
-      {/* ── Greeting ────────────────────────────────────────────────────────── */}
-      <div className="px-4 pb-5" style={{ paddingTop: 'max(64px, calc(env(safe-area-inset-top) + 28px))' }}>
-        <p className="text-c-muted text-sm font-medium tracking-wide">
+  // ── Volume/time bar widths ────────────────────────────────────────────────
+  const volBarPct = volumeLastWeek === 0
+    ? (volumeThisWeek > 0 ? 100 : 0)
+    : Math.min((volumeThisWeek / volumeLastWeek) * 100, 100)
+  const timeBarPct = timeLastWeek === 0
+    ? (timeThisWeek > 0 ? 100 : 0)
+    : Math.min((timeThisWeek / timeLastWeek) * 100, 100)
+
+  // ── Fade-in animation delays ──────────────────────────────────────────────
+  const fadeIn = (delay) => ({
+    animation: 'dashFadeIn 0.45s ease forwards',
+    animationDelay: `${delay}ms`,
+    opacity: 0,
+  })
+
+  return (
+    <div style={{ minHeight: '100vh', paddingBottom: 100 }}>
+      <style>{`
+        @keyframes dashFadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes circleRingPulse {
+          0%, 100% { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 4px VAR_REPLACE_20; }
+          50%       { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 6px VAR_REPLACE_10; }
+        }
+      `}</style>
+
+      {/* ── SECTION 1: Hero Header ──────────────────────────────────────────── */}
+      <div
+        style={{
+          ...fadeIn(0),
+          paddingTop: 'max(64px, calc(env(safe-area-inset-top) + 28px))',
+          padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 16px 20px',
+        }}
+      >
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em' }}>
           {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
         </p>
-        <h1 className="text-3xl font-bold mt-0.5 mb-1">
-          {todayLogged ? 'Your work here is done.' : 'Ready to train?'}
+        <h1 style={{ fontSize: 28, fontWeight: 800, marginTop: 2, marginBottom: 4, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+          {headline}
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{momentumLine}</p>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{sub}</p>
       </div>
 
-      {/* ── Streak Hero (Improvement 1) ──────────────────────────────────────── */}
-      <div className="px-4 mb-6 flex justify-center">
-        {streak > 0 ? (
-          <div style={{ textAlign: 'center', padding: '4px 32px' }}>
-            <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>🔥</div>
-            <div style={{
-              fontSize: 38,
-              fontWeight: 900,
-              lineHeight: 1,
-              color: 'var(--text-primary)',
-              textShadow: `0 0 20px ${theme.hex}99`,
-              letterSpacing: '-0.02em',
-            }}>
-              {streak}
-            </div>
-            <div style={{
-              fontSize: 11,
-              color: 'var(--text-muted)',
-              marginTop: 5,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-            }}>
-              day streak
-            </div>
-          </div>
-        ) : (
-          <p style={{ color: 'var(--text-muted)', fontSize: 14, padding: '12px 0' }}>
-            Start your streak today
-          </p>
-        )}
-      </div>
-
-      {/* ── Stat grid (Improvement 9 — hierarchy) ───────────────────────────── */}
-      <div className="px-4 mb-6">
-        {/* Volume row — two larger tiles */}
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-2xl font-bold leading-none text-c-primary">
-              {formatVolume(anim(volumeLastWeek))}
-            </p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-2">Last Week</p>
-          </div>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-2xl font-bold leading-none" style={{ color: theme.hex }}>
-              {formatVolume(anim(volumeThisWeek))}
-            </p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mt-2">This Week</p>
-          </div>
-        </div>
-        {/* Secondary stats row */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-lg font-bold leading-none text-c-secondary">{anim(splitSessionCount)}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Sessions</p>
-          </div>
-          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-lg font-bold leading-none text-c-secondary">{anim(totalSessions)}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">Total</p>
-          </div>
-          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--bg-card)' }}>
-            <p className="text-lg font-bold leading-none text-c-secondary">{prCount > 0 ? anim(prCount) : '—'}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-c-muted mt-1.5">PRs</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Active split label ──────────────────────────────────────────────── */}
-      {activeSplit && (
-        <div className="px-4 mb-5">
-          <p className="text-xs text-c-muted">
-            Split: <span className="font-semibold text-c-dim">{activeSplit.emoji} {activeSplit.name}</span>
-            {' · '}
-            <span className="font-semibold text-c-dim">
-              {activeSplit.createdAt
-                ? (() => {
-                    const days = Math.round((new Date() - new Date(activeSplit.createdAt)) / 86400000)
-                    return days === 0 ? 'Today' : days === 1 ? '1 day ago' : `${days} days ago`
-                  })()
-                : 'Today'}
+      {/* ── SECTION 2: Circle Calendar ──────────────────────────────────────── */}
+      <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10 }}>
+        {/* Header row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <button
+            onPointerDown={() => setShowMonth(v => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}
+          >
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              THIS WEEK
             </span>
-          </p>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.7 }}>
+              {showMonth ? '▾' : '▸'}
+            </span>
+          </button>
         </div>
-      )}
 
-      {/* ── Main CTA (Improvements 2, 7, 10) ────────────────────────────────── */}
-      <div className="px-4 mb-7" style={{ position: 'relative' }}>
-        {/* Atmospheric glow behind card (Improvement 10) */}
+        {/* Circle row */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          {mondayWeekDays.map((day, i) => {
+            const info        = getDayInfo(day)
+            const isToday     = toDateStr(day) === todayStr
+            const isDone      = info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
+            const isPending   = info.type === 'today-pending'
+            const isRestType  = info.type === 'today-rest' || info.type === 'past-rest' || info.type === 'future-rest'
+            const isFutureDay = info.type === 'future'
+
+            let circleStyle = {}
+            let circleBg = 'rgba(255,255,255,0.08)'
+            let circleSize = 36
+
+            if (isDone) {
+              circleBg = theme.hex
+            } else if (isPending) {
+              circleBg = 'transparent'
+              circleStyle = {
+                border: `2px solid ${theme.hex}`,
+                boxShadow: `0 0 0 1px ${theme.hex}40`,
+              }
+            } else if (isRestType) {
+              circleSize = 10
+              circleBg = 'rgba(255,255,255,0.15)'
+            } else {
+              // future or empty
+              circleBg = 'rgba(255,255,255,0.06)'
+            }
+
+            const isRestDot = isRestType
+
+            return (
+              <div
+                key={i}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}
+              >
+                {/* Circle wrapper to keep day letter alignment consistent */}
+                <div style={{ height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {isRestDot ? (
+                    <div style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(255,255,255,0.2)',
+                    }} />
+                  ) : (
+                    <button
+                      onPointerDown={(e) => { e.preventDefault(); navigate('/history') }}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        backgroundColor: circleBg,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.1s ease',
+                        flexShrink: 0,
+                        ...circleStyle,
+                      }}
+                    >
+                      {isDone && <Checkmark color={theme.contrastText} />}
+                    </button>
+                  )}
+                </div>
+                {/* Day label */}
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: isToday ? 700 : 500,
+                  color: isToday ? theme.hex : 'var(--text-muted)',
+                  letterSpacing: '0.05em',
+                }}>
+                  {MON_DAY_LABELS[i]}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Summary line */}
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
+          {weekCompletedCount}/7 days
+          {activeSplit ? ` · ${activeSplit.emoji} ${activeSplit.name}` : ''}
+        </p>
+
+        {/* Monthly calendar expansion */}
+        <div style={{
+          maxHeight: showMonth ? '420px' : '0px',
+          overflow: 'hidden',
+          transition: 'max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}>
+          <div style={{ paddingTop: 16 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--text-primary)' }}>
+              {MONTH_NAMES[today.getMonth()]} {today.getFullYear()}
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
+              {DAY_LABELS.map((l, i) => (
+                <div key={i} style={{ textAlign: 'center', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>{l}</div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+              {getMonthDays().map((day, i) => {
+                if (!day) return <div key={i} style={{ aspectRatio: '1' }} />
+
+                const info        = getDayInfo(day)
+                const isToday     = toDateStr(day) === todayStr
+                const isTodayDone = info.type === 'today-done'
+                const isDone      = info.type === 'done'
+                const isTodayPend = info.type === 'today-pending'
+                const isTodayRest = info.type === 'today-rest'
+                const isCardio    = info.type === 'cardio'
+                const isTodayCard = info.type === 'today-cardio'
+                const isFuture    = info.type === 'future'
+                const isFutureRest = info.type === 'future-rest'
+                const isPastRest  = info.type === 'past-rest'
+                const isCompleted = isDone || isTodayDone
+
+                let cellBg = 'rgba(255,255,255,0.04)'
+                let textColor = 'var(--text-muted)'
+                if (isTodayDone)  { cellBg = theme.hex; textColor = theme.contrastText }
+                else if (isDone)  { cellBg = theme.hex + '33'; textColor = theme.hex }
+                else if (isCardio || isTodayCard) { cellBg = 'rgba(96,165,250,0.2)'; textColor = '#60a5fa' }
+
+                return (
+                  <button
+                    key={i}
+                    onPointerDown={() => (isCompleted || isCardio || isTodayCard) && navigate('/history')}
+                    style={{
+                      aspectRatio: '1',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 8,
+                      backgroundColor: cellBg,
+                      border: isTodayPend ? `2px solid ${theme.hex}` : 'none',
+                      cursor: (isCompleted || isCardio || isTodayCard) ? 'pointer' : 'default',
+                      background: cellBg,
+                    }}
+                  >
+                    <span style={{ fontSize: 11, fontWeight: 700, color: textColor, lineHeight: 1 }}>{day.getDate()}</span>
+                    {(isCompleted) && (
+                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, color: isTodayDone ? theme.contrastText : theme.hex }}>
+                        {isTodayDone ? '✓' : info.emoji}
+                      </span>
+                    )}
+                    {(isCardio || isTodayCard) && (
+                      <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, marginTop: 2 }}>C</span>
+                    )}
+                    {(isTodayRest || isFutureRest || isPastRest) && (
+                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: isTodayRest ? 0.5 : 0.3, fontWeight: 600, color: 'var(--text-muted)' }}>R</span>
+                    )}
+                    {isTodayPend && (
+                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: 0.5 }}>{info.emoji}</span>
+                    )}
+                    {isFuture && info.emoji && (
+                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: 0.2 }}>{info.emoji}</span>
+                    )}
+                    {info.hasCardio && isCompleted && (
+                      <span style={{ fontSize: 6, color: '#60a5fa', lineHeight: 1 }}>●</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── SECTION 3: Hero Workout Card ────────────────────────────────────── */}
+      <div style={{ ...fadeIn(200), padding: '0 16px', marginBottom: 10, position: 'relative' }}>
+        {/* Atmospheric glow */}
         <div style={{
           position: 'absolute',
           left: '50%',
@@ -525,36 +754,34 @@ export default function Dashboard() {
         }} />
         <div style={{ position: 'relative', zIndex: 1 }}>
           {activeSession?.sessionStarted ? (
-            /* ── Resume in-progress session ── */
             <div style={accentCardStyle}>
               <div style={{
                 position: 'absolute', inset: 0, pointerEvents: 'none',
                 background: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
               }} />
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: theme.contrastText }} />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: theme.contrastText, opacity: 0.8 }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ position: 'relative', display: 'inline-flex', width: 10, height: 10 }}>
+                  <span className="animate-ping" style={{ position: 'absolute', inset: 0, borderRadius: '50%', backgroundColor: theme.contrastText, opacity: 0.75 }} />
+                  <span style={{ position: 'relative', display: 'inline-flex', borderRadius: '50%', width: 10, height: 10, backgroundColor: theme.contrastText, opacity: 0.8 }} />
                 </span>
-                <p className="text-xs font-bold uppercase tracking-widest" style={{ opacity: 0.7 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.7 }}>
                   {activeSession.isPaused ? 'Paused' : 'In Progress'}
                 </p>
               </div>
-              <p className="text-3xl font-bold leading-tight">
+              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2 }}>
                 {getWorkoutEmoji(activeSession.type)} {getWorkoutName(activeSession.type)}
               </p>
-              <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
+              <p style={{ fontSize: 13, marginTop: 4, marginBottom: 20, opacity: 0.6 }}>
                 {activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length || 0} exercise{activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length === 1 ? '' : 's'} logged so far
               </p>
               <button
                 onClick={() => navigate(`/log/bb/${activeSession.type}`)}
-                className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+                style={{ width: '100%', background: 'rgba(0,0,0,0.2)', fontWeight: 700, fontSize: 17, padding: '16px 0', borderRadius: 16, border: 'none', cursor: 'pointer', color: theme.contrastText }}
               >
                 Resume Workout →
               </button>
             </div>
           ) : isRestDay ? (
-            /* ── Rest day ── */
             <div style={{
               backgroundColor: 'var(--bg-card)',
               borderRadius: 20,
@@ -562,17 +789,16 @@ export default function Dashboard() {
               textAlign: 'center',
               boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
             }}>
-              <p className="text-xs font-bold uppercase tracking-widest mb-2 text-c-muted">Today</p>
-              <p className="text-3xl font-bold leading-tight">Rest Day</p>
-              <p className="text-sm mt-2 text-c-muted">
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, color: 'var(--text-muted)' }}>Today</p>
+              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, color: 'var(--text-primary)' }}>Rest Day</p>
+              <p style={{ fontSize: 13, marginTop: 8, color: 'var(--text-muted)' }}>
                 Recovery is part of the plan. Come back stronger tomorrow.
               </p>
-              <p className="text-sm mt-4 font-semibold text-c-dim">
-                Next workout: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
+              <p style={{ fontSize: 13, marginTop: 12, fontWeight: 600, color: 'var(--text-dim)' }}>
+                Next: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
               </p>
             </div>
           ) : (
-            /* ── Upcoming workout ── */
             <div style={accentCardStyle}>
               <div style={{
                 position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -584,32 +810,29 @@ export default function Dashboard() {
               >
                 Preview
               </button>
-              <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ opacity: 0.6 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, opacity: 0.6 }}>
                 {todayLogged ? 'Next in your split' : missedYesterdayWorkout ? 'Missed Yesterday' : 'Next Up'}
               </p>
-              <p className="text-3xl font-bold leading-tight">
+              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2 }}>
                 {getWorkoutName(recommendedWorkout)}
               </p>
-              {/* Exercise preview line */}
               {ctaExercises.length > 0 && (
                 <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 6, marginBottom: 20 }}>
                   {ctaExercises.join(' · ')}
                 </p>
               )}
               {todayLogged ? (
-                <p className="text-sm mt-3" style={{ opacity: 0.6 }}>
-                  Rest up — come back tomorrow.
-                </p>
+                <p style={{ fontSize: 13, marginTop: 12, opacity: 0.6 }}>Rest up — come back tomorrow.</p>
               ) : (
                 <>
                   {ctaExercises.length === 0 && (
-                    <p className="text-sm mt-1 mb-5" style={{ opacity: 0.6 }}>
+                    <p style={{ fontSize: 13, marginTop: 4, marginBottom: 20, opacity: 0.6 }}>
                       {streak > 0 ? `${streak}-day streak` : 'Start your streak today!'}
                     </p>
                   )}
                   <button
                     onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
-                    className="w-full bg-black/20 hover:bg-black/30 active:bg-black/40 font-bold text-lg py-4 rounded-2xl transition-colors"
+                    style={{ width: '100%', background: 'rgba(0,0,0,0.2)', fontWeight: 700, fontSize: 17, padding: '16px 0', borderRadius: 16, border: 'none', cursor: 'pointer', color: theme.contrastText }}
                   >
                     Start Session →
                   </button>
@@ -620,9 +843,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Soreness check-in prompt ────────────────────────────────────────── */}
+      {/* ── Soreness check-in prompt ─────────────────────────────────────────── */}
       {pendingSorenessSession && (
-        <div className="px-4 mb-5">
+        <div style={{ ...fadeIn(280), padding: '0 16px', marginBottom: 10 }}>
           <button
             onClick={() => setShowSorenessModal(true)}
             className="w-full bg-card rounded-2xl p-4 flex items-center gap-3 text-left border border-c-subtle"
@@ -640,187 +863,115 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Log Cardio card ──────────────────────────────────────────────────── */}
-      <div className="px-4 mb-7">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-2">Cardio</p>
-        <button
-          onClick={() => navigate('/cardio')}
-          className="w-full rounded-2xl p-4"
-          style={{ backgroundColor: theme.hex + '80', color: theme.contrastText, textAlign: 'center' }}
-        >
-          <p className="font-semibold">Log Cardio ›</p>
-        </button>
-      </div>
+      {/* ── SECTION 4: Stat Cards ────────────────────────────────────────────── */}
+      <div style={{ ...fadeIn(300), padding: '0 16px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 10 }}>
 
-      {/* ── Weekly calendar strip (Improvement 5) ───────────────────────────── */}
-      <div className="px-4 mb-1">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-c-muted mb-3">This week</p>
-        <div className="flex gap-1.5">
-          {weekDays.map((day, i) => {
-            const info           = getDayInfo(day)
-            const isToday        = toDateStr(day) === todayStr
-            const isTodayDone    = info.type === 'today-done'
-            const isTodayPending = info.type === 'today-pending'
-            const isTodayRest    = info.type === 'today-rest'
-            const isDone         = info.type === 'done'
-            const isCardio       = info.type === 'cardio'
-            const isTodayCardio  = info.type === 'today-cardio'
-            const isFuture       = info.type === 'future'
-            const isFutureRest   = info.type === 'future-rest'
-            const isPastRest     = info.type === 'past-rest'
+          {/* Volume card */}
+          <div style={{ flex: 1, backgroundColor: 'var(--bg-card)', borderRadius: 16, padding: 14 }}>
+            <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
+              Volume
+            </p>
+            {/* This week */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
+              <span style={{ fontSize: 24, fontWeight: 800, color: theme.hex, lineHeight: 1, letterSpacing: '-0.02em' }}>
+                {formatVolume(anim(volumeThisWeek))}
+              </span>
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>
+              This week ({daysIntoWeek}d)
+            </p>
+            {/* Last week */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
+              <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-dim)', lineHeight: 1 }}>
+                {formatVolume(anim(volumeLastWeek))}
+              </span>
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>Last week</p>
+            {/* Comparison bar */}
+            <div style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 8, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${volBarPct}%`,
+                background: `linear-gradient(90deg, ${theme.hex}, ${theme.hex}aa)`,
+                borderRadius: 2,
+                transition: 'width 0.7s ease',
+              }} />
+            </div>
+            {/* Insight */}
+            <p style={{ fontSize: 10, color: volumeInsight.color, lineHeight: 1.4 }}>
+              {volumeInsight.text}
+            </p>
+          </div>
 
-            let cellBg = 'bg-white/5'
-            if (isTodayDone) cellBg = theme.bg
-            else if (isDone) cellBg = theme.bgSubtle
-            else if (isCardio || isTodayCardio) cellBg = 'bg-blue-500/20'
+          {/* Time in Gym card */}
+          <div style={{ flex: 1, backgroundColor: 'var(--bg-card)', borderRadius: 16, padding: 14 }}>
+            <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
+              Time in Gym
+            </p>
+            {/* This week */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
+              <span style={{ fontSize: 24, fontWeight: 800, color: theme.hex, lineHeight: 1, letterSpacing: '-0.02em' }}>
+                {formatTime(anim(timeThisWeek))}
+              </span>
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>
+              This week ({daysIntoWeek}d)
+            </p>
+            {/* Last week */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
+              <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-dim)', lineHeight: 1 }}>
+                {formatTime(anim(timeLastWeek))}
+              </span>
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>Last week</p>
+            {/* Comparison bar */}
+            <div style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 8, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${timeBarPct}%`,
+                background: `linear-gradient(90deg, ${theme.hex}, ${theme.hex}aa)`,
+                borderRadius: 2,
+                transition: 'width 0.7s ease',
+              }} />
+            </div>
+            {/* Insight */}
+            <p style={{ fontSize: 10, color: timeInsight.color, lineHeight: 1.4 }}>
+              {timeInsight.text}
+            </p>
+          </div>
 
-            const todayStyle = isTodayPending
-              ? { outline: `2.5px solid ${theme.hex}`, outlineOffset: '-2px', boxShadow: `0 0 12px ${theme.hex}80` }
-              : (isTodayRest || isTodayCardio || isTodayDone)
-                ? { outline: `2px solid rgba(255,255,255,0.15)`, outlineOffset: '-2px' }
-                : {}
-
-            return (
-              <button
-                key={i}
-                onClick={() => {
-                  if (isDone || isTodayDone || isCardio || isTodayCardio) navigate('/history')
-                  else if (isFuture && info.planned) { setPreviewWorkoutId(info.planned); setShowPreview(true) }
-                }}
-                className={`flex-1 flex flex-col items-center rounded-xl transition-colors ${cellBg}`}
-                style={{ minHeight: 56, paddingTop: 8, paddingBottom: 8, ...todayStyle }}
-              >
-                <span style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  marginBottom: 2,
-                  color: isToday ? theme.hex : 'var(--text-muted)',
-                }}>
-                  {DAY_LABELS[i]}
-                </span>
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  marginBottom: 4,
-                  color: isToday ? 'var(--text-primary)' : 'var(--text-dim)',
-                }}>
-                  {day.getDate()}
-                </span>
-                <span className={`text-sm leading-none ${info.type === 'empty' ? 'opacity-25' : ''}`}>
-                  {isTodayDone
-                    ? <span className="flex flex-col items-center gap-0.5">
-                        <span>{info.emoji || '✓'}</span>
-                        {info.hasCardio && <span style={{ fontSize: 8, color: '#60a5fa' }}>●</span>}
-                      </span>
-                    : isDone
-                      ? <span className="flex flex-col items-center gap-0.5">
-                          <span>{info.emoji}</span>
-                          {info.hasCardio && <span style={{ fontSize: 8, color: '#60a5fa' }}>●</span>}
-                        </span>
-                      : isCardio || isTodayCardio
-                        ? <span className="text-blue-400 text-[11px] font-bold">C</span>
-                        : isTodayPending
-                          ? <span style={{ opacity: 0.5 }}>{info.emoji}</span>
-                          : isTodayRest
-                            ? <span className="text-[9px] text-c-muted font-semibold">R</span>
-                            : isFutureRest
-                              ? <span className="text-[9px] font-semibold" style={{ opacity: 0.5 }}>R</span>
-                              : isPastRest
-                                ? <span className="text-[9px] font-semibold" style={{ opacity: 0.3 }}>R</span>
-                                : isFuture && info.planned
-                                  ? <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.5 }}>{getShortName(info.planned)}</span>
-                                  : <span className="text-[8px] text-c-muted">·</span>}
-                </span>
-              </button>
-            )
-          })}
         </div>
       </div>
 
-      {/* ── Month toggle ────────────────────────────────────────────────────── */}
-      <div className="px-4 mb-6">
+      {/* ── SECTION 5: Log Cardio ghost button ──────────────────────────────── */}
+      <div style={{ ...fadeIn(420), display: 'flex', justifyContent: 'center', paddingBottom: 8 }}>
         <button
-          onClick={() => setShowMonth(v => !v)}
-          className={`text-xs font-semibold ${theme.text} py-2`}
+          onClick={() => navigate('/cardio')}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '10px 20px',
+            color: 'rgba(255,255,255,0.35)',
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+          }}
         >
-          View month {showMonth ? '▾' : '▸'}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          Log Cardio
         </button>
-
-        {showMonth && (
-          <div className="mt-2">
-            <p className="text-sm font-bold mb-3 text-c-primary">
-              {MONTH_NAMES[today.getMonth()]} {today.getFullYear()}
-            </p>
-            <div className="grid grid-cols-7 gap-1 mb-1">
-              {DAY_LABELS.map((l, i) => (
-                <div key={i} className="text-center text-[10px] font-semibold text-c-muted">{l}</div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {getMonthDays().map((day, i) => {
-                if (!day) return <div key={i} className="aspect-square" />
-
-                const info           = getDayInfo(day)
-                const isToday        = toDateStr(day) === todayStr
-                const isTodayDone    = info.type === 'today-done'
-                const isTodayPending = info.type === 'today-pending'
-                const isTodayRest    = info.type === 'today-rest'
-                const isDone         = info.type === 'done'
-                const isCardio       = info.type === 'cardio'
-                const isTodayCardio  = info.type === 'today-cardio'
-                const isFuture       = info.type === 'future'
-                const isFutureRest   = info.type === 'future-rest'
-                const isPastRest     = info.type === 'past-rest'
-
-                let cellBg  = 'bg-white/5'
-                let textCol = 'text-c-muted'
-                if (isTodayDone)        { cellBg = theme.bg;        textCol = 'text-white'   }
-                else if (isDone)        { cellBg = theme.bgSubtle;  textCol = theme.text     }
-                else if (isCardio || isTodayCardio) { cellBg = 'bg-blue-500/20'; textCol = 'text-blue-400' }
-
-                return (
-                  <button
-                    key={i}
-                    onClick={() => (isDone || isTodayDone || isCardio || isTodayCardio) && navigate('/history')}
-                    className={`aspect-square flex flex-col items-center justify-center rounded-lg transition-colors ${cellBg} ${textCol}`}
-                    style={isTodayPending ? { outline: `2px solid ${theme.hex}`, outlineOffset: '-2px' } : {}}
-                  >
-                    <span className="text-[11px] font-bold leading-none">{day.getDate()}</span>
-                    {(isTodayDone || isDone) && (
-                      <span className="text-[9px] leading-none mt-0.5">
-                        {isTodayDone ? '✓' : info.emoji}
-                      </span>
-                    )}
-                    {(isCardio || isTodayCardio) && (
-                      <span className="text-[8px] font-bold leading-none mt-0.5">C</span>
-                    )}
-                    {isTodayRest && (
-                      <span className="text-[9px] leading-none mt-0.5 opacity-50 font-semibold">R</span>
-                    )}
-                    {isTodayPending && (
-                      <span className="text-[9px] leading-none mt-0.5 opacity-50">{info.emoji}</span>
-                    )}
-                    {isFuture && info.emoji && (
-                      <span className="text-[9px] leading-none mt-0.5 opacity-25">{info.emoji}</span>
-                    )}
-                    {isFutureRest && (
-                      <span className="text-[9px] leading-none mt-0.5 opacity-40 font-semibold">R</span>
-                    )}
-                    {isPastRest && (
-                      <span className="text-[9px] leading-none mt-0.5 opacity-30 font-semibold">R</span>
-                    )}
-                    {info.hasCardio && (isDone || isTodayDone) && (
-                      <span style={{ fontSize: 6, color: '#60a5fa', lineHeight: 1 }}>●</span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* ── Soreness Modal ──────────────────────────────────────────────────── */}
+      {/* ── Soreness Modal ───────────────────────────────────────────────────── */}
       {showSorenessModal && pendingSorenessSession && (
         <SorenessModal
           workoutLabel={sorenessWorkoutLabel}
@@ -829,7 +980,7 @@ export default function Dashboard() {
         />
       )}
 
-      {/* ── Tutorial overlay ────────────────────────────────────────────────── */}
+      {/* ── Tutorial overlay ─────────────────────────────────────────────────── */}
       <TutorialOverlay
         step={tutorialStep}
         onAdvance={() => setTutorialStep(s => s + 1)}
@@ -853,7 +1004,6 @@ export default function Dashboard() {
             <p className="text-sm opacity-50 mb-4">
               {previewWorkoutId ? 'Upcoming workout' : todayLogged ? "Tomorrow's workout" : "Next workout"}
             </p>
-
             {previewSections.map(section => (
               <div key={section.label} className="mb-4">
                 <div className="text-xs uppercase tracking-wider opacity-40 mb-2">{section.label}</div>
