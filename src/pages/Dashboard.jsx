@@ -751,7 +751,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── SECTION 2: Circle Calendar ──────────────────────────────────────── */}
-      <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10, marginTop: -10 }}>
+      <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10, marginTop: -28 }}>
         {/* Header row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <button
