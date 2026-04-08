@@ -186,26 +186,104 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
   async function handleShare() {
     if (!cardRef.current || sharing) return
     setSharing(true)
-    // Hide shimmer div during capture: html2canvas doesn't support CSS masks
-    // (WebkitMask/maskComposite), causing it to render as a full opaque gradient overlay.
-    if (shimmerRef.current) shimmerRef.current.style.display = 'none'
+
+    const card = cardRef.current
+    const restoreFns = []
+
     try {
-      const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: '#050505',
+      // ── 1. Fix card to explicit px width so html2canvas measures correctly ──
+      const cardWidth = Math.min(card.offsetWidth, 380)
+      const savedWidth    = card.style.width
+      const savedMaxWidth = card.style.maxWidth
+      card.style.width    = `${cardWidth}px`
+      card.style.maxWidth = `${cardWidth}px`
+      restoreFns.push(() => { card.style.width = savedWidth; card.style.maxWidth = savedMaxWidth })
+
+      // ── 2. Replace aspectRatio photo container with explicit px height ──
+      const photoContainer = card.querySelector('[data-photo-container]')
+      if (photoContainer) {
+        const containerWidth = cardWidth - 28   // 14px margin each side
+        const photoHeight    = Math.round(containerWidth * 0.75)  // 4:3
+
+        const savedAR = photoContainer.style.aspectRatio
+        const savedH  = photoContainer.style.height
+        photoContainer.style.aspectRatio = ''
+        photoContainer.style.height = `${photoHeight}px`
+        restoreFns.push(() => { photoContainer.style.aspectRatio = savedAR; photoContainer.style.height = savedH })
+
+        const imgEl = photoContainer.querySelector('img')
+        if (imgEl) {
+          const savedIW = imgEl.style.width
+          const savedIH = imgEl.style.height
+          imgEl.style.width  = `${containerWidth}px`
+          imgEl.style.height = `${photoHeight}px`
+          restoreFns.push(() => { imgEl.style.width = savedIW; imgEl.style.height = savedIH })
+
+          // ── 3. Convert blob URL selfie to base64 so html2canvas can read it ──
+          if (imgEl.src && imgEl.src.startsWith('blob:')) {
+            const resp   = await fetch(imgEl.src)
+            const blob   = await resp.blob()
+            const base64 = await new Promise((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload  = () => resolve(reader.result)
+              reader.onerror = reject
+              reader.readAsDataURL(blob)
+            })
+            const savedSrc = imgEl.src
+            imgEl.src = base64
+            restoreFns.push(() => { imgEl.src = savedSrc })
+          }
+        }
+      }
+
+      // ── 4. Hide shimmer + add solid border fallback for Legendary/Mythic ──
+      if (shimmerRef.current) {
+        shimmerRef.current.style.display = 'none'
+        restoreFns.push(() => { shimmerRef.current.style.display = '' })
+
+        const fallbackBorderColor = tier === 'mythic' ? '#E879F9' : '#FF6B2B'
+        const savedBorder = card.style.border
+        card.style.border = `3px solid ${fallbackBorderColor}`
+        restoreFns.push(() => { card.style.border = savedBorder })
+      }
+
+      // ── 5. Remove transform ──
+      const savedTransform = card.style.transform
+      card.style.transform = 'none'
+      restoreFns.push(() => { card.style.transform = savedTransform })
+
+      const canvas = await html2canvas(card, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
+        backgroundColor: null,
         logging: false,
+        imageTimeout: 0,
+        onclone: (doc) => {
+          const cloned = doc.querySelector('[data-sharecard]')
+          if (cloned) {
+            cloned.querySelectorAll('*').forEach(el => {
+              const s = el.style
+              if (s.backdropFilter || s.webkitBackdropFilter) {
+                s.backdropFilter = 'none'
+                s.webkitBackdropFilter = 'none'
+                if (!s.backgroundColor || s.backgroundColor === 'transparent') {
+                  s.backgroundColor = 'rgba(15,12,24,0.95)'
+                }
+              }
+            })
+          }
+        },
       })
+
       const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.92))
       const file = new File([blob], 'gains-workout.jpg', { type: 'image/jpeg' })
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: `${workoutName} — Gains` })
       } else {
-        // Fallback: download
         const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
+        const a   = document.createElement('a')
+        a.href     = url
         a.download = 'gains-workout.jpg'
         a.click()
         URL.revokeObjectURL(url)
@@ -213,7 +291,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
     } catch (err) {
       console.error('Share failed:', err)
     } finally {
-      if (shimmerRef.current) shimmerRef.current.style.display = ''
+      for (const fn of restoreFns.reverse()) fn()
       setSharing(false)
     }
   }
@@ -239,6 +317,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
         {/* ── Card (captured by html2canvas) ───────────────────────── */}
         <div
           ref={cardRef}
+          data-sharecard
           style={{
             width: '100%',
             maxWidth: 380,
@@ -317,6 +396,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
 
             {/* ── Photo window (4:3) ─────────────────────────────────── */}
             <div
+              data-photo-container
               style={{
                 margin: '8px 14px',
                 borderRadius: 14,
