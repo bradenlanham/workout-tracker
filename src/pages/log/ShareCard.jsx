@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import html2canvas from 'html2canvas'
 import CameraCapture from './CameraCapture'
 
-// ── CSS keyframes (injected once) ──────────────────────────────────────────────
+// ── CSS keyframes (injected once, live card only) ──────────────────────────────
 const SHIMMER_CSS = `
 @keyframes shimmer-border {
   0% { background-position: 0% 50%; }
@@ -31,6 +31,7 @@ function buildTierConfig(accentHex) {
       label: 'COMMON',
       labelColor: a,
       border: `3px solid ${a}`,
+      exportBorder: `3px solid ${a}`,
       innerBorder: `1px solid ${a}44`,
       shadow: `0 0 30px ${a}22`,
       photoBorder: `2px solid ${a}66`,
@@ -44,6 +45,7 @@ function buildTierConfig(accentHex) {
       label: 'RARE',
       labelColor: '#C0C0C0',
       border: '3px solid #C0C0C0',
+      exportBorder: '3px solid #C0C0C0',
       innerBorder: '1px solid #C0C0C044',
       shadow: '0 0 35px #C0C0C022, 0 0 80px #C0C0C00A',
       photoBorder: '2px solid #C0C0C066',
@@ -57,6 +59,7 @@ function buildTierConfig(accentHex) {
       label: 'EPIC',
       labelColor: '#FFD700',
       border: '3px solid #FFD700',
+      exportBorder: '3px solid #FFD700',
       innerBorder: '1px solid #FFD70044',
       shadow: '0 0 40px #FFD70022, 0 0 80px #FFD70011',
       photoBorder: '2px solid #FFD70066',
@@ -70,6 +73,7 @@ function buildTierConfig(accentHex) {
       label: 'LEGENDARY',
       labelColor: '#FF6B2B',
       border: 'none',
+      exportBorder: '3px solid #FF6B2B',
       innerBorder: '1px solid #FF6B2B33',
       shadow: '0 0 50px #FF6B2B22, 0 0 100px #FF6B2B11',
       photoBorder: '2px solid #FF6B2B55',
@@ -84,6 +88,7 @@ function buildTierConfig(accentHex) {
       label: 'MYTHIC',
       labelColor: '#E879F9',
       border: 'none',
+      exportBorder: '3px solid #E879F9',
       innerBorder: '1px solid #E879F933',
       shadow: '0 0 60px #E879F933, 0 0 120px #8B5CF622',
       photoBorder: '2px solid #E879F955',
@@ -142,6 +147,195 @@ const SPARKLES = [
   { left: '10%', top: '92%', dur: 2.0, delay: 0.6 },
 ]
 
+// Export card fixed dimensions
+const EXPORT_CARD_WIDTH   = 380
+const EXPORT_PHOTO_WIDTH  = EXPORT_CARD_WIDTH - 28   // 14px margin each side
+const EXPORT_PHOTO_HEIGHT = Math.round(EXPORT_PHOTO_WIDTH * 0.75)  // 4:3 → 264px
+
+// ── Shared card inner content ──────────────────────────────────────────────────
+// Renders tier badge, photo, workout name, exercise list, stats bar.
+// `photoStyle` lets export mode pass explicit px height instead of aspectRatio.
+function CardInner({
+  t, tier,
+  selfie, onPhotoClick,
+  workoutEmoji, workoutName, userName, dateStr, durationStr,
+  shownExercises, overflow,
+  totalVolume, workingSetCount, streak, grade,
+  photoStyle,
+  isExport,
+}) {
+  return (
+    <div style={{ position: 'relative', zIndex: 2, margin: t.shimmer ? 3 : 0 }}>
+
+      {/* ── Tier badge row ─────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px 0' }}>
+        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 2.5, color: t.labelColor, textTransform: 'uppercase' }}>
+          {t.label}
+        </span>
+        <span style={{ fontSize: 9, color: '#ffffff33', fontWeight: 600 }}>GAINS</span>
+      </div>
+
+      {/* ── Photo window (4:3) ─────────────────────────────────── */}
+      <div
+        data-photo-container
+        style={{
+          margin: '8px 14px',
+          borderRadius: 14,
+          overflow: 'hidden',
+          border: t.photoBorder,
+          position: 'relative',
+          ...photoStyle,
+        }}
+      >
+        {selfie ? (
+          <img
+            src={selfie}
+            alt="Workout selfie"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+              cursor: isExport ? 'default' : 'pointer',
+            }}
+            onClick={isExport ? undefined : onPhotoClick}
+          />
+        ) : (
+          <div
+            onClick={isExport ? undefined : onPhotoClick}
+            style={{
+              width: '100%',
+              height: '100%',
+              background: 'linear-gradient(160deg, #1a1a2e 0%, #1a1a2e 40%, #0D0D0D 100%)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              cursor: isExport ? 'default' : 'pointer',
+            }}
+          >
+            <span style={{ fontSize: 32, opacity: 0.4 }}>📸</span>
+            <span style={{ fontSize: 11, color: '#ffffff44', fontWeight: 500 }}>Add a selfie</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Workout name + meta ────────────────────────────────── */}
+      <div style={{ padding: '4px 16px 0' }}>
+        <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
+          {workoutEmoji} {workoutName}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'nowrap' }}>
+          <span style={{ fontSize: 11, color: '#ffffff55', fontWeight: 500 }}>{userName}</span>
+          <span style={{ width: 3, height: 3, borderRadius: '50%', background: '#ffffff22', flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: '#ffffff55', fontWeight: 500 }}>{dateStr}</span>
+          <span style={{ width: 3, height: 3, borderRadius: '50%', background: '#ffffff22', flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: '#ffffff55', fontWeight: 500 }}>{durationStr}</span>
+        </div>
+      </div>
+
+      {/* ── Exercise list (max 6) ──────────────────────────────── */}
+      <div style={{ padding: '10px 16px 4px' }}>
+        {shownExercises.map((ex, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '5px 0',
+              borderBottom: (i < shownExercises.length - 1 || overflow > 0)
+                ? `1px solid ${t.exerciseDivider}`
+                : 'none',
+              gap: 6,
+            }}
+          >
+            <span style={{ color: '#22C55E', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>✓</span>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#ffffffCC',
+                flex: 1,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {ex.name}
+            </span>
+            {ex.hasPR && (
+              <span style={{
+                fontSize: 8,
+                fontWeight: 800,
+                color: '#FCD34D',
+                background: '#FCD34D22',
+                padding: '1px 4px',
+                borderRadius: 3,
+                flexShrink: 0,
+              }}>
+                PR
+              </span>
+            )}
+            {ex.topSet && (
+              <span style={{ fontSize: 11, color: '#ffffff44', flexShrink: 0 }}>{ex.topSet}</span>
+            )}
+          </div>
+        ))}
+        {overflow > 0 && (
+          <div style={{ padding: '5px 0', fontSize: 11, color: '#ffffff33', fontWeight: 500 }}>
+            +{overflow} more exercise{overflow > 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+
+      {/* ── Stats bar ──────────────────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          margin: '4px 12px 12px',
+          borderRadius: 12,
+          overflow: 'hidden',
+          background: t.statBarBg,
+          border: t.statBarBorder,
+        }}
+      >
+        {[
+          { label: 'VOL',    value: `${formatVol(totalVolume)} lbs`, color: '#ffffffDD' },
+          { label: 'SETS',   value: workingSetCount,                  color: '#ffffffDD' },
+          { label: 'STREAK', value: `${streak} 🔥`,                  color: '#FB923C'   },
+          { label: 'GRADE',  value: grade || '—',                     color: gradeColor(grade) },
+        ].map((stat, i) => (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              padding: '9px 2px',
+              borderRight: i < 3 ? `1px solid ${t.exerciseDivider}` : 'none',
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 800, color: stat.color, lineHeight: 1 }}>
+              {stat.value}
+            </div>
+            <div style={{
+              fontSize: 8,
+              color: '#ffffff44',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: 1.5,
+              marginTop: 3,
+            }}>
+              {stat.label}
+            </div>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  )
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function ShareCard({ data, onDone, sessionId, onUpdateSession, initialSelfie }) {
   const {
@@ -150,15 +344,16 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
     grade, theme, streak = 0,
   } = data
 
-  const [selfie, setSelfie]     = useState(initialSelfie || null)
+  const [selfie, setSelfie]         = useState(initialSelfie || null)
   const [showCamera, setShowCamera] = useState(false)
-  const [sharing, setSharing]   = useState(false)
+  const [sharing, setSharing]       = useState(false)
   const cardRef    = useRef(null)
   const shimmerRef = useRef(null)
+  const exportRef  = useRef(null)
 
-  const tier      = getTier(streak)
-  const allTiers  = buildTierConfig(theme?.hex)
-  const t         = allTiers[tier]
+  const tier     = getTier(streak)
+  const allTiers = buildTierConfig(theme?.hex)
+  const t        = allTiers[tier]
 
   // Exercise list: max 6 shown, rest overflow
   const MAX_EX = 6
@@ -175,6 +370,15 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
     0,
   )
 
+  // Shared inner props (same data for live card + export card)
+  const innerProps = {
+    t, tier,
+    selfie,
+    workoutEmoji, workoutName, userName, dateStr, durationStr,
+    shownExercises, overflow,
+    totalVolume, workingSetCount, streak, grade,
+  }
+
   function handleCapture(dataUrl) {
     setSelfie(dataUrl)
     setShowCamera(false)
@@ -184,97 +388,39 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
   }
 
   async function handleShare() {
-    if (!cardRef.current || sharing) return
+    if (!exportRef.current || sharing) return
     setSharing(true)
 
-    const card = cardRef.current
-    const restoreFns = []
-
     try {
-      // ── 1. Fix card to explicit px width so html2canvas measures correctly ──
-      const cardWidth = Math.min(card.offsetWidth, 380)
-      const savedWidth    = card.style.width
-      const savedMaxWidth = card.style.maxWidth
-      card.style.width    = `${cardWidth}px`
-      card.style.maxWidth = `${cardWidth}px`
-      restoreFns.push(() => { card.style.width = savedWidth; card.style.maxWidth = savedMaxWidth })
+      const exportCard = exportRef.current
 
-      // ── 2. Replace aspectRatio photo container with explicit px height ──
-      const photoContainer = card.querySelector('[data-photo-container]')
-      if (photoContainer) {
-        const containerWidth = cardWidth - 28   // 14px margin each side
-        const photoHeight    = Math.round(containerWidth * 0.75)  // 4:3
-
-        const savedAR = photoContainer.style.aspectRatio
-        const savedH  = photoContainer.style.height
-        photoContainer.style.aspectRatio = ''
-        photoContainer.style.height = `${photoHeight}px`
-        restoreFns.push(() => { photoContainer.style.aspectRatio = savedAR; photoContainer.style.height = savedH })
-
-        const imgEl = photoContainer.querySelector('img')
-        if (imgEl) {
-          const savedIW = imgEl.style.width
-          const savedIH = imgEl.style.height
-          imgEl.style.width  = `${containerWidth}px`
-          imgEl.style.height = `${photoHeight}px`
-          restoreFns.push(() => { imgEl.style.width = savedIW; imgEl.style.height = savedIH })
-
-          // ── 3. Convert blob URL selfie to base64 so html2canvas can read it ──
-          if (imgEl.src && imgEl.src.startsWith('blob:')) {
-            const resp   = await fetch(imgEl.src)
-            const blob   = await resp.blob()
-            const base64 = await new Promise((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onload  = () => resolve(reader.result)
-              reader.onerror = reject
-              reader.readAsDataURL(blob)
-            })
-            const savedSrc = imgEl.src
-            imgEl.src = base64
-            restoreFns.push(() => { imgEl.src = savedSrc })
-          }
-        }
+      // Convert blob URL selfie → base64 so html2canvas can read it
+      const imgEl = exportCard.querySelector('img')
+      let originalSrc = null
+      if (imgEl?.src?.startsWith('blob:')) {
+        const resp   = await fetch(imgEl.src)
+        const blob   = await resp.blob()
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload  = () => resolve(reader.result)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        })
+        originalSrc  = imgEl.src
+        imgEl.src    = base64
       }
 
-      // ── 4. Hide shimmer + add solid border fallback for Legendary/Mythic ──
-      if (shimmerRef.current) {
-        shimmerRef.current.style.display = 'none'
-        restoreFns.push(() => { shimmerRef.current.style.display = '' })
-
-        const fallbackBorderColor = tier === 'mythic' ? '#E879F9' : '#FF6B2B'
-        const savedBorder = card.style.border
-        card.style.border = `3px solid ${fallbackBorderColor}`
-        restoreFns.push(() => { card.style.border = savedBorder })
-      }
-
-      // ── 5. Remove transform ──
-      const savedTransform = card.style.transform
-      card.style.transform = 'none'
-      restoreFns.push(() => { card.style.transform = savedTransform })
-
-      const canvas = await html2canvas(card, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
+      const canvas = await html2canvas(exportCard, {
+        scale:           2,
+        useCORS:         true,
+        allowTaint:      true,
         backgroundColor: null,
-        logging: false,
-        imageTimeout: 0,
-        onclone: (doc) => {
-          const cloned = doc.querySelector('[data-sharecard]')
-          if (cloned) {
-            cloned.querySelectorAll('*').forEach(el => {
-              const s = el.style
-              if (s.backdropFilter || s.webkitBackdropFilter) {
-                s.backdropFilter = 'none'
-                s.webkitBackdropFilter = 'none'
-                if (!s.backgroundColor || s.backgroundColor === 'transparent') {
-                  s.backgroundColor = 'rgba(15,12,24,0.95)'
-                }
-              }
-            })
-          }
-        },
+        logging:         false,
+        imageTimeout:    0,
       })
+
+      // Restore blob URL if we swapped it
+      if (originalSrc && imgEl) imgEl.src = originalSrc
 
       const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.92))
       const file = new File([blob], 'gains-workout.jpg', { type: 'image/jpeg' })
@@ -291,7 +437,6 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
     } catch (err) {
       console.error('Share failed:', err)
     } finally {
-      for (const fn of restoreFns.reverse()) fn()
       setSharing(false)
     }
   }
@@ -314,7 +459,7 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
           overflowY: 'auto',
         }}
       >
-        {/* ── Card (captured by html2canvas) ───────────────────────── */}
+        {/* ── Live card (display only — NOT captured) ───────────── */}
         <div
           ref={cardRef}
           data-sharecard
@@ -383,170 +528,12 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
             </div>
           )}
 
-          {/* Card content */}
-          <div style={{ position: 'relative', zIndex: 2, margin: t.shimmer ? 3 : 0 }}>
-
-            {/* ── Tier badge row ─────────────────────────────────────── */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px 0' }}>
-              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 2.5, color: t.labelColor, textTransform: 'uppercase' }}>
-                {t.label}
-              </span>
-              <span style={{ fontSize: 9, color: '#ffffff33', fontWeight: 600 }}>GAINS</span>
-            </div>
-
-            {/* ── Photo window (4:3) ─────────────────────────────────── */}
-            <div
-              data-photo-container
-              style={{
-                margin: '8px 14px',
-                borderRadius: 14,
-                overflow: 'hidden',
-                border: t.photoBorder,
-                aspectRatio: '4/3',
-                position: 'relative',
-              }}
-            >
-              {selfie ? (
-                <img
-                  src={selfie}
-                  alt="Workout selfie"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
-                  onClick={() => setShowCamera(true)}
-                />
-              ) : (
-                <button
-                  onClick={() => setShowCamera(true)}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    background: 'linear-gradient(160deg, #1a1a2e 0%, #1a1a2e 40%, #0D0D0D 100%)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span style={{ fontSize: 32, opacity: 0.4 }}>📸</span>
-                  <span style={{ fontSize: 11, color: '#ffffff44', fontWeight: 500 }}>Add a selfie</span>
-                </button>
-              )}
-            </div>
-
-            {/* ── Workout name + meta ────────────────────────────────── */}
-            <div style={{ padding: '4px 16px 0' }}>
-              <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
-                {workoutEmoji} {workoutName}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'nowrap' }}>
-                <span style={{ fontSize: 11, color: '#ffffff55', fontWeight: 500 }}>{userName}</span>
-                <span style={{ width: 3, height: 3, borderRadius: '50%', background: '#ffffff22', flexShrink: 0 }} />
-                <span style={{ fontSize: 11, color: '#ffffff55', fontWeight: 500 }}>{dateStr}</span>
-                <span style={{ width: 3, height: 3, borderRadius: '50%', background: '#ffffff22', flexShrink: 0 }} />
-                <span style={{ fontSize: 11, color: '#ffffff55', fontWeight: 500 }}>{durationStr}</span>
-              </div>
-            </div>
-
-            {/* ── Exercise list (max 6) ──────────────────────────────── */}
-            <div style={{ padding: '10px 16px 4px' }}>
-              {shownExercises.map((ex, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '5px 0',
-                    borderBottom: (i < shownExercises.length - 1 || overflow > 0)
-                      ? `1px solid ${t.exerciseDivider}`
-                      : 'none',
-                    gap: 6,
-                  }}
-                >
-                  <span style={{ color: '#22C55E', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>✓</span>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: '#ffffffCC',
-                      flex: 1,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {ex.name}
-                  </span>
-                  {ex.hasPR && (
-                    <span style={{
-                      fontSize: 8,
-                      fontWeight: 800,
-                      color: '#FCD34D',
-                      background: '#FCD34D22',
-                      padding: '1px 4px',
-                      borderRadius: 3,
-                      flexShrink: 0,
-                    }}>
-                      PR
-                    </span>
-                  )}
-                  {ex.topSet && (
-                    <span style={{ fontSize: 11, color: '#ffffff44', flexShrink: 0 }}>{ex.topSet}</span>
-                  )}
-                </div>
-              ))}
-              {overflow > 0 && (
-                <div style={{ padding: '5px 0', fontSize: 11, color: '#ffffff33', fontWeight: 500 }}>
-                  +{overflow} more exercise{overflow > 1 ? 's' : ''}
-                </div>
-              )}
-            </div>
-
-            {/* ── Stats bar ──────────────────────────────────────────── */}
-            <div
-              style={{
-                display: 'flex',
-                margin: '4px 12px 12px',
-                borderRadius: 12,
-                overflow: 'hidden',
-                background: t.statBarBg,
-                border: t.statBarBorder,
-              }}
-            >
-              {[
-                { label: 'VOL',    value: `${formatVol(totalVolume)} lbs`, color: '#ffffffDD' },
-                { label: 'SETS',   value: workingSetCount,                  color: '#ffffffDD' },
-                { label: 'STREAK', value: `${streak} 🔥`,                  color: '#FB923C'   },
-                { label: 'GRADE',  value: grade || '—',                     color: gradeColor(grade) },
-              ].map((stat, i) => (
-                <div
-                  key={i}
-                  style={{
-                    flex: 1,
-                    textAlign: 'center',
-                    padding: '9px 2px',
-                    borderRight: i < 3 ? `1px solid ${t.exerciseDivider}` : 'none',
-                  }}
-                >
-                  <div style={{ fontSize: 17, fontWeight: 800, color: stat.color, lineHeight: 1 }}>
-                    {stat.value}
-                  </div>
-                  <div style={{
-                    fontSize: 8,
-                    color: '#ffffff44',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: 1.5,
-                    marginTop: 3,
-                  }}>
-                    {stat.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-          </div>
+          <CardInner
+            {...innerProps}
+            onPhotoClick={() => setShowCamera(true)}
+            photoStyle={{ aspectRatio: '4/3' }}
+            isExport={false}
+          />
         </div>
 
         {/* ── Share + Done buttons (outside cardRef — not in JPEG) ───── */}
@@ -588,7 +575,49 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
             Done
           </button>
         </div>
+      </div>
 
+      {/* ── Hidden export-only card (captured by html2canvas) ──────────
+          Positioned off-screen. Uses only html2canvas-compatible styles:
+          explicit px dimensions, no aspectRatio, no CSS animations,
+          no backdrop-filter, no WebkitMask, solid border instead of shimmer.
+      ─────────────────────────────────────────────────────────────────── */}
+      <div
+        ref={exportRef}
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          left: -9999,
+          top: 0,
+          width: EXPORT_CARD_WIDTH,
+          borderRadius: 20,
+          overflow: 'hidden',
+          border: t.exportBorder,
+          background: t.cardBg,
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          pointerEvents: 'none',
+        }}
+      >
+        {/* Inner border inset (no animation) */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 5,
+            border: t.innerBorder,
+            borderRadius: 16,
+            pointerEvents: 'none',
+          }}
+        />
+
+        <CardInner
+          {...innerProps}
+          onPhotoClick={undefined}
+          photoStyle={{
+            width: EXPORT_PHOTO_WIDTH,
+            height: EXPORT_PHOTO_HEIGHT,
+          }}
+          isExport={true}
+        />
       </div>
 
       {showCamera && (
