@@ -912,10 +912,11 @@ export default function Dashboard() {
         </div>
 
         {/* Summary line */}
-        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
-          {weekCompletedCount}/7 days
-          {activeSplit ? ` · ${activeSplit.emoji} ${activeSplit.name}` : ''}
-        </p>
+        {activeSplit && (
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
+            {activeSplit.emoji} {activeSplit.name}
+          </p>
+        )}
 
         {/* Monthly calendar expansion */}
         <div style={{
