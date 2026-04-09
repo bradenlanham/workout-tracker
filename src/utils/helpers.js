@@ -168,6 +168,8 @@ export function getWorkoutStreak(sessions, rotation) {
     const checkD = new Date(msrDate)
     checkD.setDate(msrDate.getDate() + d)
     const checkStr = toLocalStr(checkD)
+    // Don't penalise today — the user may still log their session
+    if (checkStr === todayStr) continue
     if (sessionDaySet.has(checkStr)) continue
     const rotItem = rotation?.length ? getRotationItemOnDate(checkStr, sessions, rotation) : null
     if (rotItem !== 'rest') return 0
