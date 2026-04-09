@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
@@ -187,6 +187,14 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
   const [addingSection, setAddingSection] = useState(false)
   const [newSectionLabel, setNewSectionLabel] = useState('')
 
+  // ── Drag state ──
+  const [dragItem, setDragItem] = useState(null) // { sIdx, eIdx, name }
+  const [dragOver, setDragOver] = useState(null)  // { sIdx, eIdx } — drop slot (insert before eIdx, or append if eIdx === section.exercises.length)
+  const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 })
+  const longPressTimer = useRef(null)
+  const dragActive = useRef(false)
+  const scrollRef = useRef(null)
+
   const allAdded = sections.flatMap(s => s.exercises)
 
   // Check if any logged session has notes for a given exercise name
@@ -242,8 +250,125 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
     })
   }
 
+  // ── Drag handlers ──
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  const handlePointerDown = useCallback((e, sIdx, eIdx, exName) => {
+    // Only start long-press for touch/stylus; skip for mouse
+    if (e.pointerType === 'mouse') return
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null
+      dragActive.current = true
+      setDragItem({ sIdx, eIdx, name: exName })
+      setGhostPos({ x: startX, y: startY })
+      // Haptic feedback if available
+      if (navigator.vibrate) navigator.vibrate(40)
+    }, 450)
+  }, [])
+
+  const handlePointerMove = useCallback((e) => {
+    if (!dragActive.current) {
+      cancelLongPress()
+      return
+    }
+    e.preventDefault()
+    setGhostPos({ x: e.clientX, y: e.clientY })
+
+    // Hit-test drop zones by finding elements at pointer
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    if (!el) return
+    const dropZone = el.closest('[data-drop-sIdx]')
+    if (dropZone) {
+      setDragOver({
+        sIdx: parseInt(dropZone.dataset.dropSidx, 10),
+        eIdx: parseInt(dropZone.dataset.dropEidx, 10),
+      })
+    }
+  }, [cancelLongPress])
+
+  const handlePointerUp = useCallback(() => {
+    cancelLongPress()
+    if (!dragActive.current || !dragItem) {
+      dragActive.current = false
+      setDragItem(null)
+      setDragOver(null)
+      return
+    }
+    dragActive.current = false
+
+    if (dragOver) {
+      const { sIdx: fromS, eIdx: fromE } = dragItem
+      const { sIdx: toS, eIdx: toE } = dragOver
+
+      // Don't move if dropping on itself
+      const sameSpot = fromS === toS && (fromE === toE || fromE + 1 === toE)
+      if (!sameSpot) {
+        setSections(prev => {
+          const secs = prev.map(s => ({ ...s, exercises: [...s.exercises] }))
+          const exName = secs[fromS].exercises[fromE]
+          // Remove from source
+          secs[fromS].exercises.splice(fromE, 1)
+          // Adjust target index if same section and removing shifts it
+          let insertAt = toE
+          if (fromS === toS && fromE < toE) insertAt = toE - 1
+          secs[toS].exercises.splice(insertAt, 0, exName)
+          return secs
+        })
+      }
+    }
+
+    setDragItem(null)
+    setDragOver(null)
+  }, [cancelLongPress, dragItem, dragOver])
+
+  // Attach pointermove/pointerup to window so drag works even outside the row
+  useEffect(() => {
+    if (!dragItem) return
+    const onMove = (e) => handlePointerMove(e)
+    const onUp = () => handlePointerUp()
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [dragItem, handlePointerMove, handlePointerUp])
+
+  const isDragging = !!dragItem
+
   return (
     <>
+      {/* Ghost element follows finger */}
+      {isDragging && (
+        <div
+          style={{
+            position: 'fixed',
+            left: ghostPos.x - 120,
+            top: ghostPos.y - 18,
+            width: 240,
+            zIndex: 9999,
+            pointerEvents: 'none',
+            opacity: 0.9,
+            transform: 'rotate(2deg) scale(1.05)',
+          }}
+          className="flex items-center gap-2 bg-card rounded-xl px-3 py-2.5 shadow-2xl"
+        >
+          <span className="text-xs text-c-muted">☰</span>
+          <span className="flex-1 text-sm font-medium truncate">{dragItem.name}</span>
+        </div>
+      )}
+
       <div className="min-h-screen pb-36 animate-slide-in">
         <div
           className="sticky top-0 bg-base z-30 px-4 pb-4"
@@ -279,10 +404,15 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
 
           {/* Sections */}
           <div>
-            <label className="text-xs font-semibold text-c-muted uppercase tracking-wide mb-3 block">Exercises</label>
+            <label className="text-xs font-semibold text-c-muted uppercase tracking-wide mb-3 block">
+              Exercises
+              {isDragging && <span className="ml-2 normal-case text-c-muted font-normal">Drop into any section</span>}
+            </label>
             <div className="space-y-3">
               {sections.map((sec, sIdx) => (
-                <div key={sIdx} className="bg-card rounded-2xl p-4">
+                <div key={sIdx} className={`bg-card rounded-2xl p-4 transition-colors ${
+                  isDragging && dragOver?.sIdx === sIdx ? 'ring-2 ' + theme.ring : ''
+                }`}>
                   {/* Section header */}
                   <div className="flex items-center gap-2 mb-3">
                     <input
@@ -306,47 +436,92 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
                     </button>
                   </div>
 
-                  {sec.exercises.length === 0 && (
-                    <p className="text-xs text-c-faint text-center py-2">No exercises — tap + Add</p>
-                  )}
-
                   <div className="space-y-1">
-                    {sec.exercises.map((exName, eIdx) => (
-                      <div key={eIdx} className="flex items-center gap-2 bg-item rounded-xl px-3 py-2.5">
-                        <span className="flex-1 text-sm min-w-0">{exName}</span>
-                        {hasSessionNotes(exName) && (
-                          <span title="Has notes from previous sessions" className="text-sm leading-none opacity-60">ℹ️</span>
-                        )}
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button
-                            onClick={() => moveExercise(sIdx, eIdx, -1)}
-                            disabled={eIdx === 0}
-                            className="p-1.5 text-c-muted disabled:opacity-20"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => moveExercise(sIdx, eIdx, 1)}
-                            disabled={eIdx === sec.exercises.length - 1}
-                            className="p-1.5 text-c-muted disabled:opacity-20"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => removeExercise(sIdx, eIdx)}
-                            className="p-1.5 text-red-400/70 hover:text-red-400"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
+                    {/* Drop zone before first exercise (or empty section drop zone) */}
+                    {isDragging && (
+                      <div
+                        data-drop-sIdx={sIdx}
+                        data-drop-eIdx={0}
+                        className={`h-8 rounded-lg flex items-center justify-center transition-colors ${
+                          dragOver?.sIdx === sIdx && dragOver?.eIdx === 0
+                            ? theme.bgSubtle + ' border-2 border-dashed ' + theme.ring
+                            : 'border border-dashed border-c-base opacity-40'
+                        }`}
+                      >
+                        <span className="text-xs text-c-muted">drop here</span>
                       </div>
-                    ))}
+                    )}
+
+                    {sec.exercises.length === 0 && !isDragging && (
+                      <p className="text-xs text-c-faint text-center py-2">No exercises — tap + Add</p>
+                    )}
+
+                    {sec.exercises.map((exName, eIdx) => {
+                      const isBeingDragged = dragItem?.sIdx === sIdx && dragItem?.eIdx === eIdx
+                      return (
+                        <div key={eIdx}>
+                          <div
+                            onPointerDown={e => handlePointerDown(e, sIdx, eIdx, exName)}
+                            style={{ touchAction: 'none', userSelect: 'none' }}
+                            className={`flex items-center gap-2 bg-item rounded-xl px-3 py-2.5 transition-opacity ${
+                              isBeingDragged ? 'opacity-30' : ''
+                            }`}
+                          >
+                            {isDragging ? (
+                              <span className="text-c-muted text-sm shrink-0">☰</span>
+                            ) : null}
+                            <span className="flex-1 text-sm min-w-0">{exName}</span>
+                            {hasSessionNotes(exName) && (
+                              <span title="Has notes from previous sessions" className="text-sm leading-none opacity-60">ℹ️</span>
+                            )}
+                            {!isDragging && (
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button
+                                  onClick={() => moveExercise(sIdx, eIdx, -1)}
+                                  disabled={eIdx === 0}
+                                  className="p-1.5 text-c-muted disabled:opacity-20"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => moveExercise(sIdx, eIdx, 1)}
+                                  disabled={eIdx === sec.exercises.length - 1}
+                                  className="p-1.5 text-c-muted disabled:opacity-20"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => removeExercise(sIdx, eIdx)}
+                                  className="p-1.5 text-red-400/70 hover:text-red-400"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {/* Drop zone after each exercise */}
+                          {isDragging && (
+                            <div
+                              data-drop-sIdx={sIdx}
+                              data-drop-eIdx={eIdx + 1}
+                              className={`h-8 mt-1 rounded-lg flex items-center justify-center transition-colors ${
+                                dragOver?.sIdx === sIdx && dragOver?.eIdx === eIdx + 1
+                                  ? theme.bgSubtle + ' border-2 border-dashed ' + theme.ring
+                                  : 'border border-dashed border-c-base opacity-40'
+                              }`}
+                            >
+                              <span className="text-xs text-c-muted">drop here</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               ))}
