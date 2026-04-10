@@ -141,8 +141,8 @@ export function getRotationItemOnDate(dateStr, sessions, rotation) {
   return rotation[((anchorIdx + daysDiff) % rotation.length + rotation.length) % rotation.length]
 }
 
-export function getWorkoutStreak(sessions, rotation) {
-  if (!sessions.length) return 0
+export function getWorkoutStreak(sessions, rotation, cardioSessions = []) {
+  if (!sessions.length && !cardioSessions.length) return 0
 
   // Use LOCAL date methods to avoid UTC-midnight vs local-midnight mismatch.
   // new Date('2026-04-07') parses as UTC midnight; in UTC-5 that's local Apr 6 19:00,
@@ -150,12 +150,19 @@ export function getWorkoutStreak(sessions, rotation) {
   const toLocalStr = d =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-  const sessionDaySet = new Set(sessions.map(s => toLocalStr(new Date(s.date))))
+  const sessionDaySet = new Set([
+    ...sessions.map(s => toLocalStr(new Date(s.date))),
+    ...(cardioSessions || []).map(c => toLocalStr(new Date(c.date))),
+  ])
   const today         = new Date()
   const todayStr      = toLocalStr(today)
 
+  const allActivityDates = [
+    ...sessions.map(s => s.date),
+    ...(cardioSessions || []).map(c => c.date),
+  ]
   const mostRecentDay = toLocalStr(
-    new Date([...sessions].sort((a, b) => new Date(b.date) - new Date(a.date))[0].date)
+    new Date([...allActivityDates].sort((a, b) => new Date(b) - new Date(a))[0])
   )
 
   // Streak is live only if every day from mostRecentDay → today is either a

@@ -158,7 +158,7 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme 
 
 // ── Session detail modal ───────────────────────────────────────────────────────
 
-function buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId) {
+function buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId, cardioSessions) {
   const exercises = session.data?.exercises || []
   const totalVolume = exercises.reduce((t, ex) =>
     t + ex.sets.reduce((s, set) => s + (set.reps || 0) * (set.weight || 0), 0), 0)
@@ -204,7 +204,7 @@ function buildShareData(session, settings, theme, splits, attachedCardio, sessio
           }
         : { completed: session.completedCardio || false },
     theme,
-    streak: getWorkoutStreak(sessions || [], splits.find(s => s.id === activeSplitId)?.rotation),
+    streak: getWorkoutStreak(sessions || [], splits.find(s => s.id === activeSplitId)?.rotation, cardioSessions),
   }
 }
 
@@ -236,7 +236,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   if (showShareCard) {
     return (
       <ShareCard
-        data={buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId)}
+        data={buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId, cardioSessions)}
         onDone={() => setShowShareCard(false)}
         sessionId={session.id}
         onUpdateSession={updateSession}

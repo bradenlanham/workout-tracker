@@ -363,7 +363,7 @@ export default function Dashboard() {
     return new Date(s.date) >= new Date(activeSplit.createdAt)
   }).length
 
-  const streak = getWorkoutStreak(sessions, rotation)
+  const streak = getWorkoutStreak(sessions, rotation, cardioSessions)
 
   const RING_TIERS = [
     { name: 'Common',    startAngle: 0,     endAngle: 51.4,  color: theme.hex,  minStreak: 0  },
