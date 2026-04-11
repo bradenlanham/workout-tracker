@@ -101,11 +101,11 @@ function PrevSetRow({ set }) {
         <div className="flex-1 h-9 rounded-lg bg-item text-c-dim text-xs font-semibold flex items-center justify-center gap-1 px-2">
           <span>{plateText}</span>
           <span className="opacity-50">=</span>
-          <span>{set.weight}</span>
+          <span>{set.rawWeight ?? set.weight}</span>
         </div>
       ) : (
         <div className="w-20 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
-          {set.weight ? `${set.weight}` : '—'}
+          {(set.rawWeight ?? set.weight) ? `${set.rawWeight ?? set.weight}` : '—'}
         </div>
       )}
       <div className="w-16 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center shrink-0">
@@ -1384,6 +1384,10 @@ export default function BbLogger() {
 
   const savedSession = (activeSession && activeSession.type === type) ? activeSession : null
 
+  const lastSessionForInit = getLastBbSession(sessions, type)
+  const lastSessionExMap = {}
+  lastSessionForInit?.data?.exercises?.forEach(ex => { lastSessionExMap[ex.name] = ex })
+
   const templateExercises = groups.flatMap(group =>
     group.exercises.map((name, i) => ({
       id:    `${group.label}-${name}-${i}`,
@@ -1396,6 +1400,7 @@ export default function BbLogger() {
       platesPerSide: 2,
       plateWeight: 45,
       barWeight: 45,
+      unilateral: !!lastSessionExMap[name]?.unilateral,
     }))
   )
 
@@ -1418,6 +1423,7 @@ export default function BbLogger() {
         platesPerSide: 2,
         plateWeight: 45,
         barWeight: 45,
+        unilateral: !!ex.unilateral,
       }))
     return [...templateExercises, ...extras]
   })()
