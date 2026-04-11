@@ -1401,6 +1401,7 @@ export default function BbLogger() {
       plateWeight: 45,
       barWeight: 45,
       unilateral: !!lastSessionExMap[name]?.unilateral,
+      plateLoaded: !!lastSessionExMap[name]?.plates,
     }))
   )
 
@@ -1424,6 +1425,7 @@ export default function BbLogger() {
         plateWeight: 45,
         barWeight: 45,
         unilateral: !!ex.unilateral,
+        plateLoaded: !!ex.plates,
       }))
     return [...templateExercises, ...extras]
   })()
