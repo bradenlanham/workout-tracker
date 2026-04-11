@@ -777,17 +777,15 @@ export default function Dashboard() {
           <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
             {headline}
           </h1>
-          {streak > 0 && (
-            <div
-              onPointerDown={() => setPressedStreak(true)}
-              onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
-              onPointerLeave={() => setPressedStreak(false)}
-              onPointerCancel={() => setPressedStreak(false)}
-              style={{ transform: pressedStreak ? 'scale(0.88)' : 'scale(1)', transition: 'transform 80ms ease', cursor: 'pointer' }}
-            >
-              <StreakBadge streak={streak} themeHex={theme.hex} />
-            </div>
-          )}
+          <div
+            onPointerDown={() => setPressedStreak(true)}
+            onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
+            onPointerLeave={() => setPressedStreak(false)}
+            onPointerCancel={() => setPressedStreak(false)}
+            style={{ transform: pressedStreak ? 'scale(0.88)' : 'scale(1)', transition: 'transform 80ms ease', cursor: 'pointer' }}
+          >
+            <StreakBadge streak={streak} themeHex={theme.hex} />
+          </div>
         </div>
       </div>
 
