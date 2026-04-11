@@ -432,7 +432,7 @@ export default function Dashboard() {
   const yesterdayRotationItem = rotation?.length && sessions.length
     ? getRotationItemOnDate(yesterdayStr, sessions, rotation)
     : null
-  const yesterdayLogged = sessions.some(s => s.date?.split('T')[0] === yesterdayStr)
+  const yesterdayLogged = sessions.some(s => s.date?.split('T')[0] === yesterdayStr) || cardioSessions.some(c => c.date?.split('T')[0] === yesterdayStr)
   const missedYesterdayWorkout = (!todayLogged && yesterdayRotationItem && yesterdayRotationItem !== 'rest' && !yesterdayLogged)
     ? yesterdayRotationItem
     : null
@@ -563,7 +563,7 @@ export default function Dashboard() {
   // Count completed workout days this Mon-Sun week
   const weekCompletedCount = mondayWeekDays.filter(d => {
     const info = getDayInfo(d)
-    return info.type === 'done' || info.type === 'today-done'
+    return info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
   }).length
 
   // ── Sun-Sat week days (for monthly calendar) ──────────────────────────────

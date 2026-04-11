@@ -200,10 +200,10 @@ export function getWorkoutStreak(sessions, rotation, cardioSessions = []) {
 
 // ── Achievements ─────────────────────────────────────────────────────────────
 
-export function getAchievements(sessions) {
+export function getAchievements(sessions, rotation, cardioSessions = []) {
   const bbSessions = sessions.filter(s => s.mode === 'bb')
   const total      = bbSessions.length
-  const streak     = getWorkoutStreak(sessions)
+  const streak     = getWorkoutStreak(sessions, rotation, cardioSessions)
   const totalPRs   = bbSessions.flatMap(s =>
     (s.data?.exercises || []).flatMap(ex => ex.sets.filter(set => set.isNewPR))
   ).length
