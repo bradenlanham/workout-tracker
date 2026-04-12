@@ -53,10 +53,11 @@ src/
 ├── utils/
 │   └── helpers.js             # getNextBbWorkout, getLastBbSession, getExercisePRs, getWorkoutStreak,
 │                              # getRotationItemOnDate, getAchievements, formatDate/Time, playBeep, generateId
+│                              # getWorkoutStreak signature: (sessions, rotation, cardioSessions, restDaySessions)
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
-│   ├── HamburgerMenu.jsx      # Slide-in menu: My Splits, Progress, Settings, Info, Manage Data
+│   ├── HamburgerMenu.jsx      # Slide-in menu: My Splits, Progress, Settings, Info (incl. "How Streaks Work"), Manage Data
 │   └── RestTimer.jsx          # Floating draggable rest timer with progress ring (visible only during logging)
 │
 └── pages/
@@ -115,6 +116,9 @@ src/
   cardioSessions: [],              // Standalone + attached cardio sessions
   customCardioTypes: [],           // User-added cardio type strings
   activeCardioSession: null,       // In-progress cardio
+
+  // ── Rest Day Logging ──
+  restDaySessions: [],             // Explicitly logged rest days { id, date: 'YYYY-MM-DD', note? }
 
   // ── Timer ──
   restEndTimestamp: null,          // ms timestamp when rest timer expires
@@ -220,9 +224,9 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 ### Session Logger (BbLogger.jsx) — The Core
 - **Initialization:** Loads exercises from the active split's workout template. Also merges in any exercises from the last session of the same type that aren't in the template (ensures custom exercises persist).
 - **Active session persistence:** Every change to exercises or notes auto-saves to `activeSession` in the store, surviving page reload and app backgrounding.
-- **Plate mode:** Per-exercise toggle. Shows plate buttons (100, 45, 35, 25, 10, 5, 2.5) with a bar weight cycler (45/0/25). A **1× / 2× multiplier toggle** controls whether plates are counted once or on both sides (default: 2×). Plate breakdown data is saved to the session for accurate ghost row display next time.
-- **Unilateral (Uni) toggle:** Per-exercise. When active, volume is doubled at save time. The doubled weight is stored in `weight`, original in `rawWeight`.
-- **Previous session ghost rows:** Shows last session's sets as faded, non-interactive rows (including plate breakdown if logged in plate mode). Toggled by "Last Time" button per exercise.
+- **Plate mode:** Per-exercise toggle. Shows plate buttons (100, 45, 35, 25, 10, 5, 2.5) with a bar weight cycler (45/0/25). A **1× / 2× multiplier toggle** controls whether plates are counted once or on both sides (default: 2×). Plate breakdown data is saved to the session for accurate ghost row display next time. **Plates toggle is pre-selected** from last session's data (`plateLoaded` state initialized from last session).
+- **Unilateral (Uni) toggle:** Per-exercise. When active, volume is doubled at save time. The doubled weight is stored in `weight`, original in `rawWeight`. **Uni toggle is pre-selected** from last session's `unilateral` flag.
+- **Previous session ghost rows:** Shows last session's sets as faded, non-interactive rows. Ghost rows display `rawWeight` (not doubled weight) for unilateral exercises. Includes plate breakdown if logged in plate mode. Toggled by "Last Time" button per exercise.
 - **Set types:** warmup / working / drop. Drop sets auto-suggest 75% of previous working set weight.
 - **PR detection:** Compares current set weight/reps against all-time maxes across all sessions for that exercise.
 - **Auto-sync custom exercises to split:** After saving, any exercises that were in the session but not in the template get added to the appropriate section of the split definition. Placement is intelligent — inserts near the exercises it was positioned next to during the session.
@@ -263,11 +267,12 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 ### Dashboard (Dashboard.jsx)
 - **Greeting:** Time-based ("Good morning/afternoon/evening, {name}") with increased top padding for proper spacing.
 - **6 stat cards** (compact layout): Last Week Volume, This Week Volume, Sessions (Split), Day Streak, Total Sessions, PRs This Split.
-- **Active split label:** Shows current split name, emoji, and age.
-- **Main CTA card:** Shows next workout in rotation with "Start Session" button. Shows "Rest Day" message on rest days. "Preview" button shows the workout's exercise list.
-- **Soreness check-in:** Prompted the day after a workout (yesterday's session). Ratings: Not Sore, Sore, Very Sore, Wrecked. Can be skipped.
-- **Cardio card:** Quick link to CardioLogger.
-- **Weekly calendar strip:** Sun–Sat with emoji indicators for completed, planned, and rest days. Tapping a future day shows workout preview.
+- **Active split label:** Shows current split name and emoji (no "X/7 days" text — removed).
+- **Main CTA card:** Shows next workout in rotation with "Start Session" button. Shows "Rest Day" message on rest days. "Preview" button shows the workout's exercise list. Increased gap between Preview and Start Session buttons.
+- **Soreness check-in:** Prompted the day after a workout (yesterday's session). `yesterdayLogged` checks sessions, cardioSessions, AND restDaySessions. Ratings: Not Sore, Sore, Very Sore, Wrecked. Can be skipped.
+- **Action buttons row:** "Log Cardio" and "Log Rest Day" buttons side by side below the CTA card.
+- **StreakBadge:** Always rendered (even at 0, shows "0🔥"). Not conditionally hidden.
+- **Weekly calendar strip:** Sun–Sat with emoji indicators for completed, planned, and rest days. Explicitly logged rest days show a brighter dot. Tapping a future day shows workout preview.
 - **Monthly calendar view** (toggleable): Full month view.
 - **Tutorial overlay:** 4-step walkthrough on first visit.
 
@@ -295,9 +300,12 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - Timestamp-based: survives backgrounding. Chime plays via Web Audio API on completion.
 
 ### Streaks
-- `getWorkoutStreak()` counts consecutive calendar days with a session, going backwards.
-- Rest days in the rotation don't break the streak.
-- Streak resets to 0 if a non-rest workout day is missed.
+- `getWorkoutStreak(sessions, rotation, cardioSessions, restDaySessions)` counts consecutive calendar days with activity, going backwards from yesterday (skips today so streak doesn't zero out before the user logs).
+- **What counts as activity:** weight session, standalone cardio session, or an explicitly logged rest day.
+- **Flexible rest day allotment:** The number of rest days allowed per rotation cycle = count of `'rest'` entries in the rotation. These are consumed as a pool across any days in the cycle, not tied to specific calendar positions.
+- **Streak resets** only if a full calendar day passes with no activity of any kind (and no rest allotment remaining).
+- `getAchievements()` passes `cardioSessions` to `getWorkoutStreak`.
+- All call sites (Dashboard, History, BbLogger, Progress, ShareCard) pass both `cardioSessions` and `restDaySessions`.
 
 ### PR Tracking
 - `getExercisePRs()` scans all sessions for the highest weight and highest reps per exercise name.
@@ -314,7 +322,8 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - **Auto-start rest timer:** Toggle.
 - **First set defaults to:** Warmup or Working.
 - **Rest timer chime:** Toggle.
-- **Manage Data:** Export/Import full backup as JSON.
+- **Info section — "How Streaks Work":** Explains streak mechanics: logging any workout, cardio, or rest day keeps the streak alive. Rest day allotment = number of `'rest'` entries in the rotation. Example shown in the UI.
+- **Manage Data:** Export/Import full backup as JSON (includes `restDaySessions`).
 
 ### Theming
 - Two background themes via CSS custom properties: Obsidian (dark, default) and Daylight (light).
@@ -452,14 +461,22 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 43. **Auto-collapse completed exercises in focus mode (`BbLogger.jsx`):** Removed the `&& !exercise.done` guard from the `focusCollapsed` condition. Completed exercises now collapse along with pending ones when the numpad is open and another exercise owns the active field.
 44. **Fix numpad hide scroll jump (`CustomNumpad.jsx`):** `handleHide` now captures `window.scrollY` before blurring the active input, then calls `window.scrollTo({ top: y, behavior: 'instant' })` to restore the position immediately, preventing the page from scrolling up when the numpad slides away.
 
-### Batch 9 (April 12, 2026) — Rest day logging + allotment-based streaks
+### Batch 9 (April 12, 2026) — Streak overhaul + rest day logging
 
-45. **`restDaySessions` store field:** New array in Zustand store for explicitly logged rest days. Each entry: `{ id, date, createdAt }`. Included in `exportData`, `importData`, and persist `merge`.
-46. **`addRestDaySession` / `deleteRestDaySession` actions:** Add or remove a rest day entry. Dashboard uses these to toggle today's rest day.
-47. **"Log Rest Day" button on Dashboard:** Appears next to "Log Cardio" below the weekly calendar. Tapping logs a rest day for today; tapping again un-logs it. Shows "Rest Logged ✓" with a checkmark when active, "Log Rest Day" with moon icon otherwise. Visually quieter (lower opacity) than Log Cardio.
-48. **Streak counts logged rest days:** `getWorkoutStreak()` now accepts a 4th `restDaySessions` parameter and includes those dates in `sessionDaySet` — logging a rest day keeps the streak alive just like a workout or cardio session. All 4 call sites updated (Dashboard, History, BbLogger, Progress). `getAchievements` updated similarly.
-49. **`yesterdayLogged` includes rest days:** Dashboard's `yesterdayLogged` now also checks `restDaySessions`, so a logged rest day yesterday prevents the "missed workout" warning.
-50. **`isRestDay` hero card:** Shows when rotation says rest OR when user has explicitly logged a rest day today (and hasn't done a workout yet).
-51. **Calendar displays logged rest days:** `getDayInfo` returns `logged-rest` / `today-logged-rest` types. Weekly pills show a brighter dot for logged rest days; monthly grid shows a solid "R" badge.
-52. **`weekCompletedCount` includes logged rest days:** Days with a logged rest day count toward the week's completed tally.
-53. **"How Streaks Work" info section in HamburgerMenu:** New collapsible section in the Info sub-screen explaining: workout/cardio/rest all count toward streak; nothing logged = streak breaks; rest day allotment comes from split rotation; rest days are flexible.
+45. **Streak forward-check fix (`helpers.js`):** `getWorkoutStreak()` now counts backwards from *yesterday* (not today), so the streak doesn't drop to 0 before the user logs today's activity.
+46. **Cardio counts toward streak (`helpers.js`):** `getWorkoutStreak()` accepts a `cardioSessions` param. Cardio session dates are merged into the activity day set, so standalone cardio keeps the streak alive. All call sites (Dashboard, History, BbLogger, Progress, ShareCard) updated to pass `cardioSessions`.
+47. **Rest day logging (`useStore.js`, `Dashboard.jsx`):** New `restDaySessions` array in the store with `addRestDaySession` / `deleteRestDaySession` actions. "Log Rest Day" button added to Dashboard (next to Log Cardio). Included in full JSON export/import.
+48. **Rest days count toward streak (`helpers.js`):** `getWorkoutStreak()` also accepts `restDaySessions`. Logging a rest day on any given calendar day keeps the streak alive. All call sites pass `restDaySessions`.
+49. **Flexible rest day allotment (`helpers.js`):** Rest days are no longer position-based. The streak algorithm uses a pool equal to the count of `'rest'` entries in the rotation. Any empty day within a rotation cycle consumes one from the pool instead of breaking the streak.
+50. **Streak always visible (`Dashboard.jsx`):** `StreakBadge` renders unconditionally. At 0 it shows "0🔥" instead of being hidden.
+51. **"MISSED YESTERDAY" fix (`Dashboard.jsx`):** `yesterdayLogged` now checks all three arrays (sessions, cardioSessions, restDaySessions) so cardio-only or rest-day-only days suppress the soreness prompt correctly.
+52. **Removed "X/7 days" display (`Dashboard.jsx`):** The `weekCompletedCount/7` text was removed from the active split label. Now just shows the split name and emoji.
+53. **Calendar strip Sun–Sat (`Dashboard.jsx`):** Weekly strip changed from Mon–Sun to Sun–Sat to align with weekly volume stats.
+54. **Hero card spacing (`Dashboard.jsx`):** Increased gap between Preview and Start Session buttons; reduced bottom padding on the CTA card.
+55. **Unilateral ghost row fix (`BbLogger.jsx`):** `PrevSetRow` now displays `rawWeight` instead of the doubled `weight` for unilateral exercises, so "Last Time" shows the actual per-side input the user entered.
+56. **Uni toggle pre-selected (`BbLogger.jsx`):** The Uni toggle initializes to `true` if the last session had `unilateral: true` for that exercise.
+57. **Plates toggle pre-selected (`BbLogger.jsx`):** `plateLoaded` state is initialized from last session's set data — if the last session had plate data, the plate picker opens pre-loaded.
+58. **getDayInfo handles logged rest days (`Dashboard.jsx`):** Calendar day pills distinguish explicitly logged rest days (brighter dot / different style) from rotation rest days.
+59. **`getAchievements` updated (`helpers.js`):** Now passes `cardioSessions` (and `restDaySessions`) to `getWorkoutStreak` for accurate streak-based badge evaluation.
+60. **"How Streaks Work" info section (`HamburgerMenu.jsx`):** Added an expandable explainer in the Info menu covering streak rules, what counts as activity, and rest day allotment logic.
+61. **Drag-and-drop exercises between sections (`SplitBuilder.jsx`):** Long-press drag to reorder and move exercises between workout sections within the SplitBuilder. *(Note: implemented in worktree `claude/brave-chandrasekhar`, not yet merged to main.)*
