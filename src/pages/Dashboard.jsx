@@ -552,16 +552,16 @@ export default function Dashboard() {
     return { type: 'empty' }
   }
 
-  // ── Mon-Sun week days for circle calendar ─────────────────────────────────
-  const mondayOffset = (today.getDay() + 6) % 7 // 0=Mon, 1=Tue, ..., 6=Sun
-  const mondayWeekDays = Array.from({ length: 7 }, (_, i) => {
+  // ── Sun-Sat week days for circle calendar ────────────────────────────────
+  const sundayOffset = today.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today)
-    d.setDate(today.getDate() - mondayOffset + i)
+    d.setDate(today.getDate() - sundayOffset + i)
     return d
   })
 
-  // Count completed workout days this Mon-Sun week
-  const weekCompletedCount = mondayWeekDays.filter(d => {
+  // Count completed workout days this Sun-Sat week
+  const weekCompletedCount = weekDays.filter(d => {
     const info = getDayInfo(d)
     return info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
   }).length
@@ -808,7 +808,7 @@ export default function Dashboard() {
 
         {/* Circle row */}
         <div style={{ display: 'flex', gap: 6 }}>
-          {mondayWeekDays.map((day, i) => {
+          {weekDays.map((day, i) => {
             const info        = getDayInfo(day)
             const isToday     = toDateStr(day) === todayStr
             const isDone      = info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
@@ -902,7 +902,7 @@ export default function Dashboard() {
                   color: isToday ? theme.hex : 'var(--text-muted)',
                   letterSpacing: '0.05em',
                 }}>
-                  {MON_DAY_LABELS[i]}
+                  {DAY_LABELS[i]}
                 </span>
               </div>
             )
