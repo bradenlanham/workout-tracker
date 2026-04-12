@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 6, 2026 (Batch 8)
+> Last updated: April 12, 2026 (Batch 9)
 
 ## Rules for Claude
 
@@ -451,3 +451,15 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 42. **Compact sticky header (`BbLogger.jsx`):** Removed the ClipGraphic decorative SVG from the header. Reduced the back/timer row from `pb-2` to `pb-1.5`, shrunk control buttons (w-9→w-8, w-8→w-7), reduced timer badge padding (`px-3 py-1.5`→`px-2.5 py-1`) and font size (`text-base`→`text-sm`), reduced workout title from `text-2xl pb-4` to `text-lg pb-2`. Net ~35% less vertical header height.
 43. **Auto-collapse completed exercises in focus mode (`BbLogger.jsx`):** Removed the `&& !exercise.done` guard from the `focusCollapsed` condition. Completed exercises now collapse along with pending ones when the numpad is open and another exercise owns the active field.
 44. **Fix numpad hide scroll jump (`CustomNumpad.jsx`):** `handleHide` now captures `window.scrollY` before blurring the active input, then calls `window.scrollTo({ top: y, behavior: 'instant' })` to restore the position immediately, preventing the page from scrolling up when the numpad slides away.
+
+### Batch 9 (April 12, 2026) — Rest day logging + allotment-based streaks
+
+45. **`restDaySessions` store field:** New array in Zustand store for explicitly logged rest days. Each entry: `{ id, date, createdAt }`. Included in `exportData`, `importData`, and persist `merge`.
+46. **`addRestDaySession` / `deleteRestDaySession` actions:** Add or remove a rest day entry. Dashboard uses these to toggle today's rest day.
+47. **"Log Rest Day" button on Dashboard:** Appears next to "Log Cardio" below the weekly calendar. Tapping logs a rest day for today; tapping again un-logs it. Shows "Rest Logged ✓" with a checkmark when active, "Log Rest Day" with moon icon otherwise. Visually quieter (lower opacity) than Log Cardio.
+48. **Streak counts logged rest days:** `getWorkoutStreak()` now accepts a 4th `restDaySessions` parameter and includes those dates in `sessionDaySet` — logging a rest day keeps the streak alive just like a workout or cardio session. All 4 call sites updated (Dashboard, History, BbLogger, Progress). `getAchievements` updated similarly.
+49. **`yesterdayLogged` includes rest days:** Dashboard's `yesterdayLogged` now also checks `restDaySessions`, so a logged rest day yesterday prevents the "missed workout" warning.
+50. **`isRestDay` hero card:** Shows when rotation says rest OR when user has explicitly logged a rest day today (and hasn't done a workout yet).
+51. **Calendar displays logged rest days:** `getDayInfo` returns `logged-rest` / `today-logged-rest` types. Weekly pills show a brighter dot for logged rest days; monthly grid shows a solid "R" badge.
+52. **`weekCompletedCount` includes logged rest days:** Days with a logged rest day count toward the week's completed tally.
+53. **"How Streaks Work" info section in HamburgerMenu:** New collapsible section in the Info sub-screen explaining: workout/cardio/rest all count toward streak; nothing logged = streak breaks; rest day allotment comes from split rotation; rest days are flexible.
