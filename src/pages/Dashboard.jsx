@@ -238,7 +238,7 @@ const PARTICLES = [
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession } = useStore()
+  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession, restDaySessions, addRestDaySession, deleteRestDaySession } = useStore()
   const theme = getTheme(settings.accentColor)
 
   const isDark = settings.backgroundTheme !== 'daylight'
@@ -363,7 +363,7 @@ export default function Dashboard() {
     return new Date(s.date) >= new Date(activeSplit.createdAt)
   }).length
 
-  const streak = getWorkoutStreak(sessions, rotation, cardioSessions)
+  const streak = getWorkoutStreak(sessions, rotation, cardioSessions, restDaySessions)
 
   const RING_TIERS = [
     { name: 'Common',    startAngle: 0,     endAngle: 51.4,  color: theme.hex,  minStreak: 0  },
@@ -432,7 +432,7 @@ export default function Dashboard() {
   const yesterdayRotationItem = rotation?.length && sessions.length
     ? getRotationItemOnDate(yesterdayStr, sessions, rotation)
     : null
-  const yesterdayLogged = sessions.some(s => s.date?.split('T')[0] === yesterdayStr) || cardioSessions.some(c => c.date?.split('T')[0] === yesterdayStr)
+  const yesterdayLogged = sessions.some(s => s.date?.split('T')[0] === yesterdayStr) || cardioSessions.some(c => c.date?.split('T')[0] === yesterdayStr) || (restDaySessions || []).some(r => r.date?.split('T')[0] === yesterdayStr)
   const missedYesterdayWorkout = (!todayLogged && yesterdayRotationItem && yesterdayRotationItem !== 'rest' && !yesterdayLogged)
     ? yesterdayRotationItem
     : null
@@ -484,7 +484,14 @@ export default function Dashboard() {
     setShowSorenessModal(false)
   }
 
-  const isRestDay = nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout
+  const restDayDateSet = new Set(
+    (restDaySessions || []).map(r => r.date?.split('T')[0]).filter(Boolean)
+  )
+  const restDayLoggedToday = restDayDateSet.has(todayStr)
+  // Count rest day allotment per rotation cycle
+  const restDayAllotment = (rotation || []).filter(t => t === 'rest').length
+
+  const isRestDay = (nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout) || (restDayLoggedToday && !todayLogged)
 
   // ── Session map ───────────────────────────────────────────────────────────
   const sessionByDate = {}
@@ -528,12 +535,16 @@ export default function Dashboard() {
     const session    = sessionByDate[dStr]
     const hasCardio  = cardioAndWorkoutDateSet.has(dStr)
     const cardioOnly = !session && cardioDateSet.has(dStr)
+    const hasLoggedRest = restDayDateSet.has(dStr)
 
     if (cardioOnly) {
       return { type: isToday ? 'today-cardio' : 'cardio', hasCardio: true }
     }
     if (session) {
       return { type: isToday ? 'today-done' : 'done', session, emoji: getWorkoutEmoji(session.type), hasCardio }
+    }
+    if (hasLoggedRest) {
+      return { type: isToday ? 'today-logged-rest' : 'logged-rest' }
     }
     if (isToday) {
       if (isRestDay) return { type: 'today-rest', hasCardio }
@@ -563,7 +574,7 @@ export default function Dashboard() {
   // Count completed workout days this Sun-Sat week
   const weekCompletedCount = weekDays.filter(d => {
     const info = getDayInfo(d)
-    return info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
+    return info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio' || info.type === 'logged-rest' || info.type === 'today-logged-rest'
   }).length
 
   // ── Sun-Sat week days (for monthly calendar) ──────────────────────────────
@@ -814,6 +825,7 @@ export default function Dashboard() {
             const isDone      = info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
             const isPending   = info.type === 'today-pending'
             const isRestType  = info.type === 'today-rest' || info.type === 'past-rest' || info.type === 'future-rest'
+            const isLoggedRest = info.type === 'logged-rest' || info.type === 'today-logged-rest'
             const isFutureDay = info.type === 'future'
 
             let circleStyle = {}
@@ -831,6 +843,9 @@ export default function Dashboard() {
             } else if (isRestType) {
               circleSize = 10
               circleBg = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'
+            } else if (isLoggedRest) {
+              circleSize = 10
+              circleBg = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'
             } else {
               // future or empty
               circleBg = isDark ? 'rgba(255,255,255,0.06)' : 'transparent'
@@ -839,7 +854,7 @@ export default function Dashboard() {
               }
             }
 
-            const isRestDot = isRestType
+            const isRestDot = isRestType || isLoggedRest
 
             return (
               <div
@@ -853,7 +868,9 @@ export default function Dashboard() {
                       width: 8,
                       height: 8,
                       borderRadius: '50%',
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                      backgroundColor: isLoggedRest
+                        ? (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.3)')
+                        : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'),
                     }} />
                   ) : (
                     <button
@@ -946,6 +963,7 @@ export default function Dashboard() {
                 const isFuture    = info.type === 'future'
                 const isFutureRest = info.type === 'future-rest'
                 const isPastRest  = info.type === 'past-rest'
+                const isLoggedRestDay = info.type === 'logged-rest' || info.type === 'today-logged-rest'
                 const isCompleted = isDone || isTodayDone
 
                 let cellBg = 'rgba(255,255,255,0.04)'
@@ -953,6 +971,7 @@ export default function Dashboard() {
                 if (isTodayDone)  { cellBg = theme.hex; textColor = theme.contrastText }
                 else if (isDone)  { cellBg = theme.hex + '33'; textColor = theme.hex }
                 else if (isCardio || isTodayCard) { cellBg = 'rgba(96,165,250,0.2)'; textColor = '#60a5fa' }
+                else if (isLoggedRestDay) { cellBg = 'rgba(255,255,255,0.1)'; textColor = 'var(--text-secondary)' }
 
                 return (
                   <button
@@ -989,6 +1008,9 @@ export default function Dashboard() {
                     )}
                     {(isTodayRest || isFutureRest || isPastRest) && (
                       <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: isTodayRest ? 0.5 : 0.3, fontWeight: 600, color: 'var(--text-muted)' }}>R</span>
+                    )}
+                    {isLoggedRestDay && (
+                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, fontWeight: 700, color: 'var(--text-secondary)' }}>R</span>
                     )}
                     {isTodayPend && (
                       <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: 0.5 }}>{info.emoji}</span>
@@ -1243,8 +1265,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── SECTION 5: Log Cardio ghost button ──────────────────────────────── */}
-      <div style={{ ...fadeIn(420), display: 'flex', justifyContent: 'center', paddingBottom: 8 }}>
+      {/* ── SECTION 5: Log Cardio + Log Rest Day ghost buttons ─────────────── */}
+      <div style={{ ...fadeIn(420), display: 'flex', justifyContent: 'center', gap: 4, paddingBottom: 8 }}>
         <button
           onClick={() => navigate('/cardio')}
           style={{
@@ -1267,6 +1289,49 @@ export default function Dashboard() {
             <polyline points="12 6 12 12 16 14" />
           </svg>
           Log Cardio
+        </button>
+        <button
+          onClick={() => {
+            if (restDayLoggedToday) {
+              // Un-log: find and remove today's rest day entry
+              const todayEntry = (restDaySessions || []).find(r => r.date?.split('T')[0] === todayStr)
+              if (todayEntry) deleteRestDaySession(todayEntry.id)
+            } else {
+              addRestDaySession(new Date().toISOString())
+            }
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '10px 20px',
+            color: restDayLoggedToday
+              ? (isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)')
+              : (isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.22)'),
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {restDayLoggedToday ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Rest Logged
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+              Log Rest Day
+            </>
+          )}
         </button>
       </div>
 

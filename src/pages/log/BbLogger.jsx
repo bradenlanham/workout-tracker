@@ -1340,6 +1340,7 @@ export default function BbLogger() {
     activeSession, saveActiveSession, clearActiveSession,
     customTemplates, splits, activeSplitId, updateSplit,
     cardioSessions, addCardioSession, updateCardioSession,
+    restDaySessions,
   } = useStore()
   const theme = getTheme(settings.accentColor)
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
@@ -1780,7 +1781,7 @@ export default function BbLogger() {
       grade,
       cardio,
       theme,
-      streak: getWorkoutStreak(sessions, activeSplit?.rotation, cardioSessions),
+      streak: getWorkoutStreak(sessions, activeSplit?.rotation, cardioSessions, restDaySessions),
     })
     setShowConfirm(false)
     setComparisonData(exerciseData)

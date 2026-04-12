@@ -522,13 +522,13 @@ function ConsistencyHeatmap({ sessions, streak, accentHex }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Progress() {
-  const { sessions, settings, splits, activeSplitId, cardioSessions } = useStore()
+  const { sessions, settings, splits, activeSplitId, cardioSessions, restDaySessions } = useStore()
   const theme = getTheme(settings.accentColor)
   const accentHex = theme.hex
 
   const activeSplit = splits.find(sp => sp.id === activeSplitId)
   const rotation = activeSplit?.rotation || []
-  const streak = useMemo(() => getWorkoutStreak(sessions, rotation, cardioSessions), [sessions, rotation, cardioSessions])
+  const streak = useMemo(() => getWorkoutStreak(sessions, rotation, cardioSessions, restDaySessions), [sessions, rotation, cardioSessions, restDaySessions])
 
   return (
     <div style={{ paddingBottom: 100, minHeight: '100vh' }}>

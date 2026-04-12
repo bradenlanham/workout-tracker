@@ -158,7 +158,7 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme 
 
 // ── Session detail modal ───────────────────────────────────────────────────────
 
-function buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId, cardioSessions) {
+function buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId, cardioSessions, restDaySessions) {
   const exercises = session.data?.exercises || []
   const totalVolume = exercises.reduce((t, ex) =>
     t + ex.sets.reduce((s, set) => s + (set.reps || 0) * (set.weight || 0), 0), 0)
@@ -204,7 +204,7 @@ function buildShareData(session, settings, theme, splits, attachedCardio, sessio
           }
         : { completed: session.completedCardio || false },
     theme,
-    streak: getWorkoutStreak(sessions || [], splits.find(s => s.id === activeSplitId)?.rotation, cardioSessions),
+    streak: getWorkoutStreak(sessions || [], splits.find(s => s.id === activeSplitId)?.rotation, cardioSessions, restDaySessions),
   }
 }
 
@@ -223,7 +223,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showShareCard, setShowShareCard] = useState(false)
   const [showGradePicker, setShowGradePicker] = useState(false)
-  const { settings, updateSession, cardioSessions, splits, sessions, activeSplitId } = useStore()
+  const { settings, updateSession, cardioSessions, splits, sessions, activeSplitId, restDaySessions } = useStore()
   const theme = getTheme(settings.accentColor)
   const d        = session.data || {}
   const isBb     = session.mode === 'bb'
@@ -236,7 +236,7 @@ function SessionDetail({ session, onClose, onDelete }) {
   if (showShareCard) {
     return (
       <ShareCard
-        data={buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId, cardioSessions)}
+        data={buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId, cardioSessions, restDaySessions)}
         onDone={() => setShowShareCard(false)}
         sessionId={session.id}
         onUpdateSession={updateSession}

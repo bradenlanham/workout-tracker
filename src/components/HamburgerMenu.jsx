@@ -12,11 +12,12 @@ export default function HamburgerMenu({ open, setOpen }) {
   const [subScreen, setSubScreen]       = useState(null) // null | 'settings' | 'info'
   const [showDataSection, setShowDataSection] = useState(false)
   const [showTrackingInfo, setShowTrackingInfo] = useState(false)
+  const [showStreakInfo, setShowStreakInfo] = useState(false)
 
   const isLogging = loc.pathname.startsWith('/log/bb/')
   if (isLogging) return null
 
-  const close = () => { setOpen(false); setSubScreen(null); setShowDataSection(false); setShowTrackingInfo(false) }
+  const close = () => { setOpen(false); setSubScreen(null); setShowDataSection(false); setShowTrackingInfo(false); setShowStreakInfo(false) }
   const go = (path) => { navigate(path); close() }
 
   const handleImport = () => {
@@ -320,6 +321,29 @@ export default function HamburgerMenu({ open, setOpen }) {
                       <p>Your split advances after each logged session.</p>
                       <p>Streak = consecutive calendar days with a session.</p>
                       <p>Weekly stats reset every Monday.</p>
+                    </div>
+                  )}
+
+                  <button
+                    className={rowClass}
+                    style={{ ...rowStyle, borderBottom: showStreakInfo ? 'none' : '1px solid var(--bg-item)' }}
+                    onClick={() => setShowStreakInfo(v => !v)}
+                  >
+                    <span>How Streaks Work</span>
+                    <span className="text-c-dim text-sm">{showStreakInfo ? '▾' : '▸'}</span>
+                  </button>
+
+                  {showStreakInfo && (
+                    <div className="bg-item rounded-xl p-4 text-sm text-c-dim space-y-3 mt-1" style={{ borderBottom: '1px solid var(--bg-item)' }}>
+                      <p><strong className="text-c-primary">What counts toward your streak:</strong></p>
+                      <ul className="space-y-1.5 pl-2">
+                        <li>🏋️ Logging a <strong className="text-c-secondary">workout</strong> → streak continues</li>
+                        <li>🏃 Logging <strong className="text-c-secondary">cardio</strong> only → streak continues</li>
+                        <li>😴 Logging a <strong className="text-c-secondary">rest day</strong> → streak continues</li>
+                        <li>❌ Logging <strong className="text-c-secondary">nothing</strong> → streak resets to 0</li>
+                      </ul>
+                      <p className="pt-1"><strong className="text-c-primary">Rest day allotment:</strong> The number of rest days in your split's rotation is your allotment per cycle. You can use them whenever you want — they don't have to fall on specific days.</p>
+                      <p>Use the <strong className="text-c-secondary">Log Rest Day</strong> button on the dashboard to record a rest day and keep your streak alive.</p>
                     </div>
                   )}
                 </>

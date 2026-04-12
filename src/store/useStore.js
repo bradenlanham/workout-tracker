@@ -64,6 +64,9 @@ const useStore = create(
       customCardioTypes: [],
       activeCardioSession: null,
 
+      // ── Rest days ──────────────────────────────────────────────────────────
+      restDaySessions: [],
+
       // ── Split init (call on app mount) ────────────────────────────────────
       // Auto-creates the built-in split from hardcoded data if splits is empty.
       // Preserves any workoutSequence the user may have saved previously.
@@ -152,6 +155,22 @@ const useStore = create(
           if (state.customCardioTypes.includes(typeStr)) return {}
           return { customCardioTypes: [...state.customCardioTypes, typeStr] }
         })
+      },
+
+      // ── Rest day actions ──────────────────────────────────────────────────
+
+      addRestDaySession: (dateStr) => {
+        const newEntry = {
+          id: `rest_${generateId()}`,
+          date: dateStr || new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        }
+        set(state => ({ restDaySessions: [...state.restDaySessions, newEntry] }))
+        return newEntry
+      },
+
+      deleteRestDaySession: (id) => {
+        set(state => ({ restDaySessions: state.restDaySessions.filter(r => r.id !== id) }))
       },
 
       attachCardioToSession: (cardioId, sessionId) => {
@@ -253,6 +272,7 @@ const useStore = create(
           exerciseLibrary: state.exerciseLibrary,
           cardioSessions: state.cardioSessions,
           customCardioTypes: state.customCardioTypes,
+          restDaySessions: state.restDaySessions,
         }
         const json = JSON.stringify(payload, null, 2)
         const blob = new Blob([json], { type: 'application/json' })
@@ -282,6 +302,7 @@ const useStore = create(
               exerciseLibrary: data.exerciseLibrary || [],
               cardioSessions: data.cardioSessions || [],
               customCardioTypes: data.customCardioTypes || [],
+              restDaySessions: data.restDaySessions || [],
             })
             return true
           }
@@ -315,6 +336,7 @@ const useStore = create(
           cardioSessions: persisted.cardioSessions || current.cardioSessions,
           customCardioTypes: persisted.customCardioTypes || current.customCardioTypes,
           activeCardioSession: persisted.activeCardioSession ?? null,
+          restDaySessions: persisted.restDaySessions || current.restDaySessions,
           // Existing users who already have sessions are treated as onboarded
           hasCompletedOnboarding: persisted.hasCompletedOnboarding
             || hasExistingSessions

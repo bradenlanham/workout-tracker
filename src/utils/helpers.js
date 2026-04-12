@@ -141,8 +141,8 @@ export function getRotationItemOnDate(dateStr, sessions, rotation) {
   return rotation[((anchorIdx + daysDiff) % rotation.length + rotation.length) % rotation.length]
 }
 
-export function getWorkoutStreak(sessions, rotation, cardioSessions = []) {
-  if (!sessions.length && !cardioSessions.length) return 0
+export function getWorkoutStreak(sessions, rotation, cardioSessions = [], restDaySessions = []) {
+  if (!sessions.length && !cardioSessions.length && !restDaySessions.length) return 0
 
   // Use LOCAL date methods to avoid UTC-midnight vs local-midnight mismatch.
   // new Date('2026-04-07') parses as UTC midnight; in UTC-5 that's local Apr 6 19:00,
@@ -153,6 +153,7 @@ export function getWorkoutStreak(sessions, rotation, cardioSessions = []) {
   const sessionDaySet = new Set([
     ...sessions.map(s => toLocalStr(new Date(s.date))),
     ...(cardioSessions || []).map(c => toLocalStr(new Date(c.date))),
+    ...(restDaySessions || []).map(r => toLocalStr(new Date(r.date))),
   ])
   const today         = new Date()
   const todayStr      = toLocalStr(today)
@@ -160,6 +161,7 @@ export function getWorkoutStreak(sessions, rotation, cardioSessions = []) {
   const allActivityDates = [
     ...sessions.map(s => s.date),
     ...(cardioSessions || []).map(c => c.date),
+    ...(restDaySessions || []).map(r => r.date),
   ]
   const mostRecentDay = toLocalStr(
     new Date([...allActivityDates].sort((a, b) => new Date(b) - new Date(a))[0])
@@ -200,10 +202,10 @@ export function getWorkoutStreak(sessions, rotation, cardioSessions = []) {
 
 // ── Achievements ─────────────────────────────────────────────────────────────
 
-export function getAchievements(sessions, rotation, cardioSessions = []) {
+export function getAchievements(sessions, rotation, cardioSessions = [], restDaySessions = []) {
   const bbSessions = sessions.filter(s => s.mode === 'bb')
   const total      = bbSessions.length
-  const streak     = getWorkoutStreak(sessions, rotation, cardioSessions)
+  const streak     = getWorkoutStreak(sessions, rotation, cardioSessions, restDaySessions)
   const totalPRs   = bbSessions.flatMap(s =>
     (s.data?.exercises || []).flatMap(ex => ex.sets.filter(set => set.isNewPR))
   ).length
