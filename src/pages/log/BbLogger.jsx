@@ -1385,9 +1385,21 @@ export default function BbLogger() {
 
   const savedSession = (activeSession && activeSession.type === type) ? activeSession : null
 
-  const lastSessionForInit = getLastBbSession(sessions, type)
-  const lastSessionExMap = {}
-  lastSessionForInit?.data?.exercises?.forEach(ex => { lastSessionExMap[ex.name] = ex })
+  // Build a map of exercise name → data from the MOST RECENT session that logged it,
+  // scanning ALL past sessions of this workout type (newest first).
+  // Used for: unilateral/plates init, ghost row "Last Time" data, and extras collection.
+  const allPastSessions = sessions
+    .filter(s => s.mode === 'bb' && s.type === type && s.data?.exercises?.length)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  const lastExDataByName = {}
+  for (const sess of allPastSessions) {
+    for (const ex of sess.data.exercises) {
+      if (!lastExDataByName[ex.name]) {
+        lastExDataByName[ex.name] = ex // first seen = most recent (sorted newest-first)
+      }
+    }
+  }
 
   const templateExercises = groups.flatMap(group =>
     group.exercises.map((name, i) => ({
@@ -1401,33 +1413,40 @@ export default function BbLogger() {
       platesPerSide: 2,
       plateWeight: 45,
       barWeight: 45,
-      unilateral: !!lastSessionExMap[name]?.unilateral,
-      plateLoaded: !!lastSessionExMap[name]?.plates,
+      unilateral: !!lastExDataByName[name]?.unilateral,
+      plateLoaded: !!(lastExDataByName[name]?.plates),
     }))
   )
 
-  // Merge in exercises from the last session of this type that aren't already
-  // in the template — this ensures custom exercises always reappear.
+  // Merge in ALL exercises ever added across ALL past sessions that aren't in the
+  // template — this ensures custom exercises persist permanently, not just one session.
   const defaultExercises = (() => {
-    const lastSess = getLastBbSession(sessions, type)
-    if (!lastSess?.data?.exercises?.length) return templateExercises
+    if (!allPastSessions.length) return templateExercises
     const templateNames = new Set(templateExercises.map(e => e.name))
-    const extras = lastSess.data.exercises
-      .filter(ex => !templateNames.has(ex.name))
-      .map((ex, i) => ({
-        id:    `prev-${ex.name}-${i}`,
-        name:  ex.name,
-        group: 'Added',
-        sets:  [{ type: firstSetType, reps: '', weight: '' }],
-        notes: '',
-        done:  false,
-        plateMode: false,
-        platesPerSide: 2,
-        plateWeight: 45,
-        barWeight: 45,
-        unilateral: !!ex.unilateral,
-        plateLoaded: !!ex.plates,
-      }))
+    const extrasSeen = new Set()
+    const extras = []
+    for (const sess of allPastSessions) {
+      for (const ex of sess.data.exercises) {
+        if (!templateNames.has(ex.name) && !extrasSeen.has(ex.name)) {
+          extrasSeen.add(ex.name)
+          const lastEx = lastExDataByName[ex.name]
+          extras.push({
+            id:    `prev-${ex.name}-${extras.length}`,
+            name:  ex.name,
+            group: 'Added',
+            sets:  [{ type: firstSetType, reps: '', weight: '' }],
+            notes: '',
+            done:  false,
+            plateMode: false,
+            platesPerSide: 2,
+            plateWeight: 45,
+            barWeight: 45,
+            unilateral: !!lastEx?.unilateral,
+            plateLoaded: !!(lastEx?.plates),
+          })
+        }
+      }
+    }
     return [...templateExercises, ...extras]
   })()
 
@@ -1963,7 +1982,7 @@ export default function BbLogger() {
                     <ExerciseItem
                       key={ex.id}
                       exercise={ex}
-                      lastSessionEx={lastSession?.data?.exercises?.find(e => e.name === ex.name)}
+                      lastSessionEx={lastExDataByName[ex.name]}
                       allSessions={sessions}
                       workoutType={type}
                       onUpdate={updated => updateExercise(ex.id, updated)}
