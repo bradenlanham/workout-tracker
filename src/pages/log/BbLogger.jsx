@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../data/exercises'
 import {
-  getLastBbSession, getExercisePRs, getWorkoutStreak,
+  getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -123,13 +123,12 @@ function PrevSetRow({ set }) {
 
 function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex }) {
   const numpadCtx = useContext(NumpadContext)
-  const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
   const mult      = plateMultiplier || 2
   const total     = calcTotal(plates, barWeight, mult)
   const r         = parseInt(set.reps) || 0
-  const isPR      = (total > maxWeight && total > 0) || (r > maxReps && r > 0)
+  const isPR      = isSetPR(allSessions, exerciseName, total, r)
 
   // Always-fresh refs so stable callbacks never hold stale closures
   const setRef       = useRef(set)
@@ -373,10 +372,9 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
     )
   }
 
-  const { maxWeight, maxReps } = getExercisePRs(allSessions, exerciseName)
-  const w   = parseFloat(set.weight) || 0
-  const r   = parseInt(set.reps)     || 0
-  const isPR = (w > maxWeight && w > 0) || (r > maxReps && r > 0)
+  const w    = parseFloat(set.weight) || 0
+  const r    = parseInt(set.reps)     || 0
+  const isPR = isSetPR(allSessions, exerciseName, w, r)
 
   const weightFieldKey = `weight-${exerciseName}-${setIndex}`
   const repsFieldKey   = `reps-${exerciseName}-${setIndex}`
@@ -554,11 +552,10 @@ function ExerciseItem({
     setExpanded(false)
   }, [])
 
-  const hasPR = scopedSessions.length > 0 && exercise.sets.some(s => {
-    const { maxWeight, maxReps } = getExercisePRs(scopedSessions, exercise.name)
-    return (parseFloat(s.weight) > maxWeight && parseFloat(s.weight) > 0) ||
-      (parseInt(s.reps) > maxReps && parseInt(s.reps) > 0)
-  })
+  const exercisePR = getExercisePRs(scopedSessions, exercise.name)
+  const hasPR = scopedSessions.length > 0 && exercise.sets.some(s =>
+    isSetPR(scopedSessions, exercise.name, parseFloat(s.weight) || 0, parseInt(s.reps) || 0)
+  )
 
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
@@ -595,10 +592,22 @@ function ExerciseItem({
           className="flex-1 flex items-center justify-between p-4 text-left min-w-0"
         >
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {exercise.done && <span className="text-emerald-400 text-lg leading-none">✓</span>}
               <p className="font-semibold text-base truncate">{exercise.name}</p>
               {hasPR && !exercise.done && <span className="text-amber-400 text-sm">🏆</span>}
+              {exercisePR.maxWeight > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0"
+                  style={{ fontSize: 10, lineHeight: 1.2, letterSpacing: '0.02em' }}
+                  title="All-time PR for this exercise"
+                >
+                  <span className="font-bold">PR</span>
+                  <span className="font-semibold">
+                    {exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}
+                  </span>
+                </span>
+              )}
             </div>
             {!expanded && !exercise.done && lastTopSet && (
               <p style={{ fontSize: 10 }} className="text-c-faint opacity-50 mt-0.5 leading-none">
@@ -1617,13 +1626,12 @@ export default function BbLogger() {
           unilateral: uni,
           plates: ex.plateLoaded ? ex.sets.map(s => s.plates ? { plates: s.plates, barWeight: s.barWeight } : null) : undefined,
           sets: filledSets.map(s => {
-            const { maxWeight, maxReps } = getExercisePRs(sessions, ex.name)
             const rawW = parseFloat(s.weight) || 0
             const w = uni ? rawW * 2 : rawW
             const r = parseInt(s.reps)     || 0
             return {
               type: s.type, reps: r, weight: w, rawWeight: rawW,
-              isNewPR: (w > maxWeight && w > 0) || (r > maxReps && r > 0),
+              isNewPR: isSetPR(scopedSessions, ex.name, w, r),
               ...(s.plates ? { plates: s.plates, barWeight: s.barWeight } : {}),
             }
           }),

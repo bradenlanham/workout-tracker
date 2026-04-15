@@ -71,9 +71,18 @@ export function getLastBbSession(sessions, workoutType) {
   return matching[0] || null
 }
 
+// Weight-anchored PR model.
+//
+// A PR is defined as either:
+//   1. A new max weight (any rep count beats the previous max weight), OR
+//   2. Matching the current max weight with MORE reps than any prior set
+//      at that same max weight.
+//
+// maxWeight              = heaviest weight ever lifted on this exercise
+// maxRepsAtMaxWeight     = best rep count achieved at that max weight
 export function getExercisePRs(sessions, exerciseName) {
-  let maxWeight = 0
-  let maxReps = 0
+  let maxWeight          = 0
+  let maxRepsAtMaxWeight = 0
 
   sessions
     .filter(s => s.mode === 'bb')
@@ -81,17 +90,39 @@ export function getExercisePRs(sessions, exerciseName) {
       const ex = s.data?.exercises?.find(e => e.name === exerciseName)
       if (!ex) return
       ex.sets.forEach(set => {
-        if ((set.weight || 0) > maxWeight) maxWeight = set.weight
-        if ((set.reps || 0) > maxReps) maxReps = set.reps
+        const w = Number(set.weight) || 0
+        const r = Number(set.reps)   || 0
+        if (w <= 0 || r <= 0) return
+        if (w > maxWeight) {
+          maxWeight          = w
+          maxRepsAtMaxWeight = r
+        } else if (w === maxWeight && r > maxRepsAtMaxWeight) {
+          maxRepsAtMaxWeight = r
+        }
       })
     })
 
-  return { maxWeight, maxReps }
+  return { maxWeight, maxRepsAtMaxWeight }
 }
 
+// Single source of truth for whether a (weight, reps) pair represents a new PR
+// for a given exercise, relative to the provided sessions list.
+// Reps alone — no matter how many — at a weight BELOW the current max are never
+// a PR. Only higher weight (any reps) or same top weight with more reps.
+export function isSetPR(sessions, exerciseName, weight, reps) {
+  const w = parseFloat(weight) || 0
+  const r = parseInt(reps)     || 0
+  if (w <= 0 || r <= 0) return false
+  const { maxWeight, maxRepsAtMaxWeight } = getExercisePRs(sessions, exerciseName)
+  if (maxWeight === 0) return true                       // first logged set for this exercise
+  if (w > maxWeight) return true                         // new weight PR
+  if (w === maxWeight && r > maxRepsAtMaxWeight) return true  // new rep PR at top weight
+  return false
+}
+
+// Back-compat alias — same semantics as isSetPR.
 export function isPR(sessions, exerciseName, weight, reps) {
-  const { maxWeight, maxReps } = getExercisePRs(sessions, exerciseName)
-  return (weight > maxWeight) || (reps > maxReps && weight >= maxWeight)
+  return isSetPR(sessions, exerciseName, weight, reps)
 }
 
 export function calcSessionVolume(exercises) {
