@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 12, 2026 (Batch 9)
+> Last updated: April 15, 2026 (Batch 10)
 
 ## Rules for Claude
 
@@ -51,7 +51,7 @@ src/
 │   └── exerciseLibrary.js     # 140+ exercises by muscle group for the exercise picker
 │
 ├── utils/
-│   └── helpers.js             # getNextBbWorkout, getLastBbSession, getExercisePRs, getWorkoutStreak,
+│   └── helpers.js             # getNextBbWorkout, getLastBbSession, getExercisePRs, isSetPR, isPR, getWorkoutStreak,
 │                              # getRotationItemOnDate, getAchievements, formatDate/Time, playBeep, generateId
 │                              # getWorkoutStreak signature: (sessions, rotation, cardioSessions, restDaySessions)
 │
@@ -228,7 +228,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - **Unilateral (Uni) toggle:** Per-exercise. When active, volume is doubled at save time. The doubled weight is stored in `weight`, original in `rawWeight`. **Uni toggle is pre-selected** from last session's `unilateral` flag.
 - **Previous session ghost rows:** Shows last session's sets as faded, non-interactive rows. Ghost rows display `rawWeight` (not doubled weight) for unilateral exercises. Includes plate breakdown if logged in plate mode. Toggled by "Last Time" button per exercise.
 - **Set types:** warmup / working / drop. Drop sets auto-suggest 75% of previous working set weight.
-- **PR detection:** Compares current set weight/reps against all-time maxes across all sessions for that exercise.
+- **PR detection:** Weight-anchored — a set is a PR only if (a) its weight exceeds the all-time max weight for that exercise, or (b) its weight equals the all-time max and reps exceed the best rep count ever achieved at that max weight. Reps alone at sub-max weight are never a PR. Single source of truth lives in `isSetPR()` in `helpers.js` and is used by the live per-set trophy, the card-level trophy, and the saved `isNewPR` flag. An amber "PR 185×8" chip on every exercise card surfaces the all-time max at a glance.
 - **Auto-sync custom exercises to split:** After saving, any exercises that were in the session but not in the template get added to the appropriate section of the split definition. Placement is intelligent — inserts near the exercises it was positioned next to during the session.
 - **Finish flow:** Grade picker → optional cardio attachment (attach today's cardio, log inline, or log now via CardioLogger) → **Session Comparison screen** (shows volume % diff per exercise vs last session, green ↑ / red ↓) → Share Card.
 - **Session timer:** Timestamp-based, survives backgrounding via `visibilitychange` listener.
@@ -308,8 +308,12 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - All call sites (Dashboard, History, BbLogger, Progress, ShareCard) pass both `cardioSessions` and `restDaySessions`.
 
 ### PR Tracking
-- `getExercisePRs()` scans all sessions for the highest weight and highest reps per exercise name.
-- New PRs are flagged with 🏆 in the session logger, share card, and history.
+- **Weight-anchored model.** `getExercisePRs(sessions, exerciseName)` returns `{ maxWeight, maxRepsAtMaxWeight }` — the heaviest weight ever lifted on that exercise, plus the best rep count achieved specifically at that max weight. Reps at sub-max weight are not tracked as PRs.
+- **Single source of truth:** `isSetPR(sessions, exerciseName, weight, reps)` is the canonical PR check. A set is a PR if weight > maxWeight, OR weight === maxWeight AND reps > maxRepsAtMaxWeight. Used by per-set trophies (`PlateSetRow`, `SetRow`), the card-level `hasPR` trophy, and the save-time `isNewPR` flag baked onto each set. `isPR()` is a back-compat alias.
+- **Scoped to workoutType.** All PR comparisons (live UI and save-time flag) use `scopedSessions` — sessions filtered to the current workout type — so "Pull-ups" in Back Day and Full Body track independently.
+- **All-time PR chip.** Each exercise card header shows a small amber chip (`PR {maxWeight}×{maxRepsAtMaxWeight}`) as soon as the exercise has any logged history, giving immediate context for what threshold a new PR has to beat.
+- New PRs are flagged with 🏆 in the session logger, share card, and history. Historical sessions keep the `isNewPR` flags they were saved with — only newly saved sessions reflect the new weight-anchored rule.
+- **Known gap:** `getExercisePRs` signature changed from `{ maxWeight, maxReps }` to `{ maxWeight, maxRepsAtMaxWeight }`. No other call sites remain (verified via grep), but watch for stale destructuring if resurrecting old branches.
 
 ### Achievements
 - Badge system based on milestones: session counts (1/10/25/50/100), PR counts (1/10/25), streaks (3/7 days), grade quality (5 A-grade sessions).
@@ -483,3 +487,13 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 62. **Persistent added exercises (`BbLogger.jsx`):** Logger now scans ALL past sessions of a workout type (not just the most recent) to build the exercise list. Any exercise ever added to a workout is permanently remembered. Uses `lastExDataByName` map keyed by exercise name from newest-first session scan.
 63. **Last Time always most recent (`BbLogger.jsx`):** Ghost row (`PrevSetRow`) data pulls from the most recent session that actually included that specific exercise, not just the immediately preceding session. Fixes stale/missing Last Time data when exercises are skipped.
 64. **Plates/Uni init from all sessions (`BbLogger.jsx`):** Template exercise plates/uni pre-selection also uses `lastExDataByName` instead of only last session, ensuring correct toggle state even when exercises were skipped recently.
+
+### Batch 10 (April 15, 2026) — PR refactor + all-time PR chip
+
+65. **PR model rewritten to weight-anchored (`helpers.js`):** `getExercisePRs` now returns `{ maxWeight, maxRepsAtMaxWeight }` instead of the old `{ maxWeight, maxReps }`. Only the heaviest weight ever lifted is tracked, along with the best rep count achieved specifically at that top weight. Reps at lighter weights no longer qualify as PRs.
+66. **`isSetPR()` single source of truth (`helpers.js`):** New canonical helper. A set is a PR iff `weight > maxWeight` (new heaviest) or `weight === maxWeight && reps > maxRepsAtMaxWeight` (more reps at top weight). Zero-weight and zero-rep sets never qualify. First-ever logged set for an exercise counts as a PR.
+67. **`isPR()` kept as back-compat alias (`helpers.js`):** Delegates to `isSetPR`. The old `isPR` semantics (reps-PR only if weight >= maxWeight) is gone; the new stricter rule applies everywhere.
+68. **All inline PR checks consolidated (`BbLogger.jsx`):** `PlateSetRow` per-set trophy, `SetRow` per-set trophy, card-level `hasPR` trophy, and save-time `isNewPR` flag all now call `isSetPR(scopedSessions, ...)`. Eliminates the four-way drift that previously produced inconsistent trophies.
+69. **Save-time PR scoping fix (`BbLogger.jsx`):** `isNewPR` baked onto each saved set now uses `scopedSessions` (filtered to the current workout type) instead of all sessions. Aligns the saved flag with what the UI shows during logging and makes an exercise reused across splits (e.g., Pull-ups in Back Day vs. Full Body) track independently end-to-end.
+70. **All-time PR chip on every exercise card (`BbLogger.jsx`):** Small amber chip `PR {maxWeight}×{maxRepsAtMaxWeight}` renders next to the exercise name in the card header whenever any history exists. Visible in both collapsed and expanded states. Makes the PR threshold explicit so users know what they're chasing — ghost "Last Time" rows were misleading users into thinking they had a PR when their actual all-time max was higher.
+71. **Historical flags unchanged:** Sessions saved before this batch retain their original `isNewPR` flags (computed under the old looser rule). Only newly saved sessions reflect the weight-anchored model. A one-time migration pass over historical sessions is available if desired but not yet run.
