@@ -155,8 +155,12 @@ export function playBeep() {
 }
 
 // ── Streaks ─────────────────────────────────────────────────────────────────
-// Counts consecutive workout days going backwards, skipping rest days in the
-// rotation so that a scheduled rest day doesn't break the streak.
+// An "active day" is any calendar day with at least one of:
+//   • a weight session
+//   • a cardio session (any type)
+//   • an explicitly-logged rest day
+// A streak is an unbroken run of active days. Rotation rest slots do NOT
+// count — if nothing was logged, the day is a gap and breaks the streak.
 
 export function getRotationItemOnDate(dateStr, sessions, rotation) {
   if (!rotation || !rotation.length) return null
@@ -172,71 +176,88 @@ export function getRotationItemOnDate(dateStr, sessions, rotation) {
   return rotation[((anchorIdx + daysDiff) % rotation.length + rotation.length) % rotation.length]
 }
 
-export function getWorkoutStreak(sessions, rotation, cardioSessions = [], restDaySessions = []) {
-  if (!sessions.length && !cardioSessions.length && !restDaySessions.length) return 0
+// Use LOCAL date methods to avoid UTC-midnight vs local-midnight mismatch.
+// new Date('2026-04-07') parses as UTC midnight; in UTC-5 that's local Apr 6 19:00,
+// so .getDate() would return 6 instead of 7. Using 'T00:00:00' forces local midnight.
+function toLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
-  // Use LOCAL date methods to avoid UTC-midnight vs local-midnight mismatch.
-  // new Date('2026-04-07') parses as UTC midnight; in UTC-5 that's local Apr 6 19:00,
-  // so .getDate() would return 6 instead of 7. Using 'T00:00:00' forces local midnight.
-  const toLocalStr = d =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-  const sessionDaySet = new Set([
-    ...sessions.map(s => toLocalStr(new Date(s.date))),
-    ...(cardioSessions || []).map(c => toLocalStr(new Date(c.date))),
-    ...(restDaySessions || []).map(r => toLocalStr(new Date(r.date))),
+// Build the Set of active-day strings ('YYYY-MM-DD') from all three activity sources.
+function buildActiveDaySet(sessions, cardioSessions, restDaySessions) {
+  return new Set([
+    ...(sessions         || []).map(s => toLocalDateStr(new Date(s.date))),
+    ...(cardioSessions   || []).map(c => toLocalDateStr(new Date(c.date))),
+    ...(restDaySessions  || []).map(r => toLocalDateStr(new Date(r.date))),
   ])
-  const today         = new Date()
-  const todayStr      = toLocalStr(today)
+}
 
-  const allActivityDates = [
-    ...sessions.map(s => s.date),
-    ...(cardioSessions || []).map(c => c.date),
-    ...(restDaySessions || []).map(r => r.date),
-  ]
-  const mostRecentDay = toLocalStr(
-    new Date([...allActivityDates].sort((a, b) => new Date(b) - new Date(a))[0])
-  )
+// Current streak — unbroken run of active days ending at (or just before) today.
+// Today is exempt from breaking the streak so the count doesn't zero out
+// before the user logs today's activity.
+export function getWorkoutStreak(sessions, cardioSessions = [], restDaySessions = []) {
+  const activeSet = buildActiveDaySet(sessions, cardioSessions, restDaySessions)
+  if (!activeSet.size) return 0
 
-  // Streak is live only if every day from mostRecentDay → today is either a
-  // session or a rest day in the rotation (no missed workout days in between).
-  // Use 'T00:00:00' (local midnight) so date arithmetic is always exactly 24h.
-  const msrDate     = new Date(mostRecentDay + 'T00:00:00')
-  const todayMid    = new Date(todayStr + 'T00:00:00')
+  const todayStr = toLocalDateStr(new Date())
+
+  // Find the most recent active day
+  const mostRecent = [...activeSet].sort().pop()
+  const msrDate    = new Date(mostRecent + 'T00:00:00')
+  const todayMid   = new Date(todayStr    + 'T00:00:00')
+
+  // Any gap day between mostRecent and today (exclusive of today) kills the streak.
   const daysToToday = Math.round((todayMid - msrDate) / 86400000)
   for (let d = 1; d <= daysToToday; d++) {
     const checkD = new Date(msrDate)
     checkD.setDate(msrDate.getDate() + d)
-    const checkStr = toLocalStr(checkD)
-    // Don't penalise today — the user may still log their session
-    if (checkStr === todayStr) continue
-    if (sessionDaySet.has(checkStr)) continue
-    const rotItem = rotation?.length ? getRotationItemOnDate(checkStr, sessions, rotation) : null
-    if (rotItem !== 'rest') return 0
+    const checkStr = toLocalDateStr(checkD)
+    if (checkStr === todayStr) continue      // don't penalise today
+    if (!activeSet.has(checkStr)) return 0
   }
 
-  // Count backwards from mostRecentDay, skipping rest days
+  // Count backwards from the most recent active day.
   let streak  = 0
-  let current = new Date(mostRecentDay + 'T00:00:00')
+  let cursor  = new Date(mostRecent + 'T00:00:00')
   for (let i = 0; i < 730; i++) {
-    const dStr = toLocalStr(current)
-    if (sessionDaySet.has(dStr)) {
-      streak++
-    } else {
-      const rotItem = rotation?.length ? getRotationItemOnDate(dStr, sessions, rotation) : null
-      if (rotItem !== 'rest') break
-    }
-    current.setDate(current.getDate() - 1)
+    const dStr = toLocalDateStr(cursor)
+    if (!activeSet.has(dStr)) break
+    streak++
+    cursor.setDate(cursor.getDate() - 1)
   }
   return streak
 }
 
+// Best streak — longest consecutive-active-day run anywhere in the user's history.
+// Uses the same active-day definition as getWorkoutStreak, so the two numbers
+// are guaranteed to be consistent (best >= current, always).
+export function getBestStreak(sessions, cardioSessions = [], restDaySessions = []) {
+  const activeSet = buildActiveDaySet(sessions, cardioSessions, restDaySessions)
+  if (!activeSet.size) return 0
+
+  const sorted = [...activeSet].sort()
+  let best = 1
+  let cur  = 1
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(sorted[i - 1] + 'T00:00:00')
+    const curr = new Date(sorted[i]     + 'T00:00:00')
+    const diff = Math.round((curr - prev) / 86400000)
+    if (diff === 1) {
+      cur++
+      if (cur > best) best = cur
+    } else {
+      cur = 1
+    }
+  }
+  return best
+}
+
 // ── Achievements ─────────────────────────────────────────────────────────────
 
-export function getAchievements(sessions, rotation, cardioSessions = [], restDaySessions = []) {
+export function getAchievements(sessions, cardioSessions = [], restDaySessions = []) {
   const bbSessions = sessions.filter(s => s.mode === 'bb')
   const total      = bbSessions.length
-  const streak     = getWorkoutStreak(sessions, rotation, cardioSessions, restDaySessions)
+  const streak     = getWorkoutStreak(sessions, cardioSessions, restDaySessions)
   const totalPRs   = bbSessions.flatMap(s =>
     (s.data?.exercises || []).flatMap(ex => ex.sets.filter(set => set.isNewPR))
   ).length

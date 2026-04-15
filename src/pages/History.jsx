@@ -204,7 +204,7 @@ function buildShareData(session, settings, theme, splits, attachedCardio, sessio
           }
         : { completed: session.completedCardio || false },
     theme,
-    streak: getWorkoutStreak(sessions || [], splits.find(s => s.id === activeSplitId)?.rotation, cardioSessions, restDaySessions),
+    streak: getWorkoutStreak(sessions || [], cardioSessions, restDaySessions),
   }
 }
 

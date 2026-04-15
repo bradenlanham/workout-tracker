@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getWorkoutStreak } from '../utils/helpers'
+import { getWorkoutStreak, getBestStreak } from '../utils/helpers'
 
 // ── Muscle group mapping ──────────────────────────────────────────────────────
 
@@ -421,7 +421,7 @@ function PRTimeline({ sessions, accentHex }) {
 // Visual 5 — Consistency Heatmap
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ConsistencyHeatmap({ sessions, streak, accentHex }) {
+function ConsistencyHeatmap({ sessions, streak, bestStreak, accentHex }) {
   const byDate = {}
   sessions.filter(s => s.mode === 'bb').forEach(s => {
     const d = s.date.split('T')[0]
@@ -460,17 +460,6 @@ function ConsistencyHeatmap({ sessions, streak, accentHex }) {
 
   const { r, g, b } = hexToRgb(accentHex)
   const activeDays = cells.filter(c => !c.future && c.sets > 0).length
-
-  // Best streak (simple consecutive days with sessions)
-  let bestStreak = 0, cur = 0
-  Object.keys(byDate).sort().forEach((d, i, arr) => {
-    if (i === 0) { cur = 1; bestStreak = 1; return }
-    const prev = new Date(arr[i - 1])
-    const curr = new Date(d)
-    const diff = Math.round((curr - prev) / 86400000)
-    if (diff === 1) { cur++; if (cur > bestStreak) bestStreak = cur }
-    else cur = 1
-  })
 
   return (
     <div>
@@ -522,13 +511,12 @@ function ConsistencyHeatmap({ sessions, streak, accentHex }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Progress() {
-  const { sessions, settings, splits, activeSplitId, cardioSessions, restDaySessions } = useStore()
+  const { sessions, settings, splits, cardioSessions, restDaySessions } = useStore()
   const theme = getTheme(settings.accentColor)
   const accentHex = theme.hex
 
-  const activeSplit = splits.find(sp => sp.id === activeSplitId)
-  const rotation = activeSplit?.rotation || []
-  const streak = useMemo(() => getWorkoutStreak(sessions, rotation, cardioSessions, restDaySessions), [sessions, rotation, cardioSessions, restDaySessions])
+  const streak     = useMemo(() => getWorkoutStreak(sessions, cardioSessions, restDaySessions), [sessions, cardioSessions, restDaySessions])
+  const bestStreak = useMemo(() => getBestStreak(sessions,    cardioSessions, restDaySessions), [sessions, cardioSessions, restDaySessions])
 
   return (
     <div style={{ paddingBottom: 100, minHeight: '100vh' }}>
@@ -574,7 +562,7 @@ export default function Progress() {
           <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
             13-week training calendar — intensity reflects sets logged
           </p>
-          <ConsistencyHeatmap sessions={sessions} streak={streak} accentHex={accentHex} />
+          <ConsistencyHeatmap sessions={sessions} streak={streak} bestStreak={bestStreak} accentHex={accentHex} />
         </StatCard>
 
       </div>

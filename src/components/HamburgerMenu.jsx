@@ -342,8 +342,7 @@ export default function HamburgerMenu({ open, setOpen }) {
                         <li>😴 Logging a <strong className="text-c-secondary">rest day</strong> → streak continues</li>
                         <li>❌ Logging <strong className="text-c-secondary">nothing</strong> → streak resets to 0</li>
                       </ul>
-                      <p className="pt-1"><strong className="text-c-primary">Rest day allotment:</strong> The number of rest days in your split's rotation is your allotment per cycle. You can use them whenever you want — they don't have to fall on specific days.</p>
-                      <p>Use the <strong className="text-c-secondary">Log Rest Day</strong> button on the dashboard to record a rest day and keep your streak alive.</p>
+                      <p className="pt-1"><strong className="text-c-primary">Every day has to be logged.</strong> If you don't log anything on a given day — no workout, no cardio, no rest day — your streak resets. Your rotation rest slots don't automatically bridge; you have to actually tap <strong className="text-c-secondary">Log Rest Day</strong> to keep the streak alive on an off day.</p>
                     </div>
                   )}
                 </>

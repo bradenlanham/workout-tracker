@@ -1808,7 +1808,7 @@ export default function BbLogger() {
       grade,
       cardio,
       theme,
-      streak: getWorkoutStreak(sessions, activeSplit?.rotation, cardioSessions, restDaySessions),
+      streak: getWorkoutStreak(sessions, cardioSessions, restDaySessions),
     })
     setShowConfirm(false)
     setComparisonData(exerciseData)
