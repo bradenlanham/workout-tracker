@@ -1574,6 +1574,9 @@ export default function BbLogger() {
   // ── Session helpers ──────────────────────────────────────────────────────
 
   const lastSession = getLastBbSession(sessions, type)
+  const scopedSessions = type
+    ? sessions.filter(s => s.mode === 'bb' && s.data?.workoutType === type)
+    : sessions.filter(s => s.mode === 'bb')
 
   const updateExercise = useCallback((id, updated) =>
     setExercises(prev => prev.map(ex => ex.id === id ? updated : ex)),
