@@ -638,12 +638,12 @@ function ExerciseItem({
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0 max-w-[14rem] ${
                       exercise.rec
                         ? 'bg-blue-500/15 border border-blue-500/40 text-blue-300'
-                        : 'bg-item text-c-muted border border-dashed border-border-base'
+                        : 'bg-item text-c-faint'
                     }`}
                     title="Coach's recommendation (tap to edit)"
                   >
                     <span>📋</span>
-                    <span className="truncate">{exercise.rec ? exercise.rec : 'REC'}</span>
+                    <span className="truncate">{exercise.rec ? exercise.rec : 'Rec'}</span>
                   </button>
                 )
               )}

@@ -45,6 +45,61 @@ function EmojiPicker({ value, onChange, ringClass }) {
   )
 }
 
+// ── Rec Inline pill (tap to edit prescription) ─────────────────────────────────
+
+function RecInline({ rec, onChange }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft]     = useState(rec || '')
+
+  const commit = () => {
+    const val = (draft || '').trim().slice(0, 20)
+    if ((rec || '') !== val) onChange(val)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        value={draft}
+        onChange={e => setDraft(e.target.value.slice(0, 20))}
+        onBlur={commit}
+        onPointerDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => {
+          if (e.key === 'Enter')  { e.preventDefault(); commit() }
+          if (e.key === 'Escape') { setDraft(rec || ''); setEditing(false) }
+        }}
+        maxLength={20}
+        autoFocus
+        placeholder="e.g. 3x20 (warmup)"
+        className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-base text-c-primary border border-blue-500/50 outline-none w-36 shrink-0"
+      />
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onPointerDown={e => e.stopPropagation()}
+      onClick={e => {
+        e.stopPropagation()
+        setDraft(rec || '')
+        setEditing(true)
+      }}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold shrink-0 max-w-[10rem] transition-colors ${
+        rec
+          ? 'bg-blue-500/15 border border-blue-500/40 text-blue-300'
+          : 'bg-base text-c-faint'
+      }`}
+      title="Coach's recommendation (tap to edit)"
+    >
+      <span>📋</span>
+      <span className="truncate">{rec ? rec : 'Rec'}</span>
+    </button>
+  )
+}
+
 // ── Exercise Picker (full-screen overlay) ──────────────────────────────────────
 
 function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
@@ -176,10 +231,13 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
     workout?.sections?.length
       ? workout.sections.map(s => ({
           ...s,
-          // Normalize exercises to strings — imported workouts may have {name, note} objects
-          exercises: (s.exercises || []).map(ex =>
-            typeof ex === 'string' ? ex : (ex?.name || '')
-          ).filter(Boolean),
+          // Preserve exercises as-is: strings stay strings, {name, rec} objects keep their rec.
+          // Legacy imported workouts with malformed entries get dropped.
+          exercises: (s.exercises || []).map(ex => {
+            if (typeof ex === 'string') return ex
+            if (ex?.name) return ex.rec ? { name: ex.name, rec: ex.rec } : ex.name
+            return null
+          }).filter(Boolean),
         }))
       : DEFAULT_SECTION_LABELS.map(label => ({ label, exercises: [] }))
   )
@@ -195,7 +253,7 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
   const dragActive = useRef(false)
   const scrollRef = useRef(null)
 
-  const allAdded = sections.flatMap(s => s.exercises)
+  const allAdded = sections.flatMap(s => s.exercises.map(e => typeof e === 'string' ? e : e.name))
 
   // Check if any logged session has notes for a given exercise name
   const hasSessionNotes = (exName) =>
@@ -216,6 +274,20 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
     setSections(prev => prev.map((s, i) =>
       i === sIdx ? { ...s, exercises: s.exercises.filter((_, j) => j !== eIdx) } : s
     ))
+  }
+
+  const updateRec = (sIdx, eIdx, rec) => {
+    setSections(prev => prev.map((s, si) => {
+      if (si !== sIdx) return s
+      return {
+        ...s,
+        exercises: s.exercises.map((e, ei) => {
+          if (ei !== eIdx) return e
+          const name = typeof e === 'string' ? e : e.name
+          return rec ? { name, rec } : name
+        }),
+      }
+    }))
   }
 
   const addExercise = (sIdx, exName) => {
@@ -456,7 +528,9 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
                       <p className="text-xs text-c-faint text-center py-2">No exercises — tap + Add</p>
                     )}
 
-                    {sec.exercises.map((exName, eIdx) => {
+                    {sec.exercises.map((ex, eIdx) => {
+                      const exName = typeof ex === 'string' ? ex : ex.name
+                      const exRec  = typeof ex === 'string' ? '' : (ex.rec || '')
                       const isBeingDragged = dragItem?.sIdx === sIdx && dragItem?.eIdx === eIdx
                       return (
                         <div key={eIdx}>
@@ -470,7 +544,13 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
                             {isDragging ? (
                               <span className="text-c-muted text-sm shrink-0">☰</span>
                             ) : null}
-                            <span className="flex-1 text-sm min-w-0">{exName}</span>
+                            <span className="flex-1 text-sm min-w-0 truncate">{exName}</span>
+                            {!isDragging && (
+                              <RecInline
+                                rec={exRec}
+                                onChange={rec => updateRec(sIdx, eIdx, rec)}
+                              />
+                            )}
                             {hasSessionNotes(exName) && (
                               <span title="Has notes from previous sessions" className="text-sm leading-none opacity-60">ℹ️</span>
                             )}
@@ -970,10 +1050,13 @@ export default function SplitBuilder() {
           emoji: w.emoji || '🏋️',
           sections: (w.sections || []).map(s => ({
             ...s,
-            // Normalize exercises: imported splits may store {name, note} objects — flatten to strings
-            exercises: (s.exercises || []).map(ex =>
-              typeof ex === 'string' ? ex : (ex?.name || '')
-            ).filter(Boolean),
+            // Preserve exercises as-is: strings stay strings, {name, rec} objects keep their rec.
+            // Legacy imported splits with malformed entries get dropped.
+            exercises: (s.exercises || []).map(ex => {
+              if (typeof ex === 'string') return ex
+              if (ex?.name) return ex.rec ? { name: ex.name, rec: ex.rec } : ex.name
+              return null
+            }).filter(Boolean),
           })),
         }))
       : []
