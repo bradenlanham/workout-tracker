@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 16, 2026 (Batch 12 hotfix)
+> Last updated: April 16, 2026 (Batch 13)
 
 ## Rules for Claude
 
@@ -520,3 +520,12 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 ### Batch 12 (April 16, 2026) — Critical hotfix: Finish Session modal buttons dead
 
 78. **`scopedSessions` scope bug (`BbLogger.jsx`):** Batch 10's PR refactor introduced `isSetPR(scopedSessions, ex.name, w, r)` inside `buildExerciseData()` at line 1634, but `scopedSessions` was only defined inside the `ExerciseItem` sub-component (line 466) — not in the parent `BbLogger` scope. Every Finish-modal button (Attach / Keep Separate / Log Another / Save / Log Now) threw `ReferenceError: scopedSessions is not defined` when clicked, silently aborting the save. Users saw buttons that "don't respond." Fixed by defining `scopedSessions` at the BbLogger scope alongside `lastSession` (line 1576), mirroring the ExerciseItem filter. Verified by reproducing the error live (clicking Save returned `save-err: scopedSessions is not defined`), applying the fix, and re-running both Scenario A (cardio today → Attach) and Scenario B (no cardio → Save): both now persist correctly with `isNewPR` flag set.
+
+### Batch 13 (April 16, 2026) — Per-exercise REC (coach's prescription) pill + PR chip relocation
+
+79. **REC field on split exercises (`BbLogger.jsx`, data model):** Split workout exercises can now be either a bare string (legacy) OR an object `{ name, rec }` where `rec` is a free-text prescription string like `"3x20 (warmup)"` or `"4x10-10-10 drop"`. Length-capped at 20 chars to keep the title row from overflowing. Loaded via the existing `typeof e === 'string' ? e : e.name` unwrap pattern that already existed in the save-time auto-persist code.
+80. **Blue REC pill on every exercise card header (`BbLogger.jsx`):** When an exercise is expanded, a small pill appears next to the title: 📋 with the rec text if set (filled blue pill, `bg-blue-500/15 border-blue-500/40 text-blue-300`), or dashed-outline `📋 REC` placeholder when empty (`bg-item text-c-muted border-dashed`). Hidden when the card is collapsed. Tapping the pill swaps it for a 20-char-capped input field; Enter/blur commits, Esc cancels. `stopPropagation` on the pill/input prevents the card collapse toggle from firing.
+81. **Header wrapper changed from `<button>` to `<div role="button">` (`BbLogger.jsx`):** The collapse-toggle header is now a div so nested interactive elements (the REC pill button + its inline `<input>`) are valid HTML. `cursor-pointer select-none` + `role="button"` + `tabIndex={0}` preserve click-to-expand semantics.
+82. **PR chip moved + hidden when collapsed (`BbLogger.jsx`):** The amber `PR {maxWeight}×{maxRepsAtMaxWeight}` chip no longer sits in the title row. It's now grouped with `Last Time` in the toolbar row (`[Plates] [Uni] …[Last Time] [PR chip]`, right-aligned via a `ml-auto` group wrapper) and only renders when the card is expanded. Distinct blue (REC) vs. amber (PR) keeps the two concepts visually separate.
+83. **Rec auto-persists to split on session save (`BbLogger.jsx`):** The existing auto-persist block (which added new exercises to the split template) now also detects `rec` changes on existing template exercises. If any `rec` differs from what's in the split — or if new exercises exist with a `rec` — the block rebuilds the `sections` array, promoting exercises to `{name, rec}` when rec is set and keeping them as strings when it isn't. Result: once the user fills in a REC in the logger and saves, it pre-populates next time they open that workout.
+84. **REC loads from split on template init (`BbLogger.jsx`):** `templateExercises` now unwraps `{name, rec}` from the split's section.exercises entries and seeds `exercise.rec` on the logger's exercise state. Also survives active-session reload since `exercise.rec` persists through the existing `saveActiveSession` flow.

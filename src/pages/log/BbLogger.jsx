@@ -450,6 +450,19 @@ function ExerciseItem({
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
+  const [editingRec, setEditingRec] = useState(false)
+  const [recDraft, setRecDraft]     = useState(exercise.rec || '')
+
+  const commitRec = () => {
+    const val = (recDraft || '').trim().slice(0, 20)
+    if ((exercise.rec || '') !== val) onUpdate({ ...exercise, rec: val })
+    setEditingRec(false)
+  }
+
+  useEffect(() => {
+    if (!expanded && editingRec) commitRec()
+    // eslint-disable-next-line
+  }, [expanded])
   const { settings, setRestEndTimestamp } = useStore()
   const numpadCtx = useContext(NumpadContext)
 
@@ -586,27 +599,53 @@ function ExerciseItem({
             </svg>
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setExpanded(v => !v)}
-          className="flex-1 flex items-center justify-between p-4 text-left min-w-0"
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => { if (!editingRec) setExpanded(v => !v) }}
+          className="flex-1 flex items-center justify-between p-4 text-left min-w-0 cursor-pointer select-none"
         >
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {exercise.done && <span className="text-emerald-400 text-lg leading-none">✓</span>}
               <p className="font-semibold text-base truncate">{exercise.name}</p>
               {hasPR && !exercise.done && <span className="text-amber-400 text-sm">🏆</span>}
-              {exercisePR.maxWeight > 0 && (
-                <span
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0"
-                  style={{ fontSize: 10, lineHeight: 1.2, letterSpacing: '0.02em' }}
-                  title="All-time PR for this exercise"
-                >
-                  <span className="font-bold">PR</span>
-                  <span className="font-semibold">
-                    {exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}
-                  </span>
-                </span>
+              {expanded && !exercise.done && (
+                editingRec ? (
+                  <input
+                    type="text"
+                    value={recDraft}
+                    onChange={e => setRecDraft(e.target.value.slice(0, 20))}
+                    onBlur={commitRec}
+                    onClick={e => e.stopPropagation()}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter')  { e.preventDefault(); commitRec() }
+                      if (e.key === 'Escape') { setRecDraft(exercise.rec || ''); setEditingRec(false) }
+                    }}
+                    maxLength={20}
+                    autoFocus
+                    placeholder="e.g. 3x20 (warmup)"
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-item text-c-primary border border-blue-500/50 outline-none w-44"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation()
+                      setRecDraft(exercise.rec || '')
+                      setEditingRec(true)
+                    }}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0 max-w-[14rem] ${
+                      exercise.rec
+                        ? 'bg-blue-500/15 border border-blue-500/40 text-blue-300'
+                        : 'bg-item text-c-muted border border-dashed border-border-base'
+                    }`}
+                    title="Coach's recommendation (tap to edit)"
+                  >
+                    <span>📋</span>
+                    <span className="truncate">{exercise.rec ? exercise.rec : 'REC'}</span>
+                  </button>
+                )
               )}
             </div>
             {!expanded && !exercise.done && lastTopSet && (
@@ -636,7 +675,7 @@ function ExerciseItem({
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
-        </button>
+        </div>
 
         {/* ── Reorder arrows — right side, only in reorder mode ──────── */}
         {reorderMode && !exercise.done && (
@@ -693,19 +732,33 @@ function ExerciseItem({
             >
               Uni
             </button>
-            {prevSets.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowPrev(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ml-auto ${
-                  showPrev
-                    ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
-                    : 'bg-item text-c-dim'
-                }`}
-              >
-                <span>⏱️</span> Last Time
-              </button>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {prevSets.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowPrev(v => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    showPrev
+                      ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
+                      : 'bg-item text-c-dim'
+                  }`}
+                >
+                  <span>⏱️</span> Last Time
+                </button>
+              )}
+              {exercisePR.maxWeight > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0"
+                  style={{ fontSize: 11, lineHeight: 1.2, letterSpacing: '0.02em' }}
+                  title="All-time PR for this exercise"
+                >
+                  <span className="font-bold">PR</span>
+                  <span className="font-semibold">
+                    {exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}
+                  </span>
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Column headers — weight first, reps second */}
@@ -1411,20 +1464,25 @@ export default function BbLogger() {
   }
 
   const templateExercises = groups.flatMap(group =>
-    group.exercises.map((name, i) => ({
-      id:    `${group.label}-${name}-${i}`,
-      name,
-      group: group.label,
-      sets:  [{ type: firstSetType, reps: '', weight: '' }],
-      notes: '',
-      done:  false,
-      plateMode: false,
-      platesPerSide: 2,
-      plateWeight: 45,
-      barWeight: 45,
-      unilateral: !!lastExDataByName[name]?.unilateral,
-      plateLoaded: !!(lastExDataByName[name]?.plates),
-    }))
+    group.exercises.map((e, i) => {
+      const name = typeof e === 'string' ? e : e.name
+      const rec  = typeof e === 'string' ? '' : (e.rec || '')
+      return {
+        id:    `${group.label}-${name}-${i}`,
+        name,
+        rec,
+        group: group.label,
+        sets:  [{ type: firstSetType, reps: '', weight: '' }],
+        notes: '',
+        done:  false,
+        plateMode: false,
+        platesPerSide: 2,
+        plateWeight: 45,
+        barWeight: 45,
+        unilateral: !!lastExDataByName[name]?.unilateral,
+        plateLoaded: !!(lastExDataByName[name]?.plates),
+      }
+    })
   )
 
   // Merge in ALL exercises ever added across ALL past sessions that aren't in the
@@ -1662,23 +1720,42 @@ export default function BbLogger() {
 
     clearActiveSession()
 
-    // ── Auto-persist custom exercises to split template ───────────────────
+    // ── Auto-persist custom exercises + rec changes to split template ─────
     if (!isCustomTemplate && activeSplitWorkout) {
       const templateExNames = new Set(
         activeSplitWorkout.sections.flatMap(s =>
           s.exercises.map(e => typeof e === 'string' ? e : e.name)
         )
       )
-      const allSessionNames  = exercises.map(ex => ex.name)
+      const allSessionNames   = exercises.map(ex => ex.name)
       const exerciseDataNames = new Set(exerciseData.map(e => e.name))
       const newExercises = exercises.filter(ex =>
         exerciseDataNames.has(ex.name) && !templateExNames.has(ex.name)
       )
 
-      if (newExercises.length > 0) {
+      const liveRecByName = new Map()
+      exercises.forEach(ex => { liveRecByName.set(ex.name, ex.rec || '') })
+
+      const hasRecChanges = activeSplitWorkout.sections.some(s =>
+        s.exercises.some(e => {
+          const name = typeof e === 'string' ? e : e.name
+          const templateRec = typeof e === 'string' ? '' : (e.rec || '')
+          const liveRec = liveRecByName.get(name)
+          return liveRec !== undefined && liveRec !== templateRec
+        })
+      )
+
+      if (newExercises.length > 0 || hasRecChanges) {
         const sections = activeSplitWorkout.sections.map(s => ({
           ...s,
-          exercises: [...s.exercises],
+          exercises: s.exercises.map(e => {
+            const name = typeof e === 'string' ? e : e.name
+            const liveRec = liveRecByName.get(name)
+            const finalRec = liveRec !== undefined
+              ? liveRec
+              : (typeof e === 'string' ? '' : (e.rec || ''))
+            return finalRec ? { name, rec: finalRec } : name
+          }),
         }))
         const templatePos = {}
         sections.forEach((s, si) => {
@@ -1711,7 +1788,8 @@ export default function BbLogger() {
           } else {
             insertIdx = section.exercises.length
           }
-          section.exercises.splice(insertIdx, 0, newEx.name)
+          const entry = newEx.rec ? { name: newEx.name, rec: newEx.rec } : newEx.name
+          section.exercises.splice(insertIdx, 0, entry)
           templatePos[newEx.name] = insertSi
         }
 
