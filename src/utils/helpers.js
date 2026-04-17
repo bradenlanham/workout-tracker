@@ -1,4 +1,4 @@
-import { BB_WORKOUT_SEQUENCE } from '../data/exercises'
+import { BB_WORKOUT_SEQUENCE } from '../data/exercises.js'
 
 // ── Time helpers ─────────────────────────────────────────────────────────────
 
@@ -71,6 +71,15 @@ export function getLastBbSession(sessions, workoutType) {
   return matching[0] || null
 }
 
+// Canonical per-side load accessor. For unilateral sets, `weight` holds the
+// doubled volume value and `rawWeight` preserves the actual per-side input.
+// Always read through this so phantom PRs and doubled "Last:" hints never
+// surface. For non-unilateral sets, rawWeight is undefined and weight IS the
+// per-side (a.k.a. actual bar) load, so the fallback is correct.
+export function perSideLoad(set) {
+  return set?.rawWeight ?? set?.weight ?? 0
+}
+
 // Weight-anchored PR model.
 //
 // A PR is defined as either:
@@ -90,8 +99,8 @@ export function getExercisePRs(sessions, exerciseName) {
       const ex = s.data?.exercises?.find(e => e.name === exerciseName)
       if (!ex) return
       ex.sets.forEach(set => {
-        const w = Number(set.weight) || 0
-        const r = Number(set.reps)   || 0
+        const w = Number(perSideLoad(set)) || 0
+        const r = Number(set.reps)         || 0
         if (w <= 0 || r <= 0) return
         if (w > maxWeight) {
           maxWeight          = w
@@ -276,6 +285,76 @@ export function getAchievements(sessions, cardioSessions = [], restDaySessions =
   if (streak   >= 7) badges.push({ id: 'str7',  icon: '🌟', label: 'Week Streak',     sub: '7 days straight!'        })
   if (gradeAs  >= 5) badges.push({ id: 'grade', icon: '⭐', label: 'Excellence',      sub: '5 A-grade sessions'      })
   return badges
+}
+
+// ── V1 → V2 persist migration ───────────────────────────────────────────────
+// Backfills rawWeight on every historical set and recomputes isNewPR
+// chronologically per exercise name using the weight-anchored rule against
+// per-side load. Deployed by the Zustand persist `migrate` hook when the
+// stored version is < 2. Safe to run multiple times — idempotent because the
+// fallback `set.rawWeight ?? set.weight` returns the same value second time.
+
+export function migrateSessionsToV2(sessions) {
+  if (!Array.isArray(sessions) || !sessions.length) return sessions
+
+  // Pass 1 — backfill rawWeight. For pre-batch-2 (pre-unilateral) sets the
+  // rawWeight field never existed; for post-cutover non-unilateral sets it
+  // was also omitted. Defaulting to weight is correct in both cases because
+  // weight == per-side load whenever there's no unilateral doubling.
+  const backfilled = sessions.map(s => {
+    if (!s?.data?.exercises) return s
+    return {
+      ...s,
+      data: {
+        ...s.data,
+        exercises: s.data.exercises.map(ex => ({
+          ...ex,
+          sets: (ex.sets || []).map(set => ({
+            ...set,
+            rawWeight: set.rawWeight ?? set.weight,
+          })),
+        })),
+      },
+    }
+  })
+
+  // Pass 2 — recompute isNewPR chronologically per exercise name.
+  const prTracker    = new Map()  // exerciseName -> { maxWeight, maxRepsAtMaxWeight }
+  const updatesByIdx = new Map()  // original index -> rewritten exercises[]
+
+  const chronological = backfilled
+    .map((s, i) => ({ s, i, t: new Date(s.date).getTime() }))
+    .filter(x => x.s?.mode === 'bb' && x.s?.data?.exercises && !isNaN(x.t))
+    .sort((a, b) => a.t - b.t)
+
+  for (const { s, i } of chronological) {
+    const updatedExercises = s.data.exercises.map(ex => {
+      let running = prTracker.get(ex.name) || { maxWeight: 0, maxRepsAtMaxWeight: 0 }
+      const updatedSets = (ex.sets || []).map(set => {
+        const w = Number(perSideLoad(set)) || 0
+        const r = Number(set.reps)         || 0
+        if (w <= 0 || r <= 0) return { ...set, isNewPR: false }
+        let isNewPR = false
+        if (running.maxWeight === 0 || w > running.maxWeight) {
+          isNewPR = true
+          running = { maxWeight: w, maxRepsAtMaxWeight: r }
+        } else if (w === running.maxWeight && r > running.maxRepsAtMaxWeight) {
+          isNewPR = true
+          running = { ...running, maxRepsAtMaxWeight: r }
+        }
+        return { ...set, isNewPR }
+      })
+      prTracker.set(ex.name, running)
+      return { ...ex, sets: updatedSets }
+    })
+    updatesByIdx.set(i, updatedExercises)
+  }
+
+  return backfilled.map((s, i) =>
+    updatesByIdx.has(i)
+      ? { ...s, data: { ...s.data, exercises: updatesByIdx.get(i) } }
+      : s
+  )
 }
 
 // ── Misc ───────────────────────────────────────────────────────────────────

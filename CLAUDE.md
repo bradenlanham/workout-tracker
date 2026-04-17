@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 16, 2026 (Batch 13)
+> Last updated: April 17, 2026 (Batch 14)
 
 ## Rules for Claude
 
@@ -51,10 +51,12 @@ src/
 │   └── exerciseLibrary.js     # 140+ exercises by muscle group for the exercise picker
 │
 ├── utils/
-│   └── helpers.js             # getNextBbWorkout, getLastBbSession, getExercisePRs, isSetPR, isPR, getWorkoutStreak,
-│                              # getBestStreak, getRotationItemOnDate, getAchievements, formatDate/Time, playBeep, generateId
+│   └── helpers.js             # getNextBbWorkout, getLastBbSession, perSideLoad, getExercisePRs, isSetPR, isPR,
+│                              # getWorkoutStreak, getBestStreak, getRotationItemOnDate, getAchievements,
+│                              # migrateSessionsToV2, formatDate/Time, playBeep, generateId
 │                              # getWorkoutStreak signature: (sessions, cardioSessions, restDaySessions)
 │                              # getBestStreak    signature: (sessions, cardioSessions, restDaySessions)
+│                              # perSideLoad(set): canonical per-side load accessor — rawWeight ?? weight ?? 0
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -314,7 +316,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - **Single source of truth:** `isSetPR(sessions, exerciseName, weight, reps)` is the canonical PR check. A set is a PR if weight > maxWeight, OR weight === maxWeight AND reps > maxRepsAtMaxWeight. Used by per-set trophies (`PlateSetRow`, `SetRow`), the card-level `hasPR` trophy, and the save-time `isNewPR` flag baked onto each set. `isPR()` is a back-compat alias.
 - **Scoped to workoutType.** All PR comparisons (live UI and save-time flag) use `scopedSessions` — sessions filtered to the current workout type — so "Pull-ups" in Back Day and Full Body track independently.
 - **All-time PR chip.** Each exercise card header shows a small amber chip (`PR {maxWeight}×{maxRepsAtMaxWeight}`) as soon as the exercise has any logged history, giving immediate context for what threshold a new PR has to beat.
-- New PRs are flagged with 🏆 in the session logger, share card, and history. Historical sessions keep the `isNewPR` flags they were saved with — only newly saved sessions reflect the new weight-anchored rule.
+- New PRs are flagged with 🏆 in the session logger, share card, and history. Since Batch 14, historical `isNewPR` flags on all persisted sessions are recomputed under the weight-anchored-per-side rule by the v1→v2 persist migration, so they match what the live UI shows.
 - **Known gap:** `getExercisePRs` signature changed from `{ maxWeight, maxReps }` to `{ maxWeight, maxRepsAtMaxWeight }`. No other call sites remain (verified via grep), but watch for stale destructuring if resurrecting old branches.
 
 ### Achievements
@@ -363,8 +365,9 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 
 ## Data Persistence
 
-- **Zustand persist middleware** with localStorage key `workout-tracker-v1`.
+- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 2`.
 - Custom `merge` function in the persist config handles schema evolution: new fields get defaults, existing user settings are preserved via deep merge, existing users auto-skip onboarding.
+- `migrate` hook handles versioned schema changes. V1→V2 (Batch 14): backfills `rawWeight` on every set and recomputes `isNewPR` via `migrateSessionsToV2()` in helpers.js.
 - **Active session** (`activeSession`) persists across page reloads and app backgrounding so in-progress workouts are never lost.
 - **Rest timer** uses absolute timestamps (`restEndTimestamp`) rather than countdown values, so it stays accurate across backgrounding.
 
@@ -506,7 +509,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 68. **All inline PR checks consolidated (`BbLogger.jsx`):** `PlateSetRow` per-set trophy, `SetRow` per-set trophy, card-level `hasPR` trophy, and save-time `isNewPR` flag all now call `isSetPR(scopedSessions, ...)`. Eliminates the four-way drift that previously produced inconsistent trophies.
 69. **Save-time PR scoping fix (`BbLogger.jsx`):** `isNewPR` baked onto each saved set now uses `scopedSessions` (filtered to the current workout type) instead of all sessions. Aligns the saved flag with what the UI shows during logging and makes an exercise reused across splits (e.g., Pull-ups in Back Day vs. Full Body) track independently end-to-end.
 70. **All-time PR chip on every exercise card (`BbLogger.jsx`):** Small amber chip `PR {maxWeight}×{maxRepsAtMaxWeight}` renders next to the exercise name in the card header whenever any history exists. Visible in both collapsed and expanded states. Makes the PR threshold explicit so users know what they're chasing — ghost "Last Time" rows were misleading users into thinking they had a PR when their actual all-time max was higher.
-71. **Historical flags unchanged:** Sessions saved before this batch retain their original `isNewPR` flags (computed under the old looser rule). Only newly saved sessions reflect the weight-anchored model. A one-time migration pass over historical sessions is available if desired but not yet run.
+71. **Historical flags unchanged:** Sessions saved before this batch retain their original `isNewPR` flags (computed under the old looser rule). Only newly saved sessions reflect the weight-anchored model. A one-time migration pass over historical sessions is available if desired but not yet run. *(Batch 14 ran it.)*
 
 ### Batch 11 (April 15, 2026) — Streak unification + sandbox git rule removed
 
@@ -531,3 +534,15 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 84. **REC loads from split on template init (`BbLogger.jsx`):** `templateExercises` now unwraps `{name, rec}` from the split's section.exercises entries and seeds `exercise.rec` on the logger's exercise state. Also survives active-session reload since `exercise.rec` persists through the existing `saveActiveSession` flow.
 85. **SplitBuilder rec data-loss fix + inline rec entry (`SplitBuilder.jsx`):** Both places where `SplitBuilder` loaded existing split exercises (outer `useState` at line ~964 and `WorkoutBuilder` sub-component at line ~230) previously called `typeof ex === 'string' ? ex : (ex?.name || '')` — actively flattening `{name, rec}` objects back to strings. After Batch 13 landed, this silently wiped any rec set via the logger whenever the user edited the split. Fixed by preserving objects as-is (stripping only malformed entries). Also added a `RecInline` component that renders next to each exercise name in the workout builder so coaches can prescribe recs up front; same pill style as the logger, same 20-char cap, same stop-propagation behavior so editing doesn't interfere with drag-to-reorder.
 86. **Label + style tweaks (`BbLogger.jsx`, `SplitBuilder.jsx`):** "REC" → "Rec" (title case). Empty-state pill dropped the dashed white outline and softened to `bg-item text-c-faint` (no border) to de-emphasize when no recommendation is set. Filled pill remains blue; collapsed state still hides the pill entirely.
+
+### Batch 14 (April 17, 2026) — Canonical weight field + v2 migration (AI coaching prereq, step 1)
+
+Step 1 of the AI Coaching Recommender v1 plan (see `coaching-recommender-spec-v3.pdf` §3.1 and `.claude/plans/c-users-user-claude-code-workout-tracke-misty-hearth.md`). Fixes three live production bugs that silently corrupted the data the recommender depends on.
+
+87. **`perSideLoad(set)` helper (`helpers.js`):** New canonical accessor — `set.rawWeight ?? set.weight ?? 0`. Use this wherever a set's load is read for comparison or display. For non-unilateral sets `rawWeight` is undefined and `weight` IS the per-side load, so the fallback is correct. For unilateral sets, `rawWeight` holds the per-side input; `weight` holds the doubled volume value.
+88. **Phantom PR fix (`helpers.js:93`):** `getExercisePRs` reads `perSideLoad(set)` instead of `set.weight`. Previously post-2026-04-02 unilateral sets trivially beat pre-cutover records because the doubled `weight` field was compared against historical per-side values. Live PR trophies, all-time PR chips, and save-time `isNewPR` all now track per-side strength progression.
+89. **"Last:" display fix (`BbLogger.jsx:654-655`):** Collapsed-card inline "Last: 180×9" hint reads `perSideLoad(lastTopSet)` instead of `lastTopSet.weight`. Aligns with `PrevSetRow` (ghost rows) which was already correct. Same fix applied to both the plate-mode total (`= ${perSideLoad(lastTopSet)}`) and the non-plate-mode display.
+90. **Save-time PR check fix (`BbLogger.jsx:1695`):** `buildExerciseData()` now passes `rawW` (per-side) to `isSetPR`, not `w` (doubled). Aligns saved flags with the weight-anchored-per-side rule so newly saved unilateral sets don't trivially beat their own scoped history.
+91. **V1→V2 persist migration (`useStore.js:317`, `helpers.js`):** Persist version bumped `1 → 2`. New `migrate` hook runs `migrateSessionsToV2(persistedState.sessions)` — backfills `rawWeight` on every set (defaults to `weight`) and recomputes every `isNewPR` chronologically per exercise name using `perSideLoad`. O(sets), idempotent. Validated against `debug-backup.json` (24 sessions, 425 sets preserved, 188 rawWeight backfills, phantom PRs 232 → 135, unilateral PRs 48 → 18). Updates the Batch 10 "known gap" — historical flags now match the live UI rule.
+92. **Minor: `.js` extension on internal import (`helpers.js:1`):** `'../data/exercises'` → `'../data/exercises.js'`. Vite supports both; bare Node 24 requires the explicit extension. Enables `node migration-sanity.mjs` without a bundler step.
+93. **`migration-sanity.mjs` checked in (repo root):** Node ESM script — loads `debug-backup.json`, runs `migrateSessionsToV2`, reports before/after PR counts, rawWeight coverage, per-exercise max weight spot-checks, and name-collision candidates (preview of step 2's dedup work). Mirrors the `streak-debug.mjs` pattern already in the repo.

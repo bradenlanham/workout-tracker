@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../data/exercises'
 import {
-  getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak,
+  getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -651,8 +651,8 @@ function ExerciseItem({
             {!expanded && !exercise.done && lastTopSet && (
               <p style={{ fontSize: 10 }} className="text-c-faint opacity-50 mt-0.5 leading-none">
                 {lastTopSet.plates && formatPlateBreakdown(lastTopSet.plates)
-                  ? `Last: ${formatPlateBreakdown(lastTopSet.plates)} = ${lastTopSet.weight}`
-                  : `Last: ${lastTopSet.weight || '—'}${lastTopSet.reps ? `×${lastTopSet.reps}` : ''}`}
+                  ? `Last: ${formatPlateBreakdown(lastTopSet.plates)} = ${perSideLoad(lastTopSet)}`
+                  : `Last: ${perSideLoad(lastTopSet) || '—'}${lastTopSet.reps ? `×${lastTopSet.reps}` : ''}`}
               </p>
             )}
             {!expanded && !exercise.done && topSet && (topSet.reps || topSet.weight) && (
@@ -1692,7 +1692,7 @@ export default function BbLogger() {
             const r = parseInt(s.reps)     || 0
             return {
               type: s.type, reps: r, weight: w, rawWeight: rawW,
-              isNewPR: isSetPR(scopedSessions, ex.name, w, r),
+              isNewPR: isSetPR(scopedSessions, ex.name, rawW, r),
               ...(s.plates ? { plates: s.plates, barWeight: s.barWeight } : {}),
             }
           }),

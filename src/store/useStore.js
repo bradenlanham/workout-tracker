@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId } from '../utils/helpers'
+import { generateId, migrateSessionsToV2 } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -314,7 +314,18 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 1,
+      version: 2,
+      // V1→V2: backfill rawWeight on every historical set and recompute every
+      // isNewPR flag using the weight-anchored rule against per-side load.
+      // Kills phantom PRs on post-2026-04-02 unilateral sets without touching
+      // the original `weight` field, so old data stays intact.
+      migrate: (persistedState, version) => {
+        if (!persistedState) return persistedState
+        if (version < 2 && Array.isArray(persistedState.sessions)) {
+          persistedState.sessions = migrateSessionsToV2(persistedState.sessions)
+        }
+        return persistedState
+      },
       // Custom merge: new top-level fields fall back to initial values when
       // not present in old persisted state — settings are deep-merged so
       // existing user prefs are never lost across deploys.
