@@ -32,6 +32,8 @@ const WORKOUT_COLORS = {
 // ── Plate-loaded mode constants ────────────────────────────────────────────────
 
 const PLATE_OPTIONS = [100, 45, 35, 25, 10, 5, 2.5]
+const COMMON_PLATES = [45, 35, 25, 10, 5]
+const RARE_PLATES   = [100, 2.5]
 const BAR_CYCLE = [45, 0, 25]
 const CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨']
 const circled = n => n >= 1 && n <= 9 ? CIRCLED[n - 1] : `×${n}`
@@ -89,6 +91,112 @@ function SetTypeBtn({ value, onChange, theme }) {
     >
       {current.label}
     </button>
+  )
+}
+
+// ── Plate-mode config popover (Batch 16e) ─────────────────────────────────────
+// Appears below the Plates toggle when plate mode is active — lets the user
+// set Bar weight and 1×/2× multiplier without permanent real estate on the
+// card. Outside click or the Turn off button dismisses.
+
+function PlateConfigPopover({ open, onClose, anchorRef, barWeight, multiplier, onBarChange, onMultChange, onTurnOff, theme }) {
+  const popoverRef = useRef(null)
+  const [pos, setPos] = useState(null)
+
+  // Compute popover position from the anchor (Plates button) whenever the
+  // popover opens. Uses fixed positioning via portal so the card's
+  // overflow-hidden doesn't clip it.
+  useEffect(() => {
+    if (!open) { setPos(null); return }
+    const rect = anchorRef?.current?.getBoundingClientRect()
+    if (!rect) return
+    setPos({ top: rect.bottom + 8, left: rect.left })
+  }, [open, anchorRef])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = e => {
+      const insidePopover = popoverRef.current?.contains(e.target)
+      const insideAnchor  = anchorRef?.current?.contains(e.target)
+      if (!insidePopover && !insideAnchor) onClose()
+    }
+    // Delay attaching so the opening click doesn't immediately dismiss.
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handler)
+      document.addEventListener('touchstart', handler)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
+  }, [open, onClose, anchorRef])
+
+  if (!open || !pos) return null
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      className="fixed bg-card border border-white/10 rounded-xl shadow-xl p-3 w-60"
+      style={{ zIndex: 220, top: pos.top, left: pos.left }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="text-[10px] uppercase tracking-wider text-c-faint mb-2">Plate setup</div>
+
+      <div className="mb-3">
+        <div className="text-xs text-c-muted mb-1.5">Bar weight</div>
+        <div className="flex gap-1.5">
+          {BAR_CYCLE.map(w => {
+            const selected = barWeight === w
+            return (
+              <button
+                key={w}
+                type="button"
+                onClick={() => onBarChange(w)}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
+                  selected ? `${theme.bgSubtle} border ${theme.border} ${theme.text}` : 'bg-item text-c-dim border border-transparent'
+                }`}
+              >
+                {w === 0 ? 'None' : `${w} lb`}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <div className="text-xs text-c-muted mb-1.5">Loaded on</div>
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => onMultChange(1)}
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
+              multiplier === 1 ? 'bg-amber-500/20 border border-amber-500/40 text-amber-400' : 'bg-item text-c-dim border border-transparent'
+            }`}
+          >
+            1× one side
+          </button>
+          <button
+            type="button"
+            onClick={() => onMultChange(2)}
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
+              multiplier === 2 ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400' : 'bg-item text-c-dim border border-transparent'
+            }`}
+          >
+            2× both sides
+          </button>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onTurnOff}
+        className="w-full py-2 rounded-lg bg-item text-c-muted text-xs font-semibold"
+      >
+        Turn off plate mode
+      </button>
+    </div>,
+    document.body
   )
 }
 
@@ -237,51 +345,67 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           </button>
         )}
       </div>
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <PlatePicker plates={plates} addPlate={addPlate} removePlate={removePlate} theme={theme} />
+    </div>
+  )
+}
+
+// ── Plate picker — compact row w/ expand for rare plates ─────────────────────
+// Default: 5 common plates (45/35/25/10/5) + chevron-expand icon.
+// Tapping the chevron toggles visibility of rare plates (100, 2.5). Rare
+// plates with count > 0 always stay visible regardless of toggle state so
+// the user can still decrement them.
+
+function PlatePicker({ plates, addPlate, removePlate, theme }) {
+  const [showRare, setShowRare] = useState(false)
+  const loadedRare = RARE_PLATES.filter(p => (plates[p] || 0) > 0)
+  const hiddenRare = RARE_PLATES.filter(p => (plates[p] || 0) === 0)
+  const rareVisible = showRare ? RARE_PLATES : loadedRare
+  const expandIcon = showRare ? '×' : '+'
+
+  const renderPlate = plate => {
+    const count = plates[plate] || 0
+    return (
+      <div key={plate} className="relative shrink-0">
         <button
           type="button"
-          onClick={cycleBar}
-          className="h-8 px-2.5 rounded-lg bg-item text-c-secondary text-xs font-semibold shrink-0"
-        >
-          Bar:{barWeight === 0 ? '—' : barWeight}
-        </button>
-        <button
-          type="button"
-          onClick={onToggleMultiplier}
-          className={`h-8 px-2.5 rounded-lg text-xs font-bold shrink-0 transition-colors ${
-            mult === 1 ? 'bg-amber-500/20 border border-amber-500/40 text-amber-400' : 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
+          onClick={() => addPlate(plate)}
+          className={`h-8 px-2 rounded-lg text-xs font-bold transition-colors ${
+            count > 0 ? `${theme.bg} text-white` : 'bg-item text-c-dim'
           }`}
+          style={count > 0 ? { color: theme.contrastText } : {}}
         >
-          {mult}×
+          {plate}{count > 0 ? ` ${circled(count)}` : ''}
         </button>
-        {PLATE_OPTIONS.map(plate => {
-          const count = plates[plate] || 0
-          return (
-            <div key={plate} className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => addPlate(plate)}
-                className={`h-8 px-2 rounded-lg text-xs font-bold transition-colors ${
-                  count > 0 ? `${theme.bg} text-white` : 'bg-item text-c-dim'
-                }`}
-                style={count > 0 ? { color: theme.contrastText } : {}}
-              >
-                {plate}{count > 0 ? ` ${circled(count)}` : ''}
-              </button>
-              {count > 0 && (
-                <button
-                  type="button"
-                  onClick={() => removePlate(plate)}
-                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-card border border-c-faint text-c-dim flex items-center justify-center"
-                  style={{ fontSize: '11px', lineHeight: 1 }}
-                >
-                  −
-                </button>
-              )}
-            </div>
-          )
-        })}
+        {count > 0 && (
+          <button
+            type="button"
+            onClick={() => removePlate(plate)}
+            className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-card border border-c-faint text-c-dim flex items-center justify-center"
+            style={{ fontSize: '11px', lineHeight: 1 }}
+          >
+            −
+          </button>
+        )}
       </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {COMMON_PLATES.map(renderPlate)}
+      {rareVisible.map(renderPlate)}
+      {hiddenRare.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowRare(v => !v)}
+          className="h-8 w-8 rounded-lg bg-item text-c-muted text-sm font-bold shrink-0 flex items-center justify-center"
+          title={showRare ? 'Hide rare plates' : 'Show rare plates (100, 2.5)'}
+          aria-label={showRare ? 'Hide rare plates' : 'Show rare plates'}
+        >
+          {expandIcon}
+        </button>
+      )}
     </div>
   )
 }
@@ -470,7 +594,9 @@ function ExerciseItem({
   const { settings, setRestEndTimestamp } = useStore()
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const numpadCtx = useContext(NumpadContext)
-  const [recSheetOpen, setRecSheetOpen] = useState(false)
+  const [recSheetOpen,    setRecSheetOpen]    = useState(false)
+  const [plateConfigOpen, setPlateConfigOpen] = useState(false)
+  const platesBtnRef      = useRef(null)
 
   // ── Focus mode: when numpad is open, check if THIS exercise owns the active field.
   // If the numpad is open but the active field belongs to a different exercise,
@@ -766,17 +892,68 @@ function ExerciseItem({
 
           {/* Plate mode + Uni toggles + Last session */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onUpdate({ ...exercise, plateLoaded: !exercise.plateLoaded })}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                exercise.plateLoaded
-                  ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
-                  : 'bg-item text-c-dim'
-              }`}
-            >
-              <span>🏋️</span> Plates
-            </button>
+            <div className="relative">
+              <button
+                ref={platesBtnRef}
+                type="button"
+                onClick={() => {
+                  // Off→on: turn on AND open popover so the user can configure.
+                  // On: re-open popover (don't toggle off — that's what Turn off
+                  // plate mode button inside the popover does).
+                  if (!exercise.plateLoaded) {
+                    onUpdate({
+                      ...exercise,
+                      plateLoaded:     true,
+                      barDefault:      exercise.barDefault      ?? 45,
+                      plateMultiplier: exercise.plateMultiplier ?? 2,
+                    })
+                  }
+                  setPlateConfigOpen(true)
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  exercise.plateLoaded
+                    ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
+                    : 'bg-item text-c-dim'
+                }`}
+              >
+                <span>🏋️</span> Plates
+                {exercise.plateLoaded && (
+                  <span className="text-[10px] opacity-70 tabular-nums">
+                    {exercise.barDefault ?? 45}·{exercise.plateMultiplier ?? 2}×
+                  </span>
+                )}
+              </button>
+              <PlateConfigPopover
+                open={plateConfigOpen}
+                onClose={() => setPlateConfigOpen(false)}
+                anchorRef={platesBtnRef}
+                barWeight={exercise.barDefault ?? 45}
+                multiplier={exercise.plateMultiplier ?? 2}
+                onBarChange={newBar => {
+                  const mult = exercise.plateMultiplier ?? 2
+                  const updatedSets = exercise.sets.map(s => {
+                    if (!s.plates) return s
+                    const newTotal = calcTotal(s.plates, newBar, mult)
+                    return { ...s, barWeight: newBar, weight: String(newTotal) }
+                  })
+                  onUpdate({ ...exercise, barDefault: newBar, sets: updatedSets })
+                }}
+                onMultChange={newMult => {
+                  const bar = exercise.barDefault ?? 45
+                  const updatedSets = exercise.sets.map(s => {
+                    if (!s.plates) return s
+                    const newTotal = calcTotal(s.plates, s.barWeight ?? bar, newMult)
+                    return { ...s, weight: String(newTotal), plateMultiplier: newMult }
+                  })
+                  onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
+                }}
+                onTurnOff={() => {
+                  setPlateConfigOpen(false)
+                  onUpdate({ ...exercise, plateLoaded: false })
+                }}
+                theme={theme}
+              />
+            </div>
             <button
               type="button"
               onClick={() => onUpdate({ ...exercise, unilateral: !exercise.unilateral })}
