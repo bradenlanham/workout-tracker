@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 18, 2026 (Batch 16a)
+> Last updated: April 18, 2026 (Batch 16c)
 
 ## Rules for Claude
 
@@ -71,6 +71,7 @@ src/
 │   ├── CustomNumpad.jsx       # Numpad overlay used by BbLogger for weight/reps entry
 │   └── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
 │
+│
 └── pages/
     ├── Welcome.jsx            # Onboarding: name entry, split choice (Blueprint or build own), theme, import
     ├── Dashboard.jsx          # Main screen: greeting, 6 stat cards, CTA card, soreness check-in, weekly calendar, workout preview
@@ -89,6 +90,9 @@ src/
         ├── BbLogger.jsx       # THE MAIN SESSION LOGGER — exercise cards, sets, plates mode, uni toggle,
         │                      # previous session ghost rows, add exercise panel, finish modal, session comparison,
         │                      # auto-persist to split template, share card integration
+        ├── Recommendation.jsx # Recommender UI: RecommendationHint (inline), RecommendationBanner,
+        │                      # RecommendationSheet (bottom-sheet w/ mode chips). Batch 16b.
+        ├── RpePill.jsx        # Per-set RPE (1–10) chip + bottom-sheet picker. Batch 16c.
         ├── ShareCard.jsx      # Trading card share card: 5 tiers by streak, selfie, stats bar, JPEG export
         └── CameraCapture.jsx  # Selfie camera component for share card
 ```
@@ -179,6 +183,7 @@ src/
             isNewPR: false,
             plates: { 45: 2, 25: 1, ... },  // Only present if logged in plate mode
             barWeight: 45,                    // Only present if logged in plate mode
+            rpe: 8,                     // Optional 1–10 RPE (Batch 16c, spec §3.7)
           }
         ]
       }
@@ -617,3 +622,26 @@ Step 3 of the AI Coaching Recommender plan (see `coaching-recommender-plan.md` P
     - Result weight rounded to `loadIncrement` (default 5).
 114. **`recommender-sanity.mjs` (repo root).** Node ESM — loads `debug-backup.json`, runs v2+v3 migrations to canonicalize sessions, then reports per-exercise fits + recommendations against the spec §5 high-confidence-ready list. Also exercises mode comparison on Pec Dec (push/maintain/deload produce distinct prescriptions), cold-start behavior (n=0/1/2), and the auto-deload trigger on a simulated 2-miss streak. Mirrors `migration-sanity.mjs` / `migration-v3-sanity.mjs` pattern — run from a worktree root with `node recommender-sanity.mjs`.
 115. **Nothing wired to UI yet.** Step 3b (next batch) adds the inline `Try: 185×10` hint + expand-on-tap bottom sheet per §9.1 to the exercise card. Step 3c adds RPE/RIR capture per §3.7. This substep is a clean revert point.
+
+### Batch 16b (April 18, 2026) — Recommender UI in exercise card (AI coaching prereq, step 3, substep b)
+
+Step 3 UI surface — exposes the Batch 16a engine to the user per spec §9.1 Option C (inline hint + expand-on-tap) and §9.4 Option C (color + one-word confidence label).
+
+116. **`Recommendation.jsx` — three display components** (`src/pages/log/Recommendation.jsx`). `RecommendationHint` renders the inline `● Try: 185×10` snippet appended to the collapsed card's "Last: 175×11" line; colored dot encodes confidence (green=Solid, amber=Maybe, gray=New); hidden when confidence='none'. `RecommendationBanner` is the prominent tappable banner at the top of the expanded body — two-line format with "TRY 185 × 10" / "●Maybe · short reasoning". `RecommendationSheet` is the bottom-sheet modal (createPortal, z-index 250 so it clears CustomNumpad's 200 and RestTimer's 50) with headline prescription, confidence chip, three side-by-side mode buttons (↑Push / →Maintain / ↓Deload — each showing its own weight×reps), reasoning card, and stats rows (current e1RM, last session + days-ago, progression fit, Layer 2 target).
+117. **ExerciseItem integration** (`BbLogger.jsx`). Subscribes to `exerciseLibrary`; looks up entry by id (fallback by name); derives targetReps from `defaultRepRange` midpoint (default 10). Computes `recHistory` via `getExerciseHistory(allSessions, id, name)` — passing ALL bb sessions intentionally, NOT scopedSessions. The recommender is cross-workout-type by design (spec §1.3, §3.2: Pec Dec in push and push2 should share history), which differs from PR logic (workout-type-scoped per Batch 10/12). `recommendation` computed once via useMemo in mode='push'.
+118. **Collapsed-card restructure.** The existing "Last:" `<p>` had `opacity-50` which was washing out the confidence dot on the appended hint. Replaced the single-paragraph with a flex div holding two siblings — the "Last:" span with its original opacity and the `RecommendationHint` at full opacity so the colored dot is legible.
+119. **Sheet default mode = 'push'.** So the sheet opens aligned with what the banner renders (the banner always shows recs.push's output, even if auto-deload triggered within push mode). The DELOAD chip in the sheet still surfaces the user-selected deload (65% of e1RM) as the alternative — distinct number and reasoning from the decision rule's auto-triggered 10% off last. Two distinct deload prescriptions by design, per the spec.
+120. **Verified live in preview** (mobile 375×812, debug-backup.json migrated to v3 with 24 sessions, 109 library entries). Pec Dec: banner "TRY 185×10 · ● Maybe · Hit target last session — pushing +2.3%…", sheet chips push 185 / maintain 175 / deload 155 with correct reasoning per mode. Overhead DB Extension (auto-deload triggered): banner 80 (10% off last); DELOAD chip 75 (65% of e1RM). DB Shrug (n=0): no banner. Cross-workout-type hint ("● Try: 80×10" without "Last:") for exercises logged elsewhere but not in the current workout. No console errors. ✓
+
+### Batch 16c (April 18, 2026) — RPE capture + Layer 3 rep-accuracy boost (AI coaching prereq, step 3, substep c)
+
+Step 3 per-set effort signal — spec §3.7 calls RPE "the single largest accuracy improvement available to the recommender." Optional at every layer (type, UI, persistence, engine) so forced entry doesn't kill adherence.
+
+121. **Set schema + `getExerciseHistory` carry `rpe: number | null`** (`helpers.js`). `e1RM` unchanged (still uses raw reps). `getExerciseHistory`'s per-session top-set now carries rpe through when set, validated 1–10 inclusive. Saved-set shape in `buildExerciseData` gets `...(typeof s.rpe === 'number' && 1–10 ? { rpe: s.rpe } : {})`.
+122. **Layer 3 uses effective reps when rpe is present** (`recommendNextLoad`). `rir = max(0, 10 − rpe)`, `effectiveReps = reps + rir`. Hit-target check is now `last.reps >= targetReps || effectiveReps >= targetReps`; Δreps in the nudge formula uses `effectiveReps − targetReps`. Same effective-reps logic feeds the auto-deload trigger, so a user who misses raw reps but still hit target via RIR (e.g. 8 reps @ RPE 8 with target 10) is NOT false-alarmed into a deload. Reasoning string appends "(8×@RPE8≈10 effective)" when rir>0 so the math is visible.
+123. **`RpePill.jsx` — per-set chip + picker** (`src/pages/log/RpePill.jsx`). 44×40px pill inserted into both SetRow and PlateSetRow after the reps input. Empty state: muted `bg-item text-c-faint` with small "RPE" text. Set state: fuchsia-bordered pill (`bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-300`) with the number. Tapping opens a bottom-sheet `RpePicker` (createPortal, z:250) — two rows of 5 buttons with 6–10 prominent and 1–5 dimmed (matches the typical RPE range for strength training), plus an inline description per value ("8 → 2 reps in reserve — challenging" etc.), a 2-sentence explainer for new users ("RPE = reps in reserve. 10 is all-out failure; 8 means '2 more reps possible.'"), and a Clear button to unset.
+124. **`PrevSetRow` (ghost rows) show RPE read-only.** If the prior top set had an rpe, shows it in a muted version of the pill. If not, renders a 44×36 invisible placeholder so column widths still align with the live row. No pill is shown for pre-16c sessions (they have no rpe field).
+125. **Sanity (node, against debug-backup.json + synthetic rpe):** Pec Dec last 175×11, target 10 → no-RPE pushes 185, RPE 8 pushes 195 (Δreps=3 bonus), RPE 10 pushes 185 (rir=0, identical to no-RPE). Auto-deload bypass: 115×8×2 with RPE 8 (effective 10) does NOT auto-deload; pushes instead. All expected behaviors hit.
+126. **Verified live in preview:** Pec Dec expanded → RPE pill tap → picker → select 8 → pill shows fuchsia "8". Toggle to Plates mode → RPE pill persists with same value. Clear button → pill returns to muted "RPE". Reload page mid-session → RPE value preserved via `activeSession` roundtrip. Ghost-row alignment correct. No console errors. ✓
+
+Step 3 complete — the recommender is wired end-to-end: engine (16a) → inline+sheet UI (16b) → per-set RPE signal (16c). Step 4 (readiness check-in per §2.5) and step 6 (fatigue signals per §4) are next up in the plan.
