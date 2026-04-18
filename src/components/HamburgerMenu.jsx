@@ -277,6 +277,46 @@ export default function HamburgerMenu({ open, setOpen }) {
                           />
                         </button>
                       </div>
+
+                      {/* AI Coaching (Batch 16i) */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-c-primary">AI coaching</p>
+                          <p className="text-xs text-c-dim mt-0.5">Show the coach's call banner + sheet</p>
+                        </div>
+                        <button
+                          onClick={() => updateSettings({ enableAiCoaching: !settings.enableAiCoaching })}
+                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                          style={{ backgroundColor: settings.enableAiCoaching ? theme.hex : undefined }}
+                          aria-label="Toggle AI coaching"
+                        >
+                          {!settings.enableAiCoaching && <span className="absolute inset-0 rounded-full bg-item" />}
+                          <span
+                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                            style={{ transform: settings.enableAiCoaching ? 'translateX(22px)' : 'translateX(2px)' }}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Coach's Rec pill (Batch 16i) */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-c-primary">Show Rec pill</p>
+                          <p className="text-xs text-c-dim mt-0.5">Per-exercise free-text prescription slot</p>
+                        </div>
+                        <button
+                          onClick={() => updateSettings({ showRecPill: !settings.showRecPill })}
+                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                          style={{ backgroundColor: settings.showRecPill ? theme.hex : undefined }}
+                          aria-label="Toggle Rec pill"
+                        >
+                          {!settings.showRecPill && <span className="absolute inset-0 rounded-full bg-item" />}
+                          <span
+                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                            style={{ transform: settings.showRecPill ? 'translateX(22px)' : 'translateX(2px)' }}
+                          />
+                        </button>
+                      </div>
                     </div>
                   </div>
 

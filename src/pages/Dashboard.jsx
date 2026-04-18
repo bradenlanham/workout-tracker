@@ -800,41 +800,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Backfill banner ─────────────────────────────────────────────────
-           Shown only while needsTagging entries remain in the library.
-           Tap → /backfill, the one-time muscle-group + equipment prompt
-           that the V2→V3 migration may have created user-facing records
-           for. See Batch 15c. */}
-      {(() => {
-        const pendingCount = (exerciseLibrary || []).filter(e => e.needsTagging).length
-        if (pendingCount === 0) return null
-        return (
-          <div style={{ padding: '0 16px', marginBottom: 12 }}>
-            <button
-              onPointerDown={() => navigate('/backfill')}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                padding: '10px 12px',
-                borderRadius: 12,
-                background: 'rgba(59,130,246,0.12)',
-                border: '1px solid rgba(59,130,246,0.35)',
-                color: 'rgb(147,197,253)',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <span>📋 Tag {pendingCount} custom {pendingCount === 1 ? 'exercise' : 'exercises'} to unlock smarter recommendations</span>
-              <span style={{ opacity: 0.7 }}>→</span>
-            </button>
-          </div>
-        )
-      })()}
-
       {/* ── SECTION 2: Circle Calendar ──────────────────────────────────────── */}
       <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10, marginTop: -28 }}>
         {/* Header row */}
@@ -1202,6 +1167,40 @@ export default function Dashboard() {
           </button>
         </div>
       )}
+
+      {/* ── Backfill banner (Batch 16i: relocated from top-of-page to under
+           the hero card, above the stats row, so it doesn't encroach on
+           the "This Week" header). Shown only while needsTagging entries
+           remain in the library. Tap → /backfill. */}
+      {(() => {
+        const pendingCount = (exerciseLibrary || []).filter(e => e.needsTagging).length
+        if (pendingCount === 0) return null
+        return (
+          <div style={{ padding: '0 16px', marginBottom: 12 }}>
+            <button
+              onPointerDown={() => navigate('/backfill')}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 12,
+                background: 'rgba(59,130,246,0.12)',
+                border: '1px solid rgba(59,130,246,0.35)',
+                color: 'rgb(147,197,253)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <span>Tag {pendingCount} custom {pendingCount === 1 ? 'exercise' : 'exercises'} to unlock smarter recommendations</span>
+              <span style={{ opacity: 0.7 }}>→</span>
+            </button>
+          </div>
+        )
+      })()}
 
       {/* ── SECTION 4: Stat Cards ────────────────────────────────────────────── */}
       <div style={{ ...fadeIn(300), padding: '0 16px', marginBottom: 20 }}>

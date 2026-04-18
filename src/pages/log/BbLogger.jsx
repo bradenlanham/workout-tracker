@@ -790,7 +790,7 @@ function ExerciseItem({
               {exercise.done && <span className="text-emerald-400 text-lg leading-none">✓</span>}
               <p className="font-semibold text-base truncate">{exercise.name}</p>
               {hasPR && !exercise.done && <span className="text-amber-400 text-sm">🏆</span>}
-              {expanded && !exercise.done && (
+              {expanded && !exercise.done && settings.showRecPill && (
                 editingRec ? (
                   <input
                     type="text"
@@ -887,8 +887,10 @@ function ExerciseItem({
 
           {/* Recommendation banner — tap for coaching details. Hidden when
               confidence is 'none' (cold-start / <3 sessions) so the UI
-              only surfaces real prescriptions, not countdown messages. */}
-          {recommendation?.prescription && recommendation.confidence !== 'none' && (
+              only surfaces real prescriptions, not countdown messages.
+              Also gated by settings.enableAiCoaching so users can turn the
+              coach's call UI off entirely (Batch 16i). */}
+          {settings.enableAiCoaching && recommendation?.prescription && recommendation.confidence !== 'none' && (
             <RecommendationBanner
               recommendation={recommendation}
               onTap={() => setRecSheetOpen(true)}
@@ -1090,7 +1092,7 @@ function ExerciseItem({
       )}
 
       <RecommendationSheet
-        open={recSheetOpen}
+        open={recSheetOpen && settings.enableAiCoaching}
         onClose={() => setRecSheetOpen(false)}
         exerciseName={exercise.name}
         history={recHistory}

@@ -77,6 +77,15 @@ const useStore = create(
         defaultFirstSetType: 'warmup',
         restTimerChime: true,
         hasSeenTutorial: false,
+        // Batch 16i — AI coaching recommender UI toggle. When false, the
+        // RecommendationBanner and RecommendationSheet don't render; the
+        // engine still computes invisibly so flipping it back on is
+        // instant. Session data collection is unaffected either way.
+        enableAiCoaching: true,
+        // Batch 16i — visibility of the per-exercise blue REC pill (the
+        // coach's free-text prescription slot added in Batch 13). Some
+        // users never use it; hide it to reclaim header space.
+        showRecPill:      true,
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
