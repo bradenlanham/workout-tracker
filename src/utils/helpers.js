@@ -825,7 +825,23 @@ export function recommendNextLoad({
       const deltaReps    = effectiveReps - targetReps
       const layer3Weight = last.weight * (1 + P * alpha) + 0.033 * last.weight * deltaReps
       prescriptionWeight = Math.max(layer3Weight, layer2Weight)
-      reasoning          = `You hit ${last.weight}×${last.reps} last session. Adding a little more weight based on how fast you've been progressing.`
+      const e1rmRounded  = Math.round(currentE1RM)
+      const layer2Round  = Math.round(layer2Weight)
+      if (layer2Weight >= layer3Weight) {
+        // Floor driven: user's recent top sets imply a strength level above
+        // what they loaded last time. Today the prescription pulls them
+        // back up to that projected level.
+        if (layer2Round > last.weight) {
+          reasoning = `Your recent top sets put your estimated 1-rep max around ${e1rmRounded} lbs, which projects to ${layer2Round} for ${targetReps} reps. Last session you went ${last.weight}×${last.reps}, lighter than your strength suggests, so today's weight catches you back up to your actual level.`
+        } else {
+          reasoning = `Matching your current strength level: ${e1rmRounded} lb e1RM projects to ${layer2Round} for ${targetReps} reps, right around last session's ${last.weight}×${last.reps}.`
+        }
+      } else {
+        // Nudge driven: user is already at their strength ceiling. Layer 3
+        // adds a gradual load bump based on their progression rate.
+        const bumpLbs = Math.max(0, Math.round(layer3Weight - last.weight))
+        reasoning = `You hit ${last.weight}×${last.reps} last session, right at your current strength level. Bumping load by +${bumpLbs} lbs today based on your progression trend (capped at +3% per elapsed week to keep it sustainable).`
+      }
     } else if (missedByOne || effectiveMissBy1) {
       prescriptionWeight = Math.max(last.weight, layer2Weight)
       reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Same weight. Go for all ${targetReps} this session.`

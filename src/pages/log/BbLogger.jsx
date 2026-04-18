@@ -12,7 +12,7 @@ import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
-import { RecommendationBanner, RecommendationSheet } from './Recommendation'
+import { RecommendationChip, RecommendationSheet } from './Recommendation'
 import ReadinessCheckIn from './ReadinessCheckIn'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
@@ -891,19 +891,7 @@ function ExerciseItem({
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
 
-          {/* Recommendation banner — tap for coaching details. Hidden when
-              confidence is 'none' (cold-start / <3 sessions) so the UI
-              only surfaces real prescriptions, not countdown messages.
-              Also gated by settings.enableAiCoaching so users can turn the
-              coach's call UI off entirely (Batch 16i). */}
-          {settings.enableAiCoaching && recommendation?.prescription && recommendation.confidence !== 'none' && (
-            <RecommendationBanner
-              recommendation={recommendation}
-              onTap={() => setRecSheetOpen(true)}
-            />
-          )}
-
-          {/* Plate mode + Uni toggles + Last session */}
+          {/* Plate mode + Uni + Tip chip + Last session */}
           <div className="flex items-center gap-2">
             <div className="relative">
               <button
@@ -979,33 +967,34 @@ function ExerciseItem({
             >
               Uni
             </button>
-            <div className="ml-auto flex items-center gap-2">
-              {prevSets.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowPrev(v => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                    showPrev
-                      ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
-                      : 'bg-item text-c-dim'
-                  }`}
-                >
-                  Last Time
-                </button>
-              )}
-              {exercisePR.maxWeight > 0 && (
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0"
-                  style={{ fontSize: 11, lineHeight: 1.2, letterSpacing: '0.02em' }}
-                  title="All-time PR for this exercise"
-                >
-                  <span className="font-bold">PR</span>
-                  <span className="font-semibold">
-                    {exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}
-                  </span>
-                </span>
-              )}
-            </div>
+            {prevSets.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPrev(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                  showPrev
+                    ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
+                    : 'bg-item text-c-dim'
+                }`}
+              >
+                Last
+              </button>
+            )}
+            {exercisePR.maxWeight > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0 whitespace-nowrap"
+                title="All-time PR for this exercise"
+              >
+                <span className="font-bold">PR</span>
+                <span>{exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}</span>
+              </span>
+            )}
+            {settings.enableAiCoaching && recommendation?.prescription && recommendation.confidence !== 'none' && (
+              <RecommendationChip
+                recommendation={recommendation}
+                onTap={() => setRecSheetOpen(true)}
+              />
+            )}
           </div>
 
           {/* Column headers — weight first, reps second */}

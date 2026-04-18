@@ -14,12 +14,12 @@ import useStore from '../../store/useStore'
 
 const ENERGY_OPTIONS = [
   { value: 'low',  label: 'Low'  },
-  { value: 'ok',   label: 'OK'   },
+  { value: 'ok',   label: 'Mid'  },
   { value: 'high', label: 'High' },
 ]
 const SLEEP_OPTIONS = [
   { value: 'poor', label: 'Poor' },
-  { value: 'ok',   label: 'OK'   },
+  { value: 'ok',   label: 'Mid'  },
   { value: 'good', label: 'Good' },
 ]
 const GOAL_OPTIONS = [

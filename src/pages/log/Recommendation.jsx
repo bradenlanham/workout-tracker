@@ -73,6 +73,39 @@ export function RecommendationHint({ recommendation }) {
   )
 }
 
+// ── RecommendationChip — compact Tip chip in the exercise toolbar row ─────
+//
+// Replaces the wider RecommendationBanner (Batch 16n-1). Sits alongside
+// Plates / Uni / Last Time / PR. Sparkle icon signals "AI suggestion";
+// confidence-colored dot mirrors the sheet's tap-to-explain percent so
+// the user sees trust-level at a glance without opening. Tap → opens sheet.
+
+export function RecommendationChip({ recommendation, onTap }) {
+  if (!recommendation || !recommendation.prescription) return null
+  return (
+    <button
+      type="button"
+      onClick={onTap}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 transition-colors"
+      title="Tap for coach's call"
+    >
+      <SparkleIcon className="w-3 h-3" color="currentColor" />
+      <span>Tip</span>
+    </button>
+  )
+}
+
+function SparkleIcon({ color = 'currentColor', className }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 1.5l1.3 3.2 3.2 1.3-3.2 1.3L8 10.5 6.7 7.3 3.5 6l3.2-1.3L8 1.5zM12.5 10l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6L10.2 12.3l1.6-.7.7-1.6zM3 11l.5 1.1 1.1.5-1.1.5L3 14.2l-.5-1.1L1.4 12.6l1.1-.5L3 11z"
+        fill={color}
+      />
+    </svg>
+  )
+}
+
 // ── RecommendationBanner — expanded card prominent CTA ─────────────────────
 
 export function RecommendationBanner({ recommendation, onTap }) {
@@ -121,7 +154,7 @@ function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0 }) {
   const window = history.slice(-6)
   if (window.length < 2) return null
 
-  const W = 300, H = 90, padX = 10, padTop = 16, padBottom = 10
+  const W = 300, H = 72, padX = 8, padTop = 10, padBottom = 8
   const values = window.map(p => p.e1RM || 0)
   const minV = Math.min(...values)
   const maxV = Math.max(...values)
@@ -136,18 +169,18 @@ function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0 }) {
   const points = window.map((p, i) => [xFor(i), yFor(p.e1RM || 0)])
   const polylinePts = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
 
-  // Simple trend line from first-point projection using the supplied rate
-  // (avoids re-regressing). Dashed + subtle.
+  // Subtle dashed trend line projected from the first point at the supplied
+  // weekly rate (matches the Growth label below the chart).
   const trendFirst = points[0]
   const daysSpan   = (new Date(window[window.length - 1].date) - new Date(window[0].date)) / 86400000
   const trendEndE  = (window[0].e1RM || 0) * (1 + (rate || 0) * (daysSpan / 7))
   const trendEndY  = yFor(trendEndE)
   const trendLast  = [points[points.length - 1][0], trendEndY]
 
-  const rateLabel = formatWeeklyRate(rate)
+  const peakIdx = values.indexOf(maxV)
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`e1RM trend, ${rateLabel} over ${window.length} sessions`}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" role="img" aria-label={`Estimated 1-rep max across ${window.length} sessions, peak ${Math.round(maxV)} lbs`}>
       {/* Trend line (dashed, subtle) */}
       <line
         x1={trendFirst[0]} y1={trendFirst[1]}
@@ -156,32 +189,22 @@ function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0 }) {
       />
       {/* Connecting polyline */}
       <polyline points={polylinePts} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Data points */}
+      {/* Data points — peak + latest emphasized */}
       {points.map(([x, y], i) => {
         const isLast = i === points.length - 1
+        const isPeak = i === peakIdx
         return (
           <circle
             key={i}
             cx={x} cy={y}
-            r={isLast ? 4 : 3}
+            r={isPeak ? 4.5 : (isLast ? 3.5 : 2.5)}
             fill={accentColor}
-            stroke={isLast ? accentColor : 'none'}
+            stroke={isPeak ? accentColor : 'none'}
             strokeWidth="2"
-            opacity={isLast ? 1 : 0.7}
+            opacity={isPeak ? 1 : (isLast ? 0.9 : 0.6)}
           />
         )
       })}
-      {/* Rate label, top-right */}
-      <text
-        x={W - padX} y={12}
-        textAnchor="end"
-        fill={accentColor}
-        fontSize="11"
-        fontWeight="700"
-        style={{ fontFamily: 'system-ui, sans-serif' }}
-      >
-        {rateLabel}
-      </text>
     </svg>
   )
 }
@@ -248,49 +271,79 @@ export function RecommendationSheet({
         onClick={e => e.stopPropagation()}
         style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
       >
-        {/* ── Header ───────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-c-faint">Coach's call</div>
-            <h3 className="text-lg font-bold text-c-primary truncate">{exerciseName}</h3>
+        {/* ── Exercise name — small heading above the recommendation ───── */}
+        <div className="text-[12px] font-semibold text-c-secondary mb-0.5 pl-[18px] truncate">
+          {exerciseName}
+        </div>
+
+        {/* ── Header: AI-tipped recommendation + last session context ─── */}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="min-w-0 flex-1">
+            {selected.prescription ? (
+              <>
+                <div className="flex items-baseline gap-2 whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5 text-sm text-emerald-300 font-semibold shrink-0">
+                    <SparkleIcon className="w-3 h-3" color="currentColor" />
+                    Recommended top set:
+                  </span>
+                  <span className="text-2xl font-extrabold text-c-primary tabular-nums tracking-tight">
+                    {selected.prescription.weight} × {selected.prescription.reps}
+                  </span>
+                </div>
+                {last && (
+                  <div className="text-[11px] text-c-faint mt-0.5 pl-[18px]">
+                    Last session's top set: <span className="tabular-nums">{last.weight} × {last.reps}</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <span className="text-sm text-c-muted">No prescription yet</span>
+            )}
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-item text-c-secondary flex items-center justify-center text-lg shrink-0"
+            className="w-8 h-8 rounded-full bg-item text-c-secondary flex items-center justify-center text-lg shrink-0"
             aria-label="Close"
           >
             ×
           </button>
         </div>
 
-        {/* ── Headline prescription ─────────────────────────────────── */}
-        <div className="rounded-2xl bg-item p-5 mb-4 text-center">
-          {selected.prescription ? (
-            <>
-              <div className="text-[10px] uppercase tracking-wider text-c-faint mb-1">Top set</div>
-              <div className="text-4xl font-extrabold text-c-primary tabular-nums tracking-tight">
-                {selected.prescription.weight} × {selected.prescription.reps}
-              </div>
-            </>
-          ) : (
-            <div className="text-c-muted text-sm py-4">
-              Log a few more sessions and I'll start prescribing loads.
-            </div>
-          )}
-        </div>
-
-        {/* ── e1RM sparkline (only when we have ≥ 2 data points) ───── */}
+        {/* ── e1RM sparkline with explicit title + stat key ─────────────
+            Three variables the viewer needs: what is the line (title),
+            what's the highest point (peak), and how fast it's climbing
+            (growth rate). Each gets its own labeled field so nothing is
+            orphaned on the chart. */}
         {history.length >= 2 && (
-          <div className="rounded-xl bg-base/30 border border-white/5 px-3 py-2 mb-4">
-            <E1RMSparkline
-              history={history}
-              accentColor={accentColor}
-              rate={selected.meta?.progressionRate ?? 0}
-            />
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-c-faint mt-1">
-              <span>e1RM trend</span>
-              <span>{Math.min(history.length, 6)} sessions</span>
+          <div className="rounded-xl bg-base/30 border border-white/5 px-3 py-2.5 mb-3">
+            {/* Title: what the chart is */}
+            <div className="text-[11px] font-semibold text-c-secondary">
+              Estimated 1-rep max
+              <span className="text-c-faint font-normal"> · last {Math.min(history.length, 6)} sessions</span>
+            </div>
+            {/* The chart itself (no in-chart labels anymore) */}
+            <div className="mt-1.5">
+              <E1RMSparkline
+                history={history}
+                accentColor={accentColor}
+                rate={selected.meta?.progressionRate ?? 0}
+              />
+            </div>
+            {/* Key: defines each number explicitly */}
+            <div className="flex items-baseline justify-between gap-3 mt-2 text-[11px]">
+              <div>
+                <span className="text-c-faint">Peak:</span>{' '}
+                <span className="text-c-primary font-semibold tabular-nums">
+                  {Math.round(Math.max(...history.slice(-6).map(p => p.e1RM || 0)))} lbs
+                </span>
+              </div>
+              <div>
+                <span className="text-c-faint">Growth:</span>{' '}
+                <span style={{ color: accentColor }} className="font-semibold tabular-nums">
+                  {formatWeeklyRate(selected.meta?.progressionRate ?? 0)}
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -299,7 +352,7 @@ export function RecommendationSheet({
             2 chips by default (Maintain | Push). When the user's readiness
             goal was Recover, a Deload chip joins so they can compare the
             65%-of-e1RM recovery prescription against the alternatives. */}
-        <div className={`grid ${showDeloadChip ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-4`}>
+        <div className={`grid ${showDeloadChip ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-3`}>
           {showDeloadChip && (
             <ModeChip
               mode="deload"
@@ -400,13 +453,19 @@ export function RecommendationSheet({
                 }
               />
             )}
-            {selected.meta?.thisSessionNudgePct > 0 && selectedMode === 'push' && (
+            {last && selected.prescription && (
               <ContextRow
-                label="This session's nudge"
-                value={`+${selected.meta.thisSessionNudgePct.toFixed(1)}%`}
+                label="vs last session"
+                value={
+                  (() => {
+                    const deltaLbs = selected.prescription.weight - last.weight
+                    const deltaPct = last.weight > 0 ? (deltaLbs / last.weight) * 100 : 0
+                    const sign = deltaLbs >= 0 ? '+' : ''
+                    return `${sign}${deltaLbs} lbs (${sign}${deltaPct.toFixed(1)}%)`
+                  })()
+                }
                 hint={
-                  "How much weight we're adding this session, based on your progression rate.\n" +
-                  "Capped at 3% per elapsed week. It's a hard limit that applies every session, even when your e1RM trend is climbing faster (like +10%/wk). Protects you from chasing a single-PR outlier into injury or a plateau."
+                  "How much the prescribed weight changes from last session's top set. This can jump by a lot when your e1RM floor has climbed since last time (most often the case). A smaller per-session cap only kicks in if your e1RM plateaus and the engine is relying on the weekly nudge to push past the stall, not the floor."
                 }
               />
             )}
@@ -442,16 +501,18 @@ function ModeChip({ mode, recs, selected, onSelect }) {
     <button
       type="button"
       onClick={onSelect}
-      className={`py-3 px-3 rounded-xl text-center transition-colors border ${tintBg} ${tintBorder}`}
+      className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-colors border ${tintBg} ${tintBorder}`}
     >
-      <div className="flex items-center justify-center gap-1.5 mb-0.5" style={{ color: selected ? cfg.color : 'var(--text-faint)' }}>
-        <cfg.Icon className="w-5 h-3" color="currentColor" />
+      <span
+        className="inline-flex items-center gap-1"
+        style={{ color: selected ? cfg.color : 'var(--text-faint)' }}
+      >
+        <cfg.Icon className="w-3.5 h-2.5" color="currentColor" />
         <span className="text-[10px] uppercase tracking-wider font-semibold">{cfg.label}</span>
-      </div>
-      <div className="text-base font-bold text-c-primary tabular-nums">
+      </span>
+      <span className="text-sm font-bold text-c-primary tabular-nums">
         {r.prescription ? `${r.prescription.weight}×${r.prescription.reps}` : '—'}
-      </div>
-      <div className="text-[10px] text-c-faint mt-0.5">{cfg.sub}</div>
+      </span>
     </button>
   )
 }
@@ -567,7 +628,7 @@ function ContextRow({ label, value, hint }) {
 
 function daysAgoLabel(dateString, now) {
   const days = Math.max(0, Math.round((now - new Date(dateString).getTime()) / 86400000))
-  if (days === 0) return 'today'
+  if (days === 0) return 'earlier today'
   if (days === 1) return 'yesterday'
   if (days < 14) return `${days} days ago`
   return new Date(dateString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
