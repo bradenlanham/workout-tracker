@@ -8,6 +8,14 @@
 //   RecommendationSheet — bottom-sheet modal with e1RM sparkline, mode
 //                         chips, plain-English reasoning, confidence
 //                         tap-to-explain, and an expandable Details pane.
+//   AnomalyBanner       — small persistent inline banner (Batch 16q,
+//                        step 9 / spec §4.5 + §9.3). Sits between the
+//                        toolbar row and the column headers of the
+//                        expanded exercise card. Surfaces plateau /
+//                        regression / swing detections with a dismiss X.
+//                        Dismissals are scoped to the current active
+//                        session — next session the banner returns if
+//                        the signal still fires.
 //
 // The recommendation is computed in the parent (ExerciseItem) via useMemo
 // and passed down — these components are pure display.
@@ -624,4 +632,82 @@ function daysAgoLabel(dateString, now) {
   if (days === 1) return 'yesterday'
   if (days < 14) return `${days} days ago`
   return new Date(dateString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+// ── AnomalyBanner (Batch 16q, step 9 / spec §4.5 + §9.3) ──────────────────
+//
+// Small persistent inline banner that renders between the toolbar row and
+// the column headers of an expanded exercise card. Three anomaly kinds:
+// plateau (blue, info), regression (amber, warn), swing (blue, info).
+// One-tap dismiss X hides the banner for the current active session. The
+// banner returns next session if the underlying detector still fires.
+//
+// Copy is prescriptive and actionable per §9.3 Option C (locked in): the
+// user shouldn't need to tap through to know what to do.
+
+export function AnomalyBanner({ anomaly, exerciseName, onDismiss }) {
+  if (!anomaly) return null
+  const copy = buildAnomalyCopy(anomaly, exerciseName)
+  if (!copy) return null
+  const isWarn = anomaly.severity === 'warn'
+  return (
+    <div
+      style={{
+        margin: '6px 0 8px',
+        padding: '10px 12px',
+        borderRadius: 10,
+        background: isWarn ? 'rgba(245,158,11,0.10)' : 'rgba(59,130,246,0.08)',
+        border: `1px solid ${isWarn ? 'rgba(245,158,11,0.35)' : 'rgba(59,130,246,0.30)'}`,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          fontSize: 13,
+          lineHeight: 1.4,
+          color: 'var(--text-primary)',
+        }}
+      >
+        {copy}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss anomaly banner"
+        style={{
+          width: 28,
+          height: 28,
+          flexShrink: 0,
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--text-faint)',
+          fontSize: 16,
+          lineHeight: 1,
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
+function buildAnomalyCopy(anomaly, name) {
+  const label = name || 'this exercise'
+  if (anomaly.kind === 'plateau') {
+    return `You've been flat on ${label} for the last ${anomaly.n} sessions. Try dropping 10% and chasing reps this week to break through.`
+  }
+  if (anomaly.kind === 'regression') {
+    return `Trend on ${label} has dipped the last ${anomaly.n} sessions. Consider a lighter recovery week, then build back up.`
+  }
+  if (anomaly.kind === 'swing') {
+    const pct = Math.round(Math.abs(anomaly.delta) * 100)
+    const dir = anomaly.direction === 'up' ? 'up' : 'down'
+    return `Your top set on ${label} swung ${dir} ${pct}% from last session. Same machine? Same range of motion?`
+  }
+  return ''
 }

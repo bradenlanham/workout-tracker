@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16p — polish sweep + §3.8 auto-classify)
+> Last updated: April 19, 2026 (Batch 16q — anomaly coaching surfaces, step 9)
 
 ## Rules for Claude
 
@@ -57,12 +57,15 @@ src/
 │                              # similarExerciseScore, findSimilarExercises, formatDate/Time, playBeep, generateId,
 │                              # e1RM, percent1RM, getExerciseHistory, getCurrentE1RM, getProgressionRate,
 │                              # getRecommendationConfidence, recommendNextLoad   ← recommender engine (Batch 16a)
+│                              # detectPlateau, detectRegression, detectSwing, detectAnomalies  ← anomaly detectors (Batch 16q)
 │                              # getWorkoutStreak signature: (sessions, cardioSessions, restDaySessions)
 │                              # getBestStreak    signature: (sessions, cardioSessions, restDaySessions)
 │                              # perSideLoad(set): canonical per-side load accessor — rawWeight ?? weight ?? 0
 │                              # findSimilarExercises(query, library, opts): trigram+token-sort fuzzy match
 │                              # recommendNextLoad({history, targetReps, mode, progressionClass, loadIncrement})
 │                              #   → { mode, confidence, prescription: {weight, reps}, reasoning, meta }
+│                              # detectAnomalies(history): runs all three detectors, returns highest-priority
+│                              #   hit or null; priority: regression > swing > plateau
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -103,10 +106,11 @@ src/
         │                      # 1-line mode chips, tap-to-explain confidence %, plain-English
         │                      # reasoning, expandable Details section w/ "vs last session" delta,
         │                      # accepts aggressivenessMultiplier + defaultMode from readiness
-        │                      # check-in). Batches 16b + 16f + 16n + 16n-1.
-        │                      # Exports: RecommendationChip, RecommendationSheet.
-        │                      # (Legacy RecommendationHint + RecommendationBanner still exported
-        │                      # but unused — candidates for removal in a cleanup pass.)
+        │                      # check-in), AnomalyBanner (Batch 16q — inline card banner for
+        │                      # plateau/regression/swing, severity-keyed tint, dismiss-per-session
+        │                      # X; rendered between toolbar row and column headers).
+        │                      # Batches 16b + 16f + 16n + 16n-1 + 16q.
+        │                      # Exports: RecommendationChip, RecommendationSheet, AnomalyBanner.
         ├── ReadinessCheckIn.jsx # Batch 16n — three-tap pre-session overlay (§2.5): Energy /
         │                      # Sleep / Goal rows + gym chip. Goal→mode, Energy+Sleep→multiplier.
         │                      # Defaults OK/OK/Push = no-op (mult 1.0). Skip link + Go back.
@@ -138,6 +142,7 @@ src/
     showRecPill: true,             // Batch 16i — gates the per-exercise blue REC chip
     gyms: [],                      // Batch 16n — [{id, label}] — populated inline from readiness chip picker
     defaultGymId: null,            // Batch 16n — last-selected gym (seeds the chip next session)
+    dismissedAnomalies: {},        // Batch 16q — { [exerciseKey]: sessionId } — anomaly-banner dismissals scoped to current active session
   },
 
   // ── Splits ──
@@ -832,32 +837,37 @@ Small-scope housekeeping pass. Sweeps the UX items flagged in 16n-1, deletes dea
 195. **Auto-classify warmup/working on weight entry** (`BbLogger.jsx`, spec §3.8). In `updateSet`, when the user changes the weight and the set isn't a drop set, we compute `weight / recentTopE1RM` and classify: `<60%` → `warmup`, `>80%` → `working`, middle band keeps current type. `recentTopE1RM` is read from the last session's top-set e1RM via `recHistoryRef` (a ref populated after `recHistory` is computed, so `updateSet`'s closure can read the latest value without a TDZ ReferenceError). No history → skip entirely. User can always manually override afterward.
 196. **Verified live in preview** (mobile 375×812, debug-backup.json). Pec Dec Tip sheet: renders with "Estimated 1-rep max · last 6 sessions" title, "Peak: 239 lbs · Growth: +7.0%/wk" key, clean chart. Both Maintain (175×10) and Push (185×10) chips render when they diverge. Details pane: "Strength at 10 reps: 175 lbs" row + "vs last session: +10 lbs (+5.7%)" row, no "Floor @" anywhere. No console errors. ✓
 
+### Batch 16q (April 19, 2026) — Anomaly coaching surfaces (AI coaching step 9)
+
+Step 9 of the AI Coaching Recommender plan per spec §4.5 + §9.3. Engine-plus-small-UI pass: three detectors (plateau, regression, swing) run over the existing per-exercise e1RM history and surface a contextual banner on each expanded exercise card. No schema changes; dismissal rides the existing settings slice. User-clarified this round: banner body tap does nothing (icon + copy + dismiss X only, per "less is more"); dismiss lasts only the current active session — the banner returns next session if the detector still fires.
+
+197. **`detectPlateau(history, {minSessions=6})`, `detectRegression(history, {minSessions=3, rateThreshold=-0.01})`, `detectSwing(history, {threshold=0.30})`** (`helpers.js`). Pure functions — no store access, no time dependency beyond the input history. Plateau uses the existing `getProgressionRate` window; fires when `|rate| < 0.005` (±0.5%/wk). No R² gate because a perfectly flat line yields rSquared=0 in our code via the `ssyy===0` branch, which would otherwise falsely block the detector. Regression uses the same fit plus an R² ≥ 0.4 gate (matches the recommender's `usedFit` cutoff) so noisy scatter doesn't trigger a warning. Swing is a simple session-over-session delta: `|last.e1RM - prev.e1RM| / prev.e1RM > 0.30`.
+198. **`detectAnomalies(history)` aggregator** (`helpers.js`). Runs all three and returns the highest-priority non-null result, or null. Priority: **regression > swing > plateau** — warning first (things are getting worse), data-quality second (same machine?), passive observation third (you're stuck).
+199. **`AnomalyBanner` component** (`Recommendation.jsx`). Inline-styled bottom-sheet-free div: 10px padding, 10px border-radius, severity-keyed tint (amber `rgba(245,158,11)` for `warn` — regression; blue `rgba(59,130,246)` for `info` — plateau / swing). One-line copy left, 28×28 dismiss ✕ button right. No portal — renders inside the exercise card. `buildAnomalyCopy(anomaly, name)` co-located: plateau "You've been flat on {name} for the last {n} sessions. Try dropping 10% and chasing reps this week to break through."; regression "Trend on {name} has dipped the last {n} sessions. Consider a lighter recovery week, then build back up."; swing "Your top set on {name} swung {dir} {pct}% from last session. Same machine? Same range of motion?" Copy respects the no-em-dashes preference throughout.
+200. **`settings.dismissedAnomalies: {}`** (`useStore.js`). New settings field, `{ [exerciseKey]: sessionId }`. Additive — no persist version bump (rides the existing `settings` deep-merge on load). Companion action `dismissAnomaly(exerciseKey)` stamps the current `activeSession.startTimestamp` against the key, so a stale dismissal from a previous session fails the match check automatically and the banner reappears. No cleanup logic needed — the map stays small (at most one entry per exercise).
+201. **`ExerciseItem` wiring** (`BbLogger.jsx`). `anomaly = useMemo(() => detectAnomalies(recHistory), [recHistory])`. Anomaly key is `exercise.exerciseId || exercise.name` (falls back to name because template-seeded exercises don't carry exerciseId until save time via `buildExerciseData`). Render gate: `settings.enableAiCoaching && anomaly && !dismissedThisSession`. Banner slots between the toolbar row (Plates / Uni / Last / PR / Tip) and the column headers (`Type / Lbs / Reps`). New prop `activeSessionId={startTimestamp.current || null}` threaded from parent BbLogger so the dismissal check has a stable per-session id.
+202. **`anomaly-sanity.mjs` at worktree root.** Node ESM. 25/25 synthetic + edge-case assertions pass: plateau on 6 flat values, regression on 6 declining values (R²=1.0, rate=-9.3%/wk), swing on a +39% and -35% jump, priority order when multiple fire, healthy-gains case fires nothing, n<6 flat does NOT trigger plateau, noisy scatter does NOT trigger regression. Real-data pass against `debug-backup.json` logs informationally — Pec Dec / Chest Supported Wide Row / Seated Cable Row / Incline DB Press all return "nothing fires" on the user's healthy progression, as expected.
+203. **Verified live in preview** (mobile 375×812, debug-backup.json with synthetic injections). Plateau scenario (6 Pec Dec sessions flat at 180×10): banner renders with blue `rgba(59,130,246,0.08)` tint + blue border and correct copy referencing "6 sessions". Dismiss ✕ hides the banner; `dismissedAnomalies.Pec Dec === activeSession.startTimestamp` in localStorage. Collapsing + re-expanding the card keeps the banner hidden. Regression scenario (200→100 linear decline): amber `rgba(245,158,11,0.1)` tint, regression copy. Swing scenario (+39% last-over-prev): blue tint, "swung up 39% from last session. Same machine?" copy. Flipping `settings.enableAiCoaching = false` hides both the banner AND the Tip chip; flipping back on restores both. No console errors throughout. ✓
+
 ---
 
 ## Where to Go From Here
 
 ### What's remaining
 
-Core v1 engine work is DONE: steps 1–6 + §3.8 all shipped. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap) and §3.8 auto-classify fills in the last small engine item. Remaining steps are data-collection features and anomaly UI, not prescription math.
+Core v1 engine work is DONE: steps 1–6 + §3.8 all shipped, and step 9 anomaly UI landed in 16q. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, and the coach now surfaces plateau / regression / swing banners on the exercise card. Remaining v1 steps are two data-collection features — neither touches prescription math.
 
-**Step 7 — Equipment instance (§3.4).** Per-session `equipmentInstance: string` optional field on LoggedExercise (e.g. "Hoist leg press" vs "Cybex leg press"). Anomaly prompt when per-side e1RM swings >30% session-over-session with the same exercise name ("same machine?"). Trend fit scoping by instance. UI: small chip on the exercise card, opt-in per exercise. Size: moderate (persist change + anomaly detection + small UI).
+**Step 7 — Equipment instance (§3.4).** Per-session `equipmentInstance: string` optional field on LoggedExercise (e.g. "Hoist leg press" vs "Cybex leg press"). The swing detector shipped in 16q catches machine swaps via the "Same machine?" prompt even without this field, so step 7 is now primarily about trend-fit scoping (separate progression regressions per machine) and a small per-exercise instance chip for explicit tracking. Size: moderate (persist change + anomaly detection refinement + small UI).
 
 **Step 8 — Gym tagging full loop (§3.5, §9.7).** Exercise-level `sessionGymTags`, auto-tag-on-use prompts, picker filter ("Only available at VASA"). Settings UI for managing the gym list (currently gyms are added inline from the readiness overlay only). Size: moderate-to-large.
-
-**Step 9 — Anomaly coaching surfaces (§4.5).** Three detectors: plateau (flat e1RM for 6+), regression (negative trend for 2+), swing (>30% per-side e1RM delta). Surfaced per §9.3 as contextual banners on the exercise card, persistent until answered. Uses data we already have — no schema changes. Size: moderate.
 
 ### Post-v1 roadmap (explicitly deferred per plan Part 4)
 
 - **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI. Trivial engine work, interesting UI work.
 - **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in.
+- **Anomaly detector refinements**: the three v1 detectors use conservative thresholds. Possible tunings once we have real usage signal: (a) per-exercise threshold (compound vs isolation expect different variance), (b) grade-aware plateau (a flat trend with consistent A grades is different from a flat trend with consistent C grades), (c) swing detector integration with equipment instance (step 7) to suppress cross-machine false positives.
 - **§8.x tracks** (visual goals, coaching commentary, coach marketplace, macro/nutrition, learned readiness model): out of v1 scope entirely.
 
 ### Recommended sequencing
 
-**Step 9 next** is my pick. It's the one item that changes how the coach *feels* (from reactive to aware) and needs no schema work — all detection runs against existing session history + e1RM trends. Plateau detection in particular is the capstone insight: "you've been flat on Pec Dec for 6 sessions, let's try dropping weight and pushing reps." That's the kind of recommendation that separates a smart engine from an obvious one.
-
-Alternative: step 7 first if you want the data-collection schema change out of the way before the last UI feature. Either order works. Step 8 is naturally last since it depends on the gym list being populated (which grows organically as the user logs sessions).
-
-### Recommended sequencing
-
-My default: **step 7 (equipment instance) next** — it's the last moderate-sized feature before we enter the UI-heavy tail of the plan (gym tagging full loop, anomaly banners). Alternatively, spend a quick session on the UX polish queue to sweep up the Maintain=Push collapse + dead export cleanup, since they're all 10–30 minute fixes.
+**Step 7 (equipment instance) next** is my pick. It's the only remaining feature that touches the session schema, so getting it out of the way before step 8 means all v1 schema work ships before the final UI-heavy loop. The 16q swing detector primes the UI for this: users have already been prompted "Same machine?" so asking them to tag the instance will feel natural. Step 8 naturally goes last since the gym list grows organically as sessions accumulate — we want some gym data to exist before shipping the picker filter.

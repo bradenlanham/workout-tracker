@@ -92,6 +92,12 @@ const useStore = create(
         // subsequent sessions; last-used wins via setDefaultGymId on save.
         gyms:             [],   // [{ id, label }]
         defaultGymId:     null,
+        // Batch 16q — per-exercise anomaly dismissal map (spec §4.5 + §9.3).
+        // Shape: { [exerciseKey]: sessionId }. Set by dismissAnomaly when
+        // the user taps the X on the anomaly banner; cleared naturally as
+        // the startTimestamp changes each new session. Stale entries are
+        // harmless — the check compares against the current session id.
+        dismissedAnomalies: {},
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
@@ -408,6 +414,26 @@ const useStore = create(
 
       setDefaultGymId: (id) => {
         set(state => ({ settings: { ...state.settings, defaultGymId: id } }))
+      },
+
+      // ── Anomaly dismissals (Batch 16q, step 9) ──────────────────────
+      // Stamp the current active session's startTimestamp against the
+      // exercise key so the AnomalyBanner knows to stay hidden for the
+      // rest of this session. When the next session starts, startTimestamp
+      // changes and the stored value no longer matches — banner returns
+      // automatically if the underlying detector still fires.
+      dismissAnomaly: (exerciseKey) => {
+        if (!exerciseKey) return
+        const activeId = get().activeSession?.startTimestamp || 'no-session'
+        set(state => ({
+          settings: {
+            ...state.settings,
+            dismissedAnomalies: {
+              ...(state.settings.dismissedAnomalies || {}),
+              [exerciseKey]: activeId,
+            },
+          },
+        }))
       },
 
       // ── Custom templates ──────────────────────────────────────────────────────────────

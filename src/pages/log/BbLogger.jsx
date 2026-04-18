@@ -7,12 +7,13 @@ import {
   getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
   findSimilarExercises, normalizeExerciseName,
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
+  detectAnomalies,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
-import { RecommendationChip, RecommendationSheet } from './Recommendation'
+import { RecommendationChip, RecommendationSheet, AnomalyBanner } from './Recommendation'
 import ReadinessCheckIn from './ReadinessCheckIn'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
@@ -588,7 +589,7 @@ function ExerciseItem({
   exercise, lastSessionEx, allSessions, onUpdate, theme,
   isFirst, isLast, onMoveUp, onMoveDown, reorderMode, workoutType,
   aggressivenessMultiplier = 1, suggestedMode = 'push',
-  fatigueSignals = null,
+  fatigueSignals = null, activeSessionId = null,
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
@@ -605,7 +606,7 @@ function ExerciseItem({
     if (!expanded && editingRec) commitRec()
     // eslint-disable-next-line
   }, [expanded])
-  const { settings, setRestEndTimestamp } = useStore()
+  const { settings, setRestEndTimestamp, dismissAnomaly } = useStore()
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const numpadCtx = useContext(NumpadContext)
   const [recSheetOpen,    setRecSheetOpen]    = useState(false)
@@ -781,6 +782,17 @@ function ExerciseItem({
       fatigueSignals:   fatigueSignals || {},
     })
   }, [recHistory, recTargetReps, libraryEntry?.progressionClass, libraryEntry?.loadIncrement, suggestedMode, aggressivenessMultiplier, fatigueSignals])
+
+  // ── Anomaly detection (Batch 16q, step 9 / spec §4.5 + §9.3) ──────────
+  // Runs plateau / regression / swing over the same recHistory used by the
+  // recommender. Returns the highest-priority hit or null. Dismissal is
+  // keyed to the active session's startTimestamp so banners reappear next
+  // session until the underlying signal clears.
+  const anomaly = useMemo(() => detectAnomalies(recHistory), [recHistory])
+  const anomalyKey = exercise.exerciseId || exercise.name
+  const dismissedFor = settings.dismissedAnomalies?.[anomalyKey]
+  const dismissedThisSession = dismissedFor != null && activeSessionId != null && dismissedFor === activeSessionId
+  const showAnomalyBanner = settings.enableAiCoaching && anomaly && !dismissedThisSession
 
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
@@ -1022,6 +1034,15 @@ function ExerciseItem({
               />
             )}
           </div>
+
+          {/* Anomaly banner (Batch 16q) — plateau / regression / swing */}
+          {showAnomalyBanner && (
+            <AnomalyBanner
+              anomaly={anomaly}
+              exerciseName={exercise.name}
+              onDismiss={() => dismissAnomaly(anomalyKey)}
+            />
+          )}
 
           {/* Column headers — weight first, reps second */}
           <div className="flex items-center gap-2">
@@ -2459,6 +2480,7 @@ export default function BbLogger() {
                       aggressivenessMultiplier={readiness?.aggressivenessMultiplier ?? 1}
                       suggestedMode={readiness?.suggestedMode ?? 'push'}
                       fatigueSignals={fatigueSignals}
+                      activeSessionId={startTimestamp.current || null}
                     />
                   )
                 })}

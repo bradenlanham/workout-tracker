@@ -1083,6 +1083,79 @@ function buildFatigueReasoningPrefix({
   return ''
 }
 
+// ── Anomaly detectors (spec §4.5, Batch 16q, step 9) ───────────────────────
+//
+// Three detectors scan the per-exercise e1RM history returned by
+// `getExerciseHistory` and surface contextual banners when something looks
+// off. Pure functions — no store access, no time dependency beyond the input
+// history, so they're safe inside a useMemo that reruns on render.
+//
+//   plateau     — flat trend over the last 6+ sessions. "Try dropping 10%
+//                 and chasing reps to break through."
+//   regression  — clear downtrend over the last 3+ sessions. "Consider a
+//                 lighter recovery week, then push back up."
+//   swing       — >30% per-side e1RM delta session-over-session. Usually
+//                 signals a different machine or range of motion.
+//
+// `detectAnomalies` returns the highest-priority hit or null:
+//   regression > swing > plateau (warning first, then data-quality, then
+//   passive observation).
+
+export function detectPlateau(history, { minSessions = 6 } = {}) {
+  const h = Array.isArray(history) ? history : []
+  if (h.length < minSessions) return null
+  const fit = getProgressionRate(h)
+  // No rSquared gate — a perfectly flat line gives rSquared=0 in our code
+  // (the ssyy===0 branch in getProgressionRate), which would falsely block
+  // the detector if gated. Rate threshold alone captures "stuck."
+  if (Math.abs(fit.rate) < 0.005) {
+    return { triggered: true, kind: 'plateau', severity: 'info', rate: fit.rate, n: fit.n }
+  }
+  return null
+}
+
+export function detectRegression(history, { minSessions = 3, rateThreshold = -0.01 } = {})  {
+  const h = Array.isArray(history) ? history : []
+  if (h.length < minSessions) return null
+  const fit = getProgressionRate(h)
+  // R² gate matches the recommender's `usedFit` cutoff — a clear downtrend
+  // needs the line to actually fit. Noisy scatter around a negative mean
+  // should not trigger a warning.
+  if (fit.rate < rateThreshold && fit.rSquared >= 0.4) {
+    return { triggered: true, kind: 'regression', severity: 'warn', rate: fit.rate, rSquared: fit.rSquared, n: fit.n }
+  }
+  return null
+}
+
+export function detectSwing(history, { threshold = 0.30 } = {}) {
+  const h = Array.isArray(history) ? history : []
+  if (h.length < 2) return null
+  const last = Number(h[h.length - 1]?.e1RM) || 0
+  const prev = Number(h[h.length - 2]?.e1RM) || 0
+  if (prev <= 0) return null
+  const delta = (last - prev) / prev
+  if (Math.abs(delta) > threshold) {
+    return {
+      triggered: true,
+      kind: 'swing',
+      severity: 'info',
+      delta,
+      direction: delta > 0 ? 'up' : 'down',
+    }
+  }
+  return null
+}
+
+// Priority: regression > swing > plateau. First non-null wins.
+export function detectAnomalies(history) {
+  return (
+    detectRegression(history) ||
+    detectSwing(history)      ||
+    detectPlateau(history)    ||
+    null
+  )
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {
