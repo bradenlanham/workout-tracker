@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 17, 2026 (Batch 14)
+> Last updated: April 17, 2026 (Batch 15)
 
 ## Rules for Claude
 
@@ -53,15 +53,19 @@ src/
 ├── utils/
 │   └── helpers.js             # getNextBbWorkout, getLastBbSession, perSideLoad, getExercisePRs, isSetPR, isPR,
 │                              # getWorkoutStreak, getBestStreak, getRotationItemOnDate, getAchievements,
-│                              # migrateSessionsToV2, formatDate/Time, playBeep, generateId
+│                              # migrateSessionsToV2, migrateSessionsToV3, normalizeExerciseName,
+│                              # similarExerciseScore, findSimilarExercises, formatDate/Time, playBeep, generateId
 │                              # getWorkoutStreak signature: (sessions, cardioSessions, restDaySessions)
 │                              # getBestStreak    signature: (sessions, cardioSessions, restDaySessions)
 │                              # perSideLoad(set): canonical per-side load accessor — rawWeight ?? weight ?? 0
+│                              # findSimilarExercises(query, library, opts): trigram+token-sort fuzzy match
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
 │   ├── HamburgerMenu.jsx      # Slide-in menu: My Splits, Progress, Settings, Info (incl. "How Streaks Work"), Manage Data
-│   └── RestTimer.jsx          # Floating draggable rest timer with progress ring (visible only during logging)
+│   ├── RestTimer.jsx          # Floating draggable rest timer with progress ring (visible only during logging)
+│   ├── CustomNumpad.jsx       # Numpad overlay used by BbLogger for weight/reps entry
+│   └── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
 │
 └── pages/
     ├── Welcome.jsx            # Onboarding: name entry, split choice (Blueprint or build own), theme, import
@@ -75,6 +79,7 @@ src/
     ├── SplitBuilder.jsx       # 4-step wizard: name/emoji → add workouts → set rotation → review & save
     ├── SplitEditor.jsx        # Legacy built-in split rotation reorder (kept for backward compat)
     ├── TemplateEditor.jsx     # Create/edit custom workout templates (legacy, pre-splits feature)
+    ├── Backfill.jsx           # One-time tagging screen for library entries with needsTagging: true
     │
     └── log/
         ├── BbLogger.jsx       # THE MAIN SESSION LOGGER — exercise cards, sets, plates mode, uni toggle,
@@ -109,7 +114,13 @@ src/
   // ── Splits ──
   splits: [],                      // Array of split objects (built-in + user-created)
   activeSplitId: null,             // Currently active split ID
-  exerciseLibrary: [],             // User's custom exercises (not heavily used yet)
+  exerciseLibrary: [],             // Canonical Exercise[] — seeded by initLibrary() on mount
+                                   // from data/exerciseLibrary.js + extended by the v2→v3
+                                   // migration with needsTagging:true entries for any
+                                   // user-created session names that didn't resolve.
+                                   // Entry shape: { id, name, aliases, primaryMuscles[],
+                                   // equipment, isBuiltIn, defaultUnilateral, loadIncrement,
+                                   // defaultRepRange, progressionClass, needsTagging, createdAt }
 
   // ── Legacy ──
   customTemplates: [],             // Pre-splits custom workout templates
@@ -150,7 +161,8 @@ src/
     workoutType: 'push',
     exercises: [
       {
-        name: 'Bench Press',
+        name: 'Bench Press',            // Canonical name — matches a library entry
+        exerciseId: 'ex_bench_press',   // Stable library link (added in Batch 15)
         notes: '...',
         completedAt: timestamp,
         unilateral: false,              // If true, volume was doubled at save time
@@ -360,14 +372,17 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 | `/splits` | SplitManager | Split list & management |
 | `/splits/new` | SplitBuilder | New split wizard |
 | `/splits/edit/:id` | SplitBuilder | Edit existing split |
+| `/backfill` | Backfill | One-time muscle-group + equipment tagging for user-created exercises |
 
 ---
 
 ## Data Persistence
 
-- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 2`.
+- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 3`.
 - Custom `merge` function in the persist config handles schema evolution: new fields get defaults, existing user settings are preserved via deep merge, existing users auto-skip onboarding.
-- `migrate` hook handles versioned schema changes. V1→V2 (Batch 14): backfills `rawWeight` on every set and recomputes `isNewPR` via `migrateSessionsToV2()` in helpers.js.
+- `migrate` hook handles versioned schema changes.
+  - V1→V2 (Batch 14): backfills `rawWeight` on every set and recomputes `isNewPR` via `migrateSessionsToV2()` in helpers.js.
+  - V2→V3 (Batch 15): seeds `exerciseLibrary` from built-in data if empty, assigns stable `exerciseId` to every LoggedExercise, canonicalizes display names against the library (Title Case variants win), flags unresolved names as `needsTagging: true`, and recomputes `isNewPR` keyed by exerciseId. Runs via `migrateSessionsToV3({sessions, library})`.
 - **Active session** (`activeSession`) persists across page reloads and app backgrounding so in-progress workouts are never lost.
 - **Rest timer** uses absolute timestamps (`restEndTimestamp`) rather than countdown values, so it stays accurate across backgrounding.
 
@@ -546,3 +561,33 @@ Step 1 of the AI Coaching Recommender v1 plan (see `coaching-recommender-spec-v3
 91. **V1→V2 persist migration (`useStore.js:317`, `helpers.js`):** Persist version bumped `1 → 2`. New `migrate` hook runs `migrateSessionsToV2(persistedState.sessions)` — backfills `rawWeight` on every set (defaults to `weight`) and recomputes every `isNewPR` chronologically per exercise name using `perSideLoad`. O(sets), idempotent. Validated against `debug-backup.json` (24 sessions, 425 sets preserved, 188 rawWeight backfills, phantom PRs 232 → 135, unilateral PRs 48 → 18). Updates the Batch 10 "known gap" — historical flags now match the live UI rule.
 92. **Minor: `.js` extension on internal import (`helpers.js:1`):** `'../data/exercises'` → `'../data/exercises.js'`. Vite supports both; bare Node 24 requires the explicit extension. Enables `node migration-sanity.mjs` without a bundler step.
 93. **`migration-sanity.mjs` checked in (repo root):** Node ESM script — loads `debug-backup.json`, runs `migrateSessionsToV2`, reports before/after PR counts, rawWeight coverage, per-exercise max weight spot-checks, and name-collision candidates (preview of step 2's dedup work). Mirrors the `streak-debug.mjs` pattern already in the repo.
+
+### Batch 15 (April 17, 2026) — Exercise IDs + canonical library + backfill UI + picker dedup (AI coaching prereq, step 2)
+
+Step 2 of the AI Coaching Recommender plan. Eliminates name-based identity for exercises and replaces it with a stable, deduplicated library that every session references by `exerciseId`. Unblocks the recommender (step 3) by giving it a reliable per-exercise history to fit against. Shipped in four substeps (15a–15d) — each reviewable on its own.
+
+#### 15a — Library foundation
+
+94. **`exerciseLibrary` slice seeded from built-in data** (`useStore.js`, `data/exerciseLibrary.js`). `buildBuiltInLibrary()` transforms the 90 raw `{name, muscleGroup, equipment}` entries in `data/exerciseLibrary.js` into the canonical Exercise entity with slug-derived IDs (`ex_{slug(name)}`), `primaryMuscles[]`, `progressionClass` (compound/isolation/bodyweight), and the other recommender-facing fields. `builtInExerciseIdForName(name)` is exported for the migration and dedup paths. `EQUIPMENT_TYPES` array exported from `exerciseLibrary.js` (Barbell, Dumbbell, Machine, Cable, Bodyweight, Kettlebell, Other).
+95. **`initLibrary()` store action** — idempotent seed called from `App.jsx` alongside `initSplits()` on mount. Fresh installs get the seeded library immediately; returning users with a populated library skip the seed. Paired with an adjusted merge hook so persisted empty libraries don't stick on upgrade.
+96. **Library CRUD store actions.** `addExerciseToLibrary(exercise)` enforces the §3.2.1 required-field constraint at runtime (rejects empty `primaryMuscles`, missing `equipment`, empty `name`). `updateExerciseInLibrary(id, patch)`, `deleteExerciseFromLibrary(id)`, and `mergeExercises(keepId, mergeIds)` complete the surface. `mergeExercises` rewrites every session's `exerciseId` from any merge-id → keep-id before removing the merged entries, so history is never lost.
+
+#### 15b — V2→V3 migration
+
+97. **`migrateSessionsToV3({sessions, library})` helper** (`helpers.js`). Collects every distinct session-exercise name, pre-sorts by descending capital-letter count (so Title Case variants win the canonical slot), then resolves each against the library by normalized key (`normalizeExerciseName` — case-insensitive, whitespace-collapsed). Matches become aliases on the existing library entry; unresolved names become new library entries with `primaryMuscles: []`, `equipment: 'Other'`, `needsTagging: true`. Every LoggedExercise is rewritten with canonical `name` + stable `exerciseId`. `isNewPR` is then recomputed chronologically keyed by exerciseId so post-canonicalization duplicates share PR progression.
+98. **Persist version bumped `2 → 3`** with the migrate hook wired up. V2→V3 seeds the library from built-in if the persisted slice is empty (supports the direct v1→v3 upgrade path) then runs `migrateSessionsToV3`. Idempotent — re-running is a no-op.
+99. **Sanity-checked against `debug-backup.json`** (`migration-v3-sanity.mjs` checked in): 90 built-ins + 19 user-created = 109 library entries (all 19 flagged `needsTagging`), 136 LoggedExercises get exerciseId (100% coverage), "Seated cable row" correctly canonicalizes to "Seated Cable Row" with the lowercase form preserved as an alias. PR flags 135 → 134 (one phantom cleared by unified history).
+
+#### 15c — Backfill UI
+
+100. **`/backfill` route + `Backfill.jsx` page.** Lists every library entry with `needsTagging: true` as cards. Each card shows canonical name + most-recent logged set for context (`Last: 190 × 9 · 10 Apr 2026`) plus pill rows for primary muscles (multi-select, min 1) and equipment (single-select from `EQUIPMENT_TYPES`). Completion rule: entry drops off the list once `primaryMuscles.length > 0` AND `equipment` is set to a non-`'Other'` value. Success state at 0 remaining: "All exercises tagged!" + "Back to Dashboard" CTA.
+101. **`tagExercise(id, patch)` store action** (`useStore.js`). Atomic merge-and-recompute — needsTagging is evaluated against the merged state inside a single `set(state => ...)`, not against a stale render snapshot. This was a real bug — back-to-back pill taps in Backfill.jsx were losing the completion check because each click's handler read `exerciseLibrary` from the prior render's closure and overwrote the other's update.
+102. **Dashboard banner.** Small blue pill above the calendar, only rendered while `pendingCount > 0`, links to `/backfill`. Message mentions "smarter recommendations" to preview the v1 payoff. Non-intrusive — no auto-redirect from Dashboard mount, so the user can defer indefinitely. Disappears when tagging is complete.
+
+#### 15d — Picker dedup + creation modal
+
+103. **Fuzzy match helpers** (`helpers.js`). `similarExerciseScore(a, b)` returns 0.0–1.0 by maxing three signals: exact-after-normalization, token-sort equality (catches "DB Lateral Raises" vs "Lateral DB Raises"), and trigram Jaccard. `findSimilarExercises(query, library, {suggestThreshold, max})` scans each library entry's canonical name + aliases, returns the top-N above threshold sorted by score desc. Spec §3.3 thresholds: `0.85` for auto-dedup, `0.7` for the suggest-list. `normalizeExerciseName(name)` exposed for callers that want to compare without scoring.
+104. **`CreateExerciseModal.jsx`** — shared bottom-sheet-on-mobile / centered-on-desktop form. Collects `name`, `primaryMuscles` (multi-select, ≥1), `equipment` (single-select), and `defaultUnilateral` toggle. Save button is disabled until required fields are set, so the §3.2.1 constraint is enforced at the UI layer in addition to the store action's runtime check.
+105. **BbLogger `AddExercisePanel` rewired.** Suggestions come from the store library via fuzzy match when the user types; a 12-name starter list (pulled from built-ins) shows on empty query. Tapping "+ Add [typed]" auto-uses any library match scoring ≥0.85 (so "pec dec" silently resolves to `ex_pec_dec`); otherwise opens `CreateExerciseModal` pre-filled with the typed name. `addExercise(name, exerciseId)` accepts an optional id so picked-from-library exercises carry the link through to save.
+106. **`buildExerciseData` saves canonical name + exerciseId** (`BbLogger.jsx`). On session save, resolves `exerciseId` — prefers the row's linked id from the picker selection, falls back to a library lookup by canonical/alias name. Canonicalizes `name` to the library's value too. Going forward every saved session has `{name: 'Canonical Name', exerciseId: 'ex_...'}` on every LoggedExercise.
+107. **SplitBuilder `ExercisePicker` wired to the same dedup path.** "Add your own" now fuzzy-matches against the store library before creating; high-similarity matches reuse the existing entry, low-similarity opens `CreateExerciseModal`. The full picker list now reads from the store library when populated (so user-created entries show up alongside built-ins), falling back to the raw data import for fresh installs before `initLibrary()` fires.
