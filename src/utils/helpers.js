@@ -357,6 +357,148 @@ export function migrateSessionsToV2(sessions) {
   )
 }
 
+// ── V2 → V3 persist migration ───────────────────────────────────────────────
+// Assigns stable exerciseIds to every LoggedExercise, canonicalizes display
+// names against the library, and recomputes isNewPR keyed by exerciseId so
+// post-canonicalization duplicates ("Seated Cable Row" / "seated cable row")
+// share a single PR progression instead of silently splitting history.
+//
+// Input: { sessions, library } — library must be pre-seeded (built-ins or
+// persisted). Unresolved session names are added as new library entries with
+// needsTagging: true so the backfill UI (step 2c) can collect muscle/equipment
+// data from the user later.
+//
+// Output: { sessions, library } — both may be modified. Idempotent.
+
+export function normalizeExerciseName(name) {
+  return (name || '').toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
+export function migrateSessionsToV3({ sessions, library } = {}) {
+  const sessionsIn = Array.isArray(sessions) ? sessions : []
+  const libraryIn  = Array.isArray(library)  ? library  : []
+  if (!sessionsIn.length && !libraryIn.length) {
+    return { sessions: sessionsIn, library: libraryIn }
+  }
+
+  // Clone library entries so we can extend aliases and append needsTagging
+  // records without mutating the caller's references.
+  const libOut = libraryIn.map(e => ({ ...e, aliases: [...(e.aliases || [])] }))
+
+  // Lookup: normalized name → library entry. Includes canonical names + aliases.
+  const lookup = new Map()
+  const registerLookup = (key, entry) => {
+    const k = normalizeExerciseName(key)
+    if (k && !lookup.has(k)) lookup.set(k, entry)
+  }
+  for (const ex of libOut) {
+    registerLookup(ex.name, ex)
+    for (const alias of ex.aliases) registerLookup(alias, ex)
+  }
+
+  // Resolve every distinct session-exercise name to a library entry, creating
+  // needsTagging records for any names that don't already resolve.
+  //
+  // Pre-sort the distinct names by descending capital-letter count so Title
+  // Case variants are seen before lowercase ones. When two variants normalize
+  // to the same key (e.g. "Seated Cable Row" and "Seated cable row"), the
+  // first-seen wins the canonical slot — pre-sorting makes sure that's the
+  // prettier one. Second-pass resolutions pick up the already-canonical match.
+  const capsScore = s => (s.match(/[A-Z]/g) || []).length
+  const distinctNames = [...new Set(
+    sessionsIn.flatMap(s => (s?.data?.exercises || []).map(e => e?.name).filter(Boolean))
+  )].sort((a, b) => capsScore(b) - capsScore(a) || a.localeCompare(b))
+
+  const resolutions = new Map()  // originalName → { id, canonicalName }
+  for (const name of distinctNames) {
+    const match = lookup.get(normalizeExerciseName(name))
+    if (match) {
+      if (match.name !== name && !match.aliases.includes(name)) {
+        match.aliases.push(name)
+      }
+      resolutions.set(name, { id: match.id, canonicalName: match.name })
+      continue
+    }
+    const newEntry = {
+      id:                `ex_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      aliases:           [],
+      primaryMuscles:    [],       // empty — prompts backfill
+      equipment:         'Other',  // placeholder until tagged
+      isBuiltIn:         false,
+      defaultUnilateral: false,
+      loadIncrement:     5,
+      defaultRepRange:   [8, 12],
+      progressionClass:  'isolation',
+      needsTagging:      true,
+      createdAt:         new Date().toISOString(),
+    }
+    libOut.push(newEntry)
+    registerLookup(newEntry.name, newEntry)
+    resolutions.set(name, { id: newEntry.id, canonicalName: newEntry.name })
+  }
+
+  // Rewrite every LoggedExercise with canonical name + exerciseId. Skip
+  // exercises that already have an exerciseId (idempotent re-run safety).
+  const canonicalized = sessionsIn.map(s => {
+    if (!s?.data?.exercises) return s
+    return {
+      ...s,
+      data: {
+        ...s.data,
+        exercises: s.data.exercises.map(ex => {
+          if (ex?.exerciseId) return ex
+          const res = resolutions.get(ex?.name)
+          if (!res) return ex
+          return { ...ex, name: res.canonicalName, exerciseId: res.id }
+        }),
+      },
+    }
+  })
+
+  // Recompute isNewPR chronologically keyed by exerciseId. Collision keys
+  // ("Seated Cable Row" in push vs "seated cable row" in pull) now share a
+  // running maxWeight tracker.
+  const prTracker  = new Map()
+  const updatesIdx = new Map()
+  const ordered = canonicalized
+    .map((s, i) => ({ s, i, t: new Date(s.date).getTime() }))
+    .filter(x => x.s?.mode === 'bb' && x.s?.data?.exercises && !isNaN(x.t))
+    .sort((a, b) => a.t - b.t)
+
+  for (const { s, i } of ordered) {
+    const updatedExes = s.data.exercises.map(ex => {
+      const key = ex.exerciseId || ex.name
+      let run = prTracker.get(key) || { maxWeight: 0, maxRepsAtMaxWeight: 0 }
+      const updatedSets = (ex.sets || []).map(set => {
+        const w = Number(perSideLoad(set)) || 0
+        const r = Number(set.reps)         || 0
+        if (w <= 0 || r <= 0) return { ...set, isNewPR: false }
+        let isNewPR = false
+        if (run.maxWeight === 0 || w > run.maxWeight) {
+          isNewPR = true
+          run = { maxWeight: w, maxRepsAtMaxWeight: r }
+        } else if (w === run.maxWeight && r > run.maxRepsAtMaxWeight) {
+          isNewPR = true
+          run = { ...run, maxRepsAtMaxWeight: r }
+        }
+        return { ...set, isNewPR }
+      })
+      prTracker.set(key, run)
+      return { ...ex, sets: updatedSets }
+    })
+    updatesIdx.set(i, updatedExes)
+  }
+
+  const finalSessions = canonicalized.map((s, i) =>
+    updatesIdx.has(i)
+      ? { ...s, data: { ...s.data, exercises: updatesIdx.get(i) } }
+      : s
+  )
+
+  return { sessions: finalSessions, library: libOut }
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {

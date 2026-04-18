@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2 } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3 } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -439,15 +439,31 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 2,
-      // V1→V2: backfill rawWeight on every historical set and recompute every
-      // isNewPR flag using the weight-anchored rule against per-side load.
-      // Kills phantom PRs on post-2026-04-02 unilateral sets without touching
-      // the original `weight` field, so old data stays intact.
+      version: 3,
+      // Versioned persist migrations. Each block runs in order; they modify
+      // persistedState in place and pass it along.
+      //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
+      //   every isNewPR against per-side load.
+      //   V2→V3 (Batch 15b): seed exerciseLibrary if empty, assign stable
+      //   exerciseId + canonical name to every LoggedExercise, flag
+      //   unresolved session names as needsTagging, and re-run the PR
+      //   recompute keyed by exerciseId so dedup'd names share history.
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
           persistedState.sessions = migrateSessionsToV2(persistedState.sessions)
+        }
+        if (version < 3) {
+          const seededLibrary =
+            (Array.isArray(persistedState.exerciseLibrary) && persistedState.exerciseLibrary.length > 0)
+              ? persistedState.exerciseLibrary
+              : buildBuiltInLibrary()
+          const result = migrateSessionsToV3({
+            sessions: persistedState.sessions || [],
+            library:  seededLibrary,
+          })
+          persistedState.exerciseLibrary = result.library
+          persistedState.sessions        = result.sessions
         }
         return persistedState
       },
