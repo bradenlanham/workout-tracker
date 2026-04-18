@@ -173,6 +173,26 @@ const useStore = create(
         }))
       },
 
+      // Atomic tag action for the backfill UI. Merges patch then recomputes
+      // needsTagging from the merged state — avoids the stale-closure bug
+      // you hit if you try to compute completion inside a component callback
+      // that reads exerciseLibrary via useStore() (each click fires against
+      // the prior render's snapshot, so back-to-back pill taps lose info).
+      tagExercise: (id, patch) => {
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== id) return ex
+            const merged = { ...ex, ...patch }
+            const done =
+              Array.isArray(merged.primaryMuscles)
+              && merged.primaryMuscles.length > 0
+              && merged.equipment
+              && merged.equipment !== 'Other'
+            return { ...merged, needsTagging: !done }
+          }),
+        }))
+      },
+
       deleteExerciseFromLibrary: (id) => {
         set(state => ({
           exerciseLibrary: state.exerciseLibrary.filter(ex => ex.id !== id),

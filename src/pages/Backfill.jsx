@@ -95,7 +95,7 @@ function ExerciseTagCard({ exercise, lastSet, onUpdate, theme }) {
 
 export default function Backfill() {
   const navigate = useNavigate()
-  const { exerciseLibrary, sessions, settings, updateExerciseInLibrary } = useStore()
+  const { exerciseLibrary, sessions, settings, tagExercise } = useStore()
   const theme = getTheme(settings.accentColor)
 
   const needsTaggingExes = useMemo(
@@ -105,22 +105,10 @@ export default function Backfill() {
 
   const totalToTag = needsTaggingExes.length
 
-  // Snapshot the initial "to-tag" list so cards don't immediately vanish as
-  // the user taps pills — they only disappear on next mount (or full save).
-  // For now we filter live; if the pop-off feel is jarring, freeze here.
-  const handleUpdate = (id, patch) => {
-    const current = exerciseLibrary.find(e => e.id === id)
-    if (!current) return
-    const nextPrimary  = patch.primaryMuscles ?? current.primaryMuscles
-    const nextEquip    = patch.equipment      ?? current.equipment
-    const isComplete   = (nextPrimary || []).length > 0
-      && nextEquip
-      && nextEquip !== 'Other'
-    updateExerciseInLibrary(id, {
-      ...patch,
-      needsTagging: !isComplete,
-    })
-  }
+  // Atomic tag via store action — patch is merged against live store state
+  // (not a stale render snapshot), so back-to-back pill taps don't lose info
+  // when completion requires both muscle + equipment.
+  const handleUpdate = (id, patch) => tagExercise(id, patch)
 
   const allDone = totalToTag === 0
 
