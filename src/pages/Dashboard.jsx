@@ -958,79 +958,93 @@ export default function Dashboard() {
                 <div key={i} style={{ textAlign: 'center', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>{l}</div>
               ))}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+            {/* Batch 16m: cells redesigned to match the weekly pill strip's
+                visual language — circles per day, state encoded via fill /
+                border / color. No stacked emojis, no floating cardio dot.
+                Active days get a filled accent circle; today-pending gets
+                an accent border; logged rest gets a subtle white fill;
+                rotation rest gets a dashed border; empty / future days
+                stay faint. Day number sits inside every circle for
+                scannable date reference. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
               {getMonthDays().map((day, i) => {
                 if (!day) return <div key={i} style={{ aspectRatio: '1' }} />
 
-                const info        = getDayInfo(day)
-                const isToday     = toDateStr(day) === todayStr
-                const isTodayDone = info.type === 'today-done'
-                const isDone      = info.type === 'done'
-                const isTodayPend = info.type === 'today-pending'
-                const isTodayRest = info.type === 'today-rest'
-                const isCardio    = info.type === 'cardio'
-                const isTodayCard = info.type === 'today-cardio'
-                const isFuture    = info.type === 'future'
-                const isFutureRest = info.type === 'future-rest'
-                const isPastRest  = info.type === 'past-rest'
-                const isLoggedRestDay = info.type === 'logged-rest' || info.type === 'today-logged-rest'
-                const isCompleted = isDone || isTodayDone
+                const info   = getDayInfo(day)
+                const t      = info.type
+                const isActive       = t === 'done' || t === 'today-done' || t === 'cardio' || t === 'today-cardio'
+                const isTodayPending = t === 'today-pending' || t === 'today-rest'
+                const isLoggedRest   = t === 'logged-rest' || t === 'today-logged-rest'
+                const isRotationRest = t === 'future-rest' || t === 'past-rest'
+                const isFutureDay    = t === 'future'
+                const isEmpty        = t === 'empty'
+                const isTodayCell    = t.startsWith('today-') || t === 'today-pending'
 
-                let cellBg = 'rgba(255,255,255,0.04)'
-                let textColor = 'var(--text-muted)'
-                if (isTodayDone)  { cellBg = theme.hex; textColor = theme.contrastText }
-                else if (isDone)  { cellBg = theme.hex + '33'; textColor = theme.hex }
-                else if (isCardio || isTodayCard) { cellBg = 'rgba(96,165,250,0.2)'; textColor = '#60a5fa' }
-                else if (isLoggedRestDay) { cellBg = 'rgba(255,255,255,0.1)'; textColor = 'var(--text-secondary)' }
+                // State → visual mapping
+                let bg            = 'transparent'
+                let border        = 'none'
+                let textColor     = 'var(--text-faint)'
+                let fontWeight    = 500
+                let interactive   = false
+
+                if (isActive) {
+                  bg         = theme.hex
+                  textColor  = theme.contrastText
+                  fontWeight = 700
+                  interactive = true
+                } else if (isTodayPending) {
+                  border     = `2px solid ${theme.hex}`
+                  textColor  = theme.hex
+                  fontWeight = 700
+                } else if (isLoggedRest) {
+                  bg         = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'
+                  textColor  = 'var(--text-secondary)'
+                  fontWeight = 600
+                  if (t === 'today-logged-rest') border = `2px solid ${theme.hex}`
+                } else if (isRotationRest) {
+                  border     = `1px dashed ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'}`
+                  textColor  = 'var(--text-muted)'
+                  fontWeight = 500
+                } else if (isFutureDay) {
+                  border     = `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`
+                  textColor  = 'var(--text-muted)'
+                  fontWeight = 500
+                  interactive = true
+                }
+                // else empty — just dim number, no shape
 
                 return (
                   <button
                     key={i}
                     onPointerDown={() => {
-                      if (isCompleted) {
+                      if (isActive) {
                         const s = sessionByDate[toDateStr(day)]
                         if (s) setSelectedDaySession(s)
-                      } else if (isCardio || isTodayCard) {
-                        navigate('/history')
+                        else if (t === 'cardio' || t === 'today-cardio') navigate('/history')
+                      } else if (isFutureDay) {
+                        setSelectedFutureDay({ dateStr: toDateStr(day), workoutId: info.planned, isRest: false })
+                      } else if (t === 'future-rest') {
+                        setSelectedFutureDay({ dateStr: toDateStr(day), workoutId: null, isRest: true })
                       }
                     }}
                     style={{
                       aspectRatio: '1',
+                      borderRadius: '50%',
+                      backgroundColor: bg,
+                      border,
+                      color: textColor,
+                      fontSize: 12,
+                      fontWeight,
                       display: 'flex',
-                      flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      borderRadius: 8,
-                      backgroundColor: cellBg,
-                      border: isTodayPend ? `2px solid ${theme.hex}` : 'none',
-                      cursor: (isCompleted || isCardio || isTodayCard) ? 'pointer' : 'default',
-                      background: cellBg,
+                      cursor: interactive ? 'pointer' : 'default',
+                      padding: 0,
+                      lineHeight: 1,
+                      fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    <span style={{ fontSize: 11, fontWeight: 700, color: textColor, lineHeight: 1 }}>{day.getDate()}</span>
-                    {(isCompleted) && (
-                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, color: isTodayDone ? theme.contrastText : theme.hex }}>
-                        {isTodayDone ? '✓' : info.emoji}
-                      </span>
-                    )}
-                    {(isCardio || isTodayCard) && (
-                      <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, marginTop: 2 }}>C</span>
-                    )}
-                    {(isTodayRest || isFutureRest || isPastRest) && (
-                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: isTodayRest ? 0.5 : 0.3, fontWeight: 600, color: 'var(--text-muted)' }}>R</span>
-                    )}
-                    {isLoggedRestDay && (
-                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, fontWeight: 700, color: 'var(--text-secondary)' }}>R</span>
-                    )}
-                    {isTodayPend && (
-                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: 0.5 }}>{info.emoji}</span>
-                    )}
-                    {isFuture && info.emoji && (
-                      <span style={{ fontSize: 8, lineHeight: 1, marginTop: 2, opacity: 0.2 }}>{info.emoji}</span>
-                    )}
-                    {info.hasCardio && isCompleted && (
-                      <span style={{ fontSize: 6, color: '#60a5fa', lineHeight: 1 }}>●</span>
-                    )}
+                    {day.getDate()}
                   </button>
                 )
               })}
