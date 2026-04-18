@@ -13,7 +13,7 @@
 // The recommendation is computed in the parent (ExerciseItem) via useMemo
 // and passed down — these components are pure display.
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { recommendNextLoad } from '../../utils/helpers'
 
@@ -197,17 +197,37 @@ export function RecommendationSheet({
   progressionClass,
   loadIncrement,
   accentColor = '#3b82f6',
+  defaultMode = 'push',
+  aggressivenessMultiplier = 1,
   now = Date.now(),
 }) {
   // Recompute per mode so chip tap can swap between them without a recalc.
+  // aggressivenessMultiplier (Batch 16n) scales push-mode nudging based on
+  // the user's readiness answers; maintain/deload ignore it.
   const recs = useMemo(() => ({
-    push:     recommendNextLoad({ history, targetReps, mode: 'push',     progressionClass, loadIncrement, now }),
+    push:     recommendNextLoad({ history, targetReps, mode: 'push',     progressionClass, loadIncrement, aggressivenessMultiplier, now }),
     maintain: recommendNextLoad({ history, targetReps, mode: 'maintain', progressionClass, loadIncrement, now }),
-  }), [history, targetReps, progressionClass, loadIncrement, now])
+    deload:   recommendNextLoad({ history, targetReps, mode: 'deload',   progressionClass, loadIncrement, now }),
+  }), [history, targetReps, progressionClass, loadIncrement, aggressivenessMultiplier, now])
 
-  const [selectedMode,  setSelectedMode]  = useState('push')
+  // When a readiness answer suggests a specific mode, open the sheet aligned
+  // with that mode so the user sees the prescription that matches their
+  // declared goal. Also surfaces the deload chip when the user picked
+  // Recover so they can compare against push/maintain. Falls back to push
+  // when no readiness is present.
+  const showDeloadChip = defaultMode === 'deload'
+  const validInitial   = ['push', 'maintain', 'deload'].includes(defaultMode) ? defaultMode : 'push'
+  const [selectedMode,  setSelectedMode]  = useState(validInitial)
   const [detailsOpen,   setDetailsOpen]   = useState(false)
   const [whyOpen,       setWhyOpen]       = useState(false)
+
+  // Re-sync the selected mode to the readiness suggestion each time the sheet
+  // opens. useState's initializer only runs on first mount, and this component
+  // stays mounted between opens (the parent gates via the `open` prop rather
+  // than conditional mount), so without this the user would see stale state.
+  useEffect(() => {
+    if (open) setSelectedMode(validInitial)
+  }, [open, validInitial])
 
   if (!open) return null
 
@@ -275,8 +295,19 @@ export function RecommendationSheet({
           </div>
         )}
 
-        {/* ── Mode chips (Maintain | Push) ─────────────────────────── */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
+        {/* ── Mode chips ──────────────────────────────────────────────
+            2 chips by default (Maintain | Push). When the user's readiness
+            goal was Recover, a Deload chip joins so they can compare the
+            65%-of-e1RM recovery prescription against the alternatives. */}
+        <div className={`grid ${showDeloadChip ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-4`}>
+          {showDeloadChip && (
+            <ModeChip
+              mode="deload"
+              recs={recs}
+              selected={selectedMode === 'deload'}
+              onSelect={() => setSelectedMode('deload')}
+            />
+          )}
           <ModeChip
             mode="maintain"
             recs={recs}
@@ -454,7 +485,36 @@ function RisingLineIcon({ color, className }) {
   )
 }
 
+function DescendingLineIcon({ color, className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 12" fill="none" aria-hidden="true">
+      <polyline
+        points="2,1 8,4 14,7 22,10"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <polyline
+        points="18,10 22,10 22,6"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 const MODE_CHIP_CONFIG = {
+  deload: {
+    label:          'Deload',
+    sub:            'Recover today',
+    Icon:           DescendingLineIcon,
+    color:          '#f97316',
+    selectedBg:     'bg-orange-500/10',
+    selectedBorder: 'border-orange-500/40',
+  },
   maintain: {
     label:          'Maintain',
     sub:            'Keep it steady',

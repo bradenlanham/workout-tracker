@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16g–m)
+> Last updated: April 19, 2026 (Batch 16n — readiness check-in)
 
 ## Rules for Claude
 
@@ -98,8 +98,13 @@ src/
         │                      # auto-persist to split template, share card integration
         ├── Recommendation.jsx # Recommender UI: RecommendationHint (inline), RecommendationBanner,
         │                      # RecommendationSheet (bottom-sheet w/ inline e1RM sparkline, 2 mode
-        │                      # chips, tap-to-explain confidence %, plain-English reasoning, and
-        │                      # an expandable Details section). Batches 16b + 16f.
+        │                      # chips by default, 3 when readiness.goal='recover', tap-to-explain
+        │                      # confidence %, plain-English reasoning, expandable Details section,
+        │                      # accepts aggressivenessMultiplier + defaultMode from readiness
+        │                      # check-in). Batches 16b + 16f + 16n.
+        ├── ReadinessCheckIn.jsx # Batch 16n — three-tap pre-session overlay (§2.5): Energy /
+        │                      # Sleep / Goal rows + gym chip. Goal→mode, Energy+Sleep→multiplier.
+        │                      # Defaults OK/OK/Push = no-op (mult 1.0). Skip link + Go back.
         ├── ShareCard.jsx      # Trading card share card: 5 tiers by streak, selfie, stats bar, JPEG export
         └── CameraCapture.jsx  # Selfie camera component for share card
 ```
@@ -126,6 +131,8 @@ src/
     hasSeenTutorial: false,        // Dashboard tutorial overlay
     enableAiCoaching: true,        // Batch 16i — gates the recommender UI (banner + sheet)
     showRecPill: true,             // Batch 16i — gates the per-exercise blue REC chip
+    gyms: [],                      // Batch 16n — [{id, label}] — populated inline from readiness chip picker
+    defaultGymId: null,            // Batch 16n — last-selected gym (seeds the chip next session)
   },
 
   // ── Splits ──
@@ -174,6 +181,15 @@ src/
   notes: '...',
   selfie: 'data:image/...' | null,
   soreness: { rating: 'notsore'|'sore'|'verysore'|'wrecked', date: '2026-04-01' } | null,
+  readiness: {                          // Batch 16n — present when user answered the check-in
+    energy: 'low'|'ok'|'high',
+    sleep: 'poor'|'ok'|'good',
+    goal: 'recover'|'match'|'push',
+    aggressivenessMultiplier: 0.85|1.00|1.15,   // energy + sleep → scales push-mode nudge
+    suggestedMode: 'deload'|'maintain'|'push',   // goal → recommender mode
+    timestamp: '...',
+  } | null,                             // null when Skip check-in tapped
+  gymId: 'gym_...' | null,              // Batch 16n — where the session was logged
   data: {
     workoutType: 'push',
     exercises: [
@@ -747,3 +763,16 @@ Round-2 feedback on the redesigned Coach's Call sheet. Largely cosmetic.
     - Future planned workout: 1px subtle solid border, muted number.
     - Empty past (missed): no shape, faint number.
     Dropped the workout-type emojis (🏋️ / 🦵 / 💪 / 🎯 / 🦿), the R / C single-letter overlays, and the floating blue cardio dot. Workout-type detail lives in History → session detail on tap; the monthly grid now answers "what happened on this day" in terms of activity state only. Tap handlers preserved (active → session detail, future → preview sheet, future-rest → rest-day sheet). Grid gap 3px → 6px for visual balance.
+
+### Batch 16n (April 19, 2026) — Readiness check-in (AI coaching step 4)
+
+Step 4 of the AI Coaching Recommender plan — pre-session prompt per spec §2.5. Replaces the plain Start Session overlay with three tappable rows (Energy / Sleep / Goal) plus a gym chip. Captured data feeds the recommender: Goal → mode (Recover=deload, Match=maintain, Push=push), and Energy+Sleep → aggressivenessMultiplier (low+poor=0.85, neutral=1.00, high+good=1.15) that scales push-mode nudging.
+
+162. **`recommendNextLoad` accepts `aggressivenessMultiplier` (default 1)** (`helpers.js`). Scales the push-mode 1.15 aggressiveness constant and the `thisSessionNudgePct` display value. Zero effect in maintain/deload modes, and zero effect at the default (1.0) — so pre-16n callers and OK/OK users get identical output.
+163. **`buildReadiness({energy, sleep, goal})` + `readinessMultiplier()` + `READINESS_GOAL_TO_MODE`** (`helpers.js`). Centralized mapping so the UI doesn't duplicate the goal→mode or energy+sleep→multiplier tables. Sanity-checked against `readiness-sanity.mjs` at repo root.
+164. **`ReadinessCheckIn` component** (`src/pages/log/ReadinessCheckIn.jsx`). Three-row chip grid (§9.2 Option A), defaults OK/OK/Push. Selected state uses the user's accent color (`theme.bg` + `theme.contrastText`). Inline gym chip below the rows (§9.6 Option D): single chip text "Gym: VASA change" when gyms exist, or "+ Where are you lifting?" placeholder. Tapping opens an anchored popover with existing-gym list + inline "Add gym name…" field. Start Session commits readiness + gym; "Skip check-in" commits readiness=null; "Go back" navigates away.
+165. **Gym store actions** (`useStore.js`). `settings.gyms: []` + `settings.defaultGymId: null` under existing settings slice (rides along export/import/merge without new code). Actions `addGym(label)` (case-insensitive dedupe, auto-sets default if first), `removeGym(id)`, `setDefaultGymId(id)`. Gym CRUD lives in the readiness chip for now — full Settings UI is deferred until step 8 when sessionGymTags + picker filters ship.
+166. **BbLogger wiring** (`BbLogger.jsx`). `readiness` + `gymId` state in the main component (loaded from savedSession?.readiness/gymId so reload preserves). `handleStartSession(payload)` receives `{energy, sleep, goal, gymId}` from the overlay and calls `buildReadiness()`. `saveActiveSession` useEffect and the final `addSession` call both persist them. ExerciseItem gets two new props — `aggressivenessMultiplier` and `suggestedMode` — threaded to both the useMemo that powers the banner and to the RecommendationSheet as `defaultMode`.
+167. **RecommendationSheet wakes up on each open** (`Recommendation.jsx`). New `useEffect([open, validInitial])` syncs `selectedMode` to the readiness-derived `defaultMode` every time the sheet opens. Previously useState's initializer only ran on first mount, so a user who picked Recover after the sheet had been opened once in Push mode would still see Push selected. Also a new `showDeloadChip` path surfaces a 3-chip layout (Deload | Maintain | Push) when `defaultMode === 'deload'`; user can still tap Maintain/Push to compare. Orange accent for the Deload chip with a new `DescendingLineIcon` SVG so the three chips read as an easier→harder continuum.
+168. **`readiness-sanity.mjs` at repo root.** Node ESM — loads `debug-backup.json`, migrates through v2+v3, runs the recommender across the 3 readiness bands and the 3 goals against Pec Dec's real history. 9/9 multiplier lookups and 3/3 goal→mode mappings verified. Confirms Recover goal → 155 lbs (65% of e1RM deload), Match → 175 (maintain), Push → 185 (push).
+169. **Verified live in preview** (mobile 375×812, debug-backup.json data, theme=blue): overlay renders with rows + gym chip + Start Session; selecting Low/Poor/Match persists `readiness.aggressivenessMultiplier=0.85, suggestedMode=maintain`; expanded Pec Dec card shows maintain prescription on the banner; tapping banner opens sheet with Maintain chip selected + "Matching your e1RM at 10 reps" reasoning. Recover-goal flow: banner 155×10, sheet opens 3 chips with Deload selected + orange accent. Skip flow: `readiness=null`, sessionStarted=true, push defaults apply. No console errors. ✓

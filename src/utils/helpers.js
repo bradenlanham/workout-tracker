@@ -725,6 +725,12 @@ export function recommendNextLoad({
   mode             = 'push',
   progressionClass = 'isolation',
   loadIncrement    = 5,
+  // Readiness modulation (spec §2.5, Batch 16n). 0.85 = low energy/sleep,
+  // 1.00 = typical, 1.15 = great readiness. Scales the push-mode aggressiveness
+  // constant (base 1.15) so a tired day nudges less aggressively than a
+  // fresh day. No effect in maintain/deload modes. Defaults to 1 so callers
+  // without a readiness signal get identical behavior to pre-16n.
+  aggressivenessMultiplier = 1,
   now              = Date.now(),
 } = {}) {
   const h = Array.isArray(history) ? history : []
@@ -796,7 +802,11 @@ export function recommendNextLoad({
     reasoning          = `Matching your e1RM at ${targetReps} reps. A solid maintenance day.`
   } else {
     // Push (default) — full Layer 3 with aggressiveness 1.15, clamped to Layer 2.
-    const aggressiveness = 1.15
+    // Readiness multiplier (§2.5) scales the aggressiveness coefficient so a
+    // low-energy/low-sleep day nudges more conservatively. No effect when
+    // callers don't provide readiness — multiplier defaults to 1.
+    const mult           = Number(aggressivenessMultiplier) || 1
+    const aggressiveness = 1.15 * mult
     const P              = Math.min(personalRate * aggressiveness, 0.03)
     const alpha          = daysSince / 7
     const hitTarget      = last.reps >= targetReps
@@ -832,7 +842,7 @@ export function recommendNextLoad({
   // maintain/deload modes. Displayed in the Details section of the sheet
   // for the curious.
   const thisSessionNudgePct = mode === 'push' && !autoDeload
-    ? Math.min(personalRate * 1.15, 0.03) * (daysSince / 7) * 100
+    ? Math.min(personalRate * 1.15 * (Number(aggressivenessMultiplier) || 1), 0.03) * (daysSince / 7) * 100
     : 0
 
   return {
@@ -850,6 +860,46 @@ export function recommendNextLoad({
       layer2Weight:       Math.round(layer2Weight),
       thisSessionNudgePct: Number(thisSessionNudgePct.toFixed(2)),
     },
+  }
+}
+
+// ── Readiness check-in (spec §2.5, Batch 16n) ──────────────────────────────
+//
+// Three-tap pre-session prompt: Energy (low/ok/high), Sleep (poor/ok/good),
+// Goal (recover/match/push). Goal maps 1:1 to recommender mode. Energy+Sleep
+// combine into a discrete aggressivenessMultiplier (0.85 / 1.00 / 1.15) that
+// scales push-mode aggressiveness.
+//
+// Defaults (when user skips or takes no action): ok/ok/push → multiplier 1.00,
+// suggestedMode 'push'. Identical to pre-16n recommender behavior.
+
+export const READINESS_GOAL_TO_MODE = {
+  recover: 'deload',
+  match:   'maintain',
+  push:    'push',
+}
+
+// Score each axis −1/0/+1 then sum for a 3-way bucket.
+export function readinessMultiplier(energy, sleep) {
+  const e = energy === 'low'  ? -1 : energy === 'high' ? 1 : 0
+  const s = sleep  === 'poor' ? -1 : sleep  === 'good' ? 1 : 0
+  const total = e + s
+  if (total <= -1) return 0.85
+  if (total >=  1) return 1.15
+  return 1.00
+}
+
+export function buildReadiness({ energy, sleep, goal, now = Date.now() } = {}) {
+  const e = energy === 'low' || energy === 'high' ? energy : 'ok'
+  const s = sleep  === 'poor' || sleep  === 'good' ? sleep  : 'ok'
+  const g = goal   === 'recover' || goal === 'match' ? goal : 'push'
+  return {
+    energy: e,
+    sleep:  s,
+    goal:   g,
+    aggressivenessMultiplier: readinessMultiplier(e, s),
+    suggestedMode:            READINESS_GOAL_TO_MODE[g],
+    timestamp: new Date(now).toISOString(),
   }
 }
 

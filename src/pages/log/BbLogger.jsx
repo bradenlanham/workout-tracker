@@ -6,13 +6,14 @@ import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../da
 import {
   getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
   findSimilarExercises, normalizeExerciseName,
-  getExerciseHistory, recommendNextLoad,
+  getExerciseHistory, recommendNextLoad, buildReadiness,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
 import { RecommendationBanner, RecommendationSheet } from './Recommendation'
+import ReadinessCheckIn from './ReadinessCheckIn'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -586,6 +587,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
 function ExerciseItem({
   exercise, lastSessionEx, allSessions, onUpdate, theme,
   isFirst, isLast, onMoveUp, onMoveDown, reorderMode, workoutType,
+  aggressivenessMultiplier = 1, suggestedMode = 'push',
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
@@ -739,16 +741,20 @@ function ExerciseItem({
     [allSessions, libraryEntry?.id, exercise.exerciseId, exercise.name]
   )
 
+  // Recommendation: mode derives from the readiness "goal" answer (Batch 16n,
+  // spec §2.5). Defaults to 'push' when no readiness data is present — same
+  // behavior as pre-16n. aggressivenessMultiplier scales push-mode nudging.
   const recommendation = useMemo(() => {
     if (!recHistory.length) return null
     return recommendNextLoad({
       history:          recHistory,
       targetReps:       recTargetReps,
-      mode:             'push',
+      mode:             suggestedMode,
       progressionClass: libraryEntry?.progressionClass || 'isolation',
       loadIncrement:    libraryEntry?.loadIncrement    || 5,
+      aggressivenessMultiplier,
     })
-  }, [recHistory, recTargetReps, libraryEntry?.progressionClass, libraryEntry?.loadIncrement])
+  }, [recHistory, recTargetReps, libraryEntry?.progressionClass, libraryEntry?.loadIncrement, suggestedMode, aggressivenessMultiplier])
 
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
@@ -1100,6 +1106,8 @@ function ExerciseItem({
         progressionClass={libraryEntry?.progressionClass || 'isolation'}
         loadIncrement={libraryEntry?.loadIncrement || 5}
         accentColor={theme.hex}
+        defaultMode={suggestedMode}
+        aggressivenessMultiplier={aggressivenessMultiplier}
       />
     </div>
   )
@@ -1877,6 +1885,13 @@ export default function BbLogger() {
   const totalPausedMsRef = useRef(savedSession?.totalPausedMs || 0)
   const pauseStartedAtRef = useRef(savedSession?.pauseStartedAt || null)
 
+  // ── Readiness check-in (Batch 16n, spec §2.5) ────────────────────────────
+  // Captured once on Start Session and persisted with the active session so
+  // it survives reload/backgrounding. null means the user skipped or resumed
+  // a pre-16n session — recommender treats it as neutral (multiplier 1.0).
+  const [readiness, setReadiness] = useState(savedSession?.readiness || null)
+  const [gymId,     setGymId]     = useState(savedSession?.gymId     || null)
+
   const calcElapsed = () => {
     if (!sessionStarted || !startTimestamp.current) return 0
     let paused = totalPausedMsRef.current
@@ -1888,7 +1903,21 @@ export default function BbLogger() {
 
   const [elapsedSeconds, setElapsedSeconds] = useState(calcElapsed)
 
-  const handleStartSession = () => {
+  // Called from ReadinessCheckIn. Either { energy, sleep, goal, gymId } on the
+  // answered path, or { readiness: null, gymId } on the Skip path. Builds the
+  // readiness block (or null) and starts the timer.
+  const handleStartSession = (payload = {}) => {
+    if (payload.readiness === null) {
+      setReadiness(null)
+    } else if (payload.energy && payload.sleep && payload.goal) {
+      setReadiness(buildReadiness({
+        energy: payload.energy,
+        sleep:  payload.sleep,
+        goal:   payload.goal,
+      }))
+    }
+    if (payload.gymId !== undefined) setGymId(payload.gymId || null)
+
     startTimestamp.current = Date.now()
     setSessionStarted(true)
     setIsPaused(false)
@@ -1941,8 +1970,10 @@ export default function BbLogger() {
       isPaused,
       totalPausedMs: totalPausedMsRef.current,
       pauseStartedAt: pauseStartedAtRef.current,
+      readiness,
+      gymId,
     })
-  }, [exercises, sessionNotes, sessionStarted, isPaused]) // eslint-disable-line
+  }, [exercises, sessionNotes, sessionStarted, isPaused, readiness, gymId]) // eslint-disable-line
 
   // ── Session helpers ──────────────────────────────────────────────────────
 
@@ -2046,6 +2077,8 @@ export default function BbLogger() {
       cardio,
       notes:           sessionNotes,
       data:            { workoutType: type, exercises: exerciseData },
+      ...(readiness ? { readiness } : {}),
+      ...(gymId     ? { gymId     } : {}),
     })
 
     clearActiveSession()
@@ -2292,28 +2325,15 @@ export default function BbLogger() {
     <NumpadContext.Provider value={numpadCtxValue}>
     <div className="pb-40 min-h-screen bg-base">
 
-      {/* ── Start Session overlay ────────────────────────────────────────── */}
+      {/* ── Start Session overlay with readiness check-in (§2.5) ──────────── */}
       {!sessionStarted && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="text-center px-8">
-            <div className="text-5xl mb-3">{workoutEmoji}</div>
-            <h2 className="text-2xl font-bold text-white mb-1">{workoutName}</h2>
-            <p className="text-sm text-white/60 mb-8">Timer starts when you begin</p>
-            <button
-              onClick={handleStartSession}
-              className={`${theme.bg} px-10 py-4 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-transform`}
-              style={{ color: theme.contrastText }}
-            >
-              Start Session
-            </button>
-            <button
-              onClick={() => navigate(-1)}
-              className="block mx-auto mt-4 text-sm text-white/50 underline underline-offset-2"
-            >
-              Go back
-            </button>
-          </div>
-        </div>
+        <ReadinessCheckIn
+          workoutName={workoutName}
+          workoutEmoji={workoutEmoji}
+          theme={theme}
+          onStart={handleStartSession}
+          onCancel={() => navigate(-1)}
+        />
       )}
 
       {/* ── Clipboard header (sticky) ────────────────────────────────────── */}
@@ -2411,6 +2431,8 @@ export default function BbLogger() {
                       onMoveUp={() => moveExercise(ex.id, 'up')}
                       onMoveDown={() => moveExercise(ex.id, 'down')}
                       reorderMode={false}
+                      aggressivenessMultiplier={readiness?.aggressivenessMultiplier ?? 1}
+                      suggestedMode={readiness?.suggestedMode ?? 'push'}
                     />
                   )
                 })}

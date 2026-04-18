@@ -86,6 +86,12 @@ const useStore = create(
         // coach's free-text prescription slot added in Batch 13). Some
         // users never use it; hide it to reclaim header space.
         showRecPill:      true,
+        // Batch 16n — gym list for the readiness check-in chip (spec §9.6
+        // Option D). Empty by default — users add gyms inline the first
+        // time they open the overlay. defaultGymId seeds the chip on
+        // subsequent sessions; last-used wins via setDefaultGymId on save.
+        gyms:             [],   // [{ id, label }]
+        defaultGymId:     null,
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
@@ -370,6 +376,38 @@ const useStore = create(
 
       updateSettings: (updates) => {
         set(state => ({ settings: { ...state.settings, ...updates } }))
+      },
+
+      // ── Gyms (lives under settings so export/import/merge ride along) ──
+
+      addGym: (label) => {
+        const clean = (label || '').trim()
+        if (!clean) return null
+        const id = `gym_${generateId()}`
+        set(state => {
+          const existing = (state.settings.gyms || []).find(
+            g => g.label.toLowerCase() === clean.toLowerCase()
+          )
+          if (existing) return {}
+          const gyms = [...(state.settings.gyms || []), { id, label: clean }]
+          const defaultGymId = state.settings.defaultGymId || id
+          return { settings: { ...state.settings, gyms, defaultGymId } }
+        })
+        return id
+      },
+
+      removeGym: (id) => {
+        set(state => {
+          const gyms = (state.settings.gyms || []).filter(g => g.id !== id)
+          const defaultGymId = state.settings.defaultGymId === id
+            ? (gyms[0]?.id || null)
+            : state.settings.defaultGymId
+          return { settings: { ...state.settings, gyms, defaultGymId } }
+        })
+      },
+
+      setDefaultGymId: (id) => {
+        set(state => ({ settings: { ...state.settings, defaultGymId: id } }))
       },
 
       // ── Custom templates ──────────────────────────────────────────────────────────────
