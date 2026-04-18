@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16g–j)
+> Last updated: April 19, 2026 (Batch 16g–l)
 
 ## Rules for Claude
 
@@ -724,3 +724,14 @@ Round-2 feedback on the redesigned Coach's Call sheet. Largely cosmetic.
 153. **`ExerciseEditSheet`** (`src/components/ExerciseEditSheet.jsx`). Bottom-sheet portal at z-index 260 (above `RecommendationSheet`'s 250). Pre-fills from the exercise's current values. Fields: name input, multi-pill primaryMuscles (≥1 required), single-pill equipment (Other filtered out so user has to pick a real type), `loadIncrement` choice chips (2.5 / 5 / 10), unilateral checkbox. Save button disabled until name + ≥1 muscle + real equipment. Delete button only for non-built-in entries and goes through a two-step "Delete → Delete permanently" confirm to prevent accidental wipes. Built-in entries remain editable — "built-in" just means seeded, not immutable.
 154. **"My Exercises" link in HamburgerMenu** between "My Splits" and "Settings" — the new surface is discoverable without users needing to know the URL.
 155. **`Backfill.jsx` rewrite — confirm flow.** Each card now holds LOCAL DRAFT STATE for muscle/equipment instead of auto-committing on every tap. User can fiddle freely; only an explicit Confirm commits to store. Confirm button at the bottom of each card is disabled ("Pick muscle group + equipment" in muted text) until both fields valid, then transitions to emerald "✓ Confirm". On tap: phase → 'saving', inline "✓ Saved" text shows, 350ms CSS fade + translateY(-6px), then `tagExercise` fires and the card drops off the list. Copy also rewritten to emphasize "edit later in My Exercises, no pressure to get it perfect first try." Completion screen now links to `/exercises` explicitly.
+
+### Batch 16k (April 19, 2026) — Two hotfixes after the first full-flow test
+
+156. **Timezone-drift on the Dashboard calendar strip.** Evening entries in a western timezone were landing ✓ on the wrong local day. Root cause: `addRestDaySession` (and every save path) stores `new Date().toISOString()` — UTC. The Dashboard's weekly/monthly calendar strips and the soreness check-in read those via `date.split('T')[0]` (the UTC date) and compared against `todayStr` computed from local getDate/Month/Year. For a 6:30 PM Friday entry in UTC-5, that pushed ✓ to Saturday. Fix: new `isoToLocalDateStr(iso)` helper in `Dashboard.jsx` parses the ISO and returns `YYYY-MM-DD` from local getters. All 6 `.split('T')[0]` usages on session/cardio/rest-day fields replaced. `buildActiveDaySet` in helpers.js was already local-correct (Batch 11), so the streak number was fine — only the calendar rendering was drifting.
+157. **Cardio "No" button auto-saving in Finish modal.** Scenario B (no cardio logged today) had three chips: Yes / Log Now / No. Tapping "No" was wired directly to `onSave({cardioAction: 'none'})`, short-circuiting past the main Save button with no way to undo. Fix: `cardioChoice` state expanded to 'yes' | 'no' | null. No button now toggles between 'no' and null (symmetric with Yes), highlights when selected, and lets the main Save button at the bottom commit. Removed unused `handleSaveNo` function.
+
+### Batch 16l (April 19, 2026) — Manage Exercises filter chips
+
+158. **Workout + usage filter row on `/exercises`.** 109 entries were too many to scroll through. Added a second chip row below the existing source filter (All/Custom/Built-in/Untagged): `Any workout` / `[each workout in the active split with its exercise count]` / `Logged` / `Never logged`. The two axes combine independently, so a user can show e.g. "Custom + Never logged" to find unused custom entries.
+159. **`exerciseIdsByWorkout` resolution (`ExerciseLibraryManager.jsx`).** `useMemo` walks each active-split workout's sections, unwraps string-or-`{name,rec}` exercises, and resolves names via `normalizeExerciseName` against a pre-built `(normalized name → library id)` map covering canonical names + aliases. Same approach as the v3 migration — renamed variants still match. Workout chips with 0 matching exercises are hidden.
+160. **`loggedIds` set.** Flat scan of sessions builds a Set of every `exerciseId` with at least one session set. O(sessions × exercises). Drives both the `Logged` / `Never logged` chip filters and their counts. Workout display name uses the first segment before " — " (e.g. "Push" instead of "Push — Chest") to keep chip widths reasonable.
