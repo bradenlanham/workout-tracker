@@ -1091,6 +1091,7 @@ function ExerciseItem({
         targetReps={recTargetReps}
         progressionClass={libraryEntry?.progressionClass || 'isolation'}
         loadIncrement={libraryEntry?.loadIncrement || 5}
+        accentColor={theme.hex}
       />
     </div>
   )

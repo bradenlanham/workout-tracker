@@ -746,7 +746,7 @@ export function recommendNextLoad({
       mode,
       confidence: 'none',
       prescription: { weight: last.weight, reps: last.reps },
-      reasoning:  `Building data — ${remaining} more ${remaining === 1 ? 'session' : 'sessions'} until recommendations.`,
+      reasoning:  `Log ${remaining} more ${remaining === 1 ? 'session' : 'sessions'} and I'll start prescribing weights.`,
       meta: { n, rSquared: 0, daysSince: Math.max(0, Math.round((now - new Date(last.date).getTime()) / 86400000)) },
     }
   }
@@ -784,16 +784,16 @@ export function recommendNextLoad({
   if (mode === 'deload') {
     // User-declared deload — 65% of current e1RM (midpoint of 60–70%).
     prescriptionWeight = currentE1RM * 0.65
-    reasoning          = `Deload day — 65% of your e1RM (~${Math.round(currentE1RM)}) for recovery.`
+    reasoning          = `Recovery day — 65% of your e1RM for an easier session.`
   } else if (autoDeload) {
     // 10% off the last working weight, per the decision rule.
     prescriptionWeight = last.weight * 0.90
-    reasoning          = `Missed target by 2+ reps two sessions running — 10% deload to reset.`
+    reasoning          = `You've missed the rep target two sessions in a row. Backing off 10% today to reset before pushing again.`
     effectiveMode      = 'deload'
   } else if (mode === 'maintain') {
     // Layer 2 only — match the e1RM at the target reps, no nudge.
     prescriptionWeight = layer2Weight
-    reasoning          = `Maintain day — matching your e1RM at ${targetReps} reps.`
+    reasoning          = `Matching your e1RM at ${targetReps} reps — a solid maintenance day.`
   } else {
     // Push (default) — full Layer 3 with aggressiveness 1.15, clamped to Layer 2.
     const aggressiveness = 1.15
@@ -815,21 +815,25 @@ export function recommendNextLoad({
       const deltaReps    = effectiveReps - targetReps
       const layer3Weight = last.weight * (1 + P * alpha) + 0.033 * last.weight * deltaReps
       prescriptionWeight = Math.max(layer3Weight, layer2Weight)
-      const nudgePct     = (P * alpha * 100)
-      const rirNote      = lastRIR > 0 ? ` (${last.reps}×@RPE${last.rpe}≈${effectiveReps} effective)` : ''
-      reasoning          = `Hit target last session — pushing +${nudgePct.toFixed(1)}% based on your trend.${rirNote}`
-      if (layer3Weight < layer2Weight) reasoning += ' (e1RM floor holds.)'
+      reasoning          = `You hit ${last.weight}×${last.reps} last session. Adding a little more weight based on how fast you've been progressing.`
     } else if (missedByOne || effectiveMissBy1) {
       prescriptionWeight = Math.max(last.weight, layer2Weight)
-      reasoning          = 'Missed by 1 last session — same weight, go for the reps.'
+      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Same weight — go for all ${targetReps} this session.`
     } else {
       prescriptionWeight = Math.max(last.weight, layer2Weight)
-      reasoning          = 'Missed last session — same weight, push for reps before adding load.'
+      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Holding the weight — push for the reps before adding load.`
     }
   }
 
   const inc     = Number(loadIncrement) > 0 ? Number(loadIncrement) : 5
   const rounded = Math.round(prescriptionWeight / inc) * inc
+
+  // Actual this-session nudge percentage (P × α × 100). May be 0 in
+  // maintain/deload modes. Displayed in the Details section of the sheet
+  // for the curious.
+  const thisSessionNudgePct = mode === 'push' && !autoDeload
+    ? Math.min(personalRate * 1.15, 0.03) * (daysSince / 7) * 100
+    : 0
 
   return {
     mode: effectiveMode,
@@ -837,13 +841,14 @@ export function recommendNextLoad({
     prescription: { weight: rounded, reps: targetReps },
     reasoning,
     meta: {
-      currentE1RM:      Math.round(currentE1RM),
-      progressionRate:  Number(personalRate.toFixed(4)),
-      rSquared:         Number(fit.rSquared.toFixed(3)),
-      n:                fit.n,
-      daysSince:        Math.round(daysSince),
+      currentE1RM:        Math.round(currentE1RM),
+      progressionRate:    Number(personalRate.toFixed(4)),
+      rSquared:           Number(fit.rSquared.toFixed(3)),
+      n:                  fit.n,
+      daysSince:          Math.round(daysSince),
       usedFit,
-      layer2Weight:     Math.round(layer2Weight),
+      layer2Weight:       Math.round(layer2Weight),
+      thisSessionNudgePct: Number(thisSessionNudgePct.toFixed(2)),
     },
   }
 }

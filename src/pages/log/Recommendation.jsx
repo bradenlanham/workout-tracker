@@ -1,17 +1,14 @@
-// Batch 16b — UI surfaces for the recommendation engine (Batch 16a).
+// Batch 16b + 16f — UI surfaces for the recommendation engine.
 //
-// Three components:
-//   RecommendationHint     — inline "Try: 185×10" text snippet for the
-//                            collapsed exercise card (non-interactive —
-//                            the collapsed card already handles tap-to-
-//                            expand).
-//   RecommendationBanner   — prominent tappable banner inside the expanded
-//                            card; opens the sheet.
-//   RecommendationSheet    — bottom-sheet modal with all three mode
-//                            prescriptions, reasoning, confidence, and
-//                            the e1RM / last-session context. Rendered
-//                            via createPortal so it sits above the sticky
-//                            footer and the CustomNumpad.
+// Three display components:
+//   RecommendationHint      — inline "Try: 185×10" chip for the collapsed
+//                             exercise card (non-interactive).
+//   RecommendationBanner    — prominent tappable banner inside the expanded
+//                             card; opens the sheet.
+//   RecommendationSheet     — bottom-sheet modal with sparkline, two mode
+//                             chips (Maintain / Push), plain-English
+//                             reasoning, and an expandable Details section
+//                             for the math.
 //
 // The recommendation is computed in the parent (ExerciseItem) via useMemo
 // and passed down — these components are pure display.
@@ -20,23 +17,41 @@ import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { recommendNextLoad } from '../../utils/helpers'
 
-// ── Confidence styling ─────────────────────────────────────────────────────
-// Colors chosen per plan §9.4 Option C (green / amber / gray + one-word label).
-// Inline styles (not Tailwind classes) so the colored dot renders identically
-// on both obsidian and daylight themes without touching the theme palette.
+// ── Confidence → percent + label helpers ──────────────────────────────────
+//
+// Users asked for a percentage (and tap-to-explain) rather than an opaque
+// "Maybe"/"Solid" label. Percent combines sample size and R²: full data
+// (6+ sessions) × R² caps it. Low-sample cases are capped by the data
+// weight (e.g. 3 sessions = at most 50%). Returns null when we don't have
+// enough data to claim anything (< 3 sessions).
 
-const CONFIDENCE_STYLES = {
-  high:     { color: '#10b981', label: 'Solid' },  // emerald-500
-  moderate: { color: '#f59e0b', label: 'Maybe' },  // amber-500
-  building: { color: '#6b7280', label: 'New'   },  // gray-500
+function confidencePct(n, rSquared) {
+  if (!(n >= 3)) return null
+  const dataWeight = Math.min(1, n / 6)
+  return Math.min(99, Math.max(1, Math.round(dataWeight * Math.max(0, rSquared) * 100)))
 }
 
-function confidenceStyle(confidence) {
-  return CONFIDENCE_STYLES[confidence] || null
+function confidenceColor(pct) {
+  if (pct == null) return '#6b7280'      // gray-500
+  if (pct >= 80)   return '#10b981'      // emerald-500
+  if (pct >= 50)   return '#f59e0b'      // amber-500
+  return '#60a5fa'                       // blue-400
 }
 
-// Format "+2.1%/wk" (or "–1.3%/wk"). Absolute rate below 0.1% renders as "flat"
-// to avoid noise when the fit returns effectively-zero progression.
+// For the old RecommendationHint (collapsed card). Keeps the tri-state
+// model internally — just used to decide whether to render the inline
+// "Try" chip at all.
+
+function hasRenderableHint(confidence) {
+  return confidence === 'high' || confidence === 'moderate' || confidence === 'building'
+}
+
+function hintDotColor(confidence) {
+  if (confidence === 'high')     return '#10b981'
+  if (confidence === 'moderate') return '#f59e0b'
+  return '#6b7280'
+}
+
 function formatWeeklyRate(rate) {
   const pct = Number(rate) * 100
   if (Math.abs(pct) < 0.1) return 'flat'
@@ -45,38 +60,27 @@ function formatWeeklyRate(rate) {
 }
 
 // ── RecommendationHint — collapsed card inline snippet ────────────────────
-//
-// Renders `· ● Try: 185 × 10` (with a colored dot) to be appended inline
-// next to the existing "Last: 175×11" text. If confidence is 'none' or the
-// recommendation has no prescription, renders nothing so the card falls back
-// to its existing "Last:" display untouched.
 
 export function RecommendationHint({ recommendation }) {
   if (!recommendation || !recommendation.prescription) return null
-  const style = confidenceStyle(recommendation.confidence)
-  if (!style) return null                          // confidence === 'none'
+  if (!hasRenderableHint(recommendation.confidence))   return null
   const { weight, reps } = recommendation.prescription
   return (
     <span style={{ fontSize: 10 }} className="text-c-dim ml-1.5">
-      <span style={{ color: style.color }} aria-hidden="true">●</span>{' '}
+      <span style={{ color: hintDotColor(recommendation.confidence) }} aria-hidden="true">●</span>{' '}
       Try: {weight}×{reps}
     </span>
   )
 }
 
 // ── RecommendationBanner — expanded card prominent CTA ─────────────────────
-//
-// Button-styled banner, renders above the Plates/Uni toolbar. Tapping opens
-// the RecommendationSheet. Shows the prescription and a short trend line.
 
 export function RecommendationBanner({ recommendation, onTap }) {
   if (!recommendation || !recommendation.prescription) return null
-  const style = confidenceStyle(recommendation.confidence)
-  // Low-confidence cold-start is filtered above — but if the caller wants to
-  // hint "build more data" for n=1 / n=2, show the bare prescription without
-  // a trend line and no style dot.
   const { weight, reps } = recommendation.prescription
-  const { meta, reasoning } = recommendation
+  const { reasoning, meta } = recommendation
+  const pct = confidencePct(meta?.n, meta?.rSquared)
+  const color = confidenceColor(pct)
 
   return (
     <button
@@ -87,16 +91,16 @@ export function RecommendationBanner({ recommendation, onTap }) {
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="text-c-faint text-[11px] font-semibold uppercase tracking-wider">Try</span>
+          <span className="text-c-faint text-[11px] font-semibold uppercase tracking-wider">Top set</span>
           <span className="text-c-primary text-base font-extrabold tabular-nums">
             {weight} × {reps}
           </span>
         </div>
         <div className="text-[11px] text-c-muted truncate mt-0.5">
-          {style && (
+          {pct != null && (
             <>
-              <span style={{ color: style.color }} aria-hidden="true">●</span>{' '}
-              <span style={{ color: style.color }} className="font-semibold">{style.label}</span>
+              <span style={{ color }} aria-hidden="true">●</span>{' '}
+              <span style={{ color }} className="font-semibold">{pct}% confident</span>
               <span> · </span>
             </>
           )}
@@ -108,11 +112,81 @@ export function RecommendationBanner({ recommendation, onTap }) {
   )
 }
 
-// ── RecommendationSheet — bottom sheet modal ───────────────────────────────
+// ── E1RMSparkline — inline SVG trend over last 6 sessions ─────────────────
 //
-// Shows all three mode prescriptions side-by-side so the user can compare
-// (push / maintain / deload). Tapping a mode chip swaps the headline display
-// + reasoning to match. Includes full context: e1RM, last session, fit stats.
+// Plots e1RM as points + line, with a subtle linear-fit trend line, and a
+// rate label in the top-right. Auto-scales to the window's min/max e1RM.
+
+function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0 }) {
+  const window = history.slice(-6)
+  if (window.length < 2) return null
+
+  const W = 300, H = 90, padX = 10, padTop = 16, padBottom = 10
+  const values = window.map(p => p.e1RM || 0)
+  const minV = Math.min(...values)
+  const maxV = Math.max(...values)
+  const spread = Math.max(1, maxV - minV)
+  const yMin = minV - spread * 0.15
+  const yMax = maxV + spread * 0.15
+  const range = yMax - yMin
+
+  const xFor = i => padX + (i / (window.length - 1)) * (W - 2 * padX)
+  const yFor = v => H - padBottom - ((v - yMin) / range) * (H - padTop - padBottom)
+
+  const points = window.map((p, i) => [xFor(i), yFor(p.e1RM || 0)])
+  const polylinePts = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+
+  // Simple trend line from first-point projection using the supplied rate
+  // (avoids re-regressing). Dashed + subtle.
+  const trendFirst = points[0]
+  const daysSpan   = (new Date(window[window.length - 1].date) - new Date(window[0].date)) / 86400000
+  const trendEndE  = (window[0].e1RM || 0) * (1 + (rate || 0) * (daysSpan / 7))
+  const trendEndY  = yFor(trendEndE)
+  const trendLast  = [points[points.length - 1][0], trendEndY]
+
+  const rateLabel = formatWeeklyRate(rate)
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`e1RM trend, ${rateLabel} over ${window.length} sessions`}>
+      {/* Trend line (dashed, subtle) */}
+      <line
+        x1={trendFirst[0]} y1={trendFirst[1]}
+        x2={trendLast[0]}  y2={trendLast[1]}
+        stroke={accentColor} strokeWidth="1" strokeDasharray="3 3" opacity="0.4"
+      />
+      {/* Connecting polyline */}
+      <polyline points={polylinePts} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Data points */}
+      {points.map(([x, y], i) => {
+        const isLast = i === points.length - 1
+        return (
+          <circle
+            key={i}
+            cx={x} cy={y}
+            r={isLast ? 4 : 3}
+            fill={accentColor}
+            stroke={isLast ? accentColor : 'none'}
+            strokeWidth="2"
+            opacity={isLast ? 1 : 0.7}
+          />
+        )
+      })}
+      {/* Rate label, top-right */}
+      <text
+        x={W - padX} y={12}
+        textAnchor="end"
+        fill={accentColor}
+        fontSize="11"
+        fontWeight="700"
+        style={{ fontFamily: 'system-ui, sans-serif' }}
+      >
+        {rateLabel}
+      </text>
+    </svg>
+  )
+}
+
+// ── RecommendationSheet — bottom-sheet modal ───────────────────────────────
 
 export function RecommendationSheet({
   open,
@@ -122,29 +196,25 @@ export function RecommendationSheet({
   targetReps,
   progressionClass,
   loadIncrement,
+  accentColor = '#3b82f6',
   now = Date.now(),
 }) {
-  // Recompute per mode. History doesn't change inside the sheet, so useMemo
-  // here is pure optimization; the sheet opens/closes faster.
+  // Recompute per mode so chip tap can swap between them without a recalc.
   const recs = useMemo(() => ({
     push:     recommendNextLoad({ history, targetReps, mode: 'push',     progressionClass, loadIncrement, now }),
     maintain: recommendNextLoad({ history, targetReps, mode: 'maintain', progressionClass, loadIncrement, now }),
-    deload:   recommendNextLoad({ history, targetReps, mode: 'deload',   progressionClass, loadIncrement, now }),
   }), [history, targetReps, progressionClass, loadIncrement, now])
 
-  // Default to 'push' so the sheet opens aligned with the inline banner
-  // (the banner renders `recs.push` output regardless of auto-deload). Each
-  // mode chip indexes into recs[mode] — e.g. DELOAD shows user-selected
-  // deload (65% of e1RM) even if push auto-deloaded (10% off last, per
-  // decision rule 3). Distinct numbers, distinct reasoning — intentional.
-  const [selectedMode, setSelectedMode] = useState('push')
+  const [selectedMode,  setSelectedMode]  = useState('push')
+  const [detailsOpen,   setDetailsOpen]   = useState(false)
+  const [whyOpen,       setWhyOpen]       = useState(false)
 
   if (!open) return null
 
-  // Last session context for the footer
-  const last = history[history.length - 1]
-  const selected  = recs[selectedMode] || recs.push
-  const style     = confidenceStyle(selected.confidence)
+  const selected = recs[selectedMode] || recs.push
+  const last     = history[history.length - 1]
+  const pct      = confidencePct(selected.meta?.n, selected.meta?.rSquared)
+  const color    = confidenceColor(pct)
 
   return createPortal(
     <div
@@ -154,7 +224,7 @@ export function RecommendationSheet({
     >
       <div className="absolute inset-0 bg-black/60" />
       <div
-        className="relative w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-white/10 shadow-2xl animate-slide-up p-5 pb-6"
+        className="relative w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-white/10 shadow-2xl p-5 pb-6 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
         style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
       >
@@ -167,7 +237,7 @@ export function RecommendationSheet({
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-item text-c-secondary flex items-center justify-center text-lg"
+            className="w-9 h-9 rounded-full bg-item text-c-secondary flex items-center justify-center text-lg shrink-0"
             aria-label="Close"
           >
             ×
@@ -178,17 +248,9 @@ export function RecommendationSheet({
         <div className="rounded-2xl bg-item p-5 mb-4 text-center">
           {selected.prescription ? (
             <>
+              <div className="text-[10px] uppercase tracking-wider text-c-faint mb-1">Top set</div>
               <div className="text-4xl font-extrabold text-c-primary tabular-nums tracking-tight">
                 {selected.prescription.weight} × {selected.prescription.reps}
-              </div>
-              <div className="text-xs text-c-muted mt-1.5">
-                {style && (
-                  <>
-                    <span style={{ color: style.color }} aria-hidden="true">●</span>{' '}
-                    <span style={{ color: style.color }} className="font-semibold">{style.label} confidence</span>
-                  </>
-                )}
-                {!style && <span className="font-semibold">Not enough data</span>}
               </div>
             </>
           ) : (
@@ -198,67 +260,137 @@ export function RecommendationSheet({
           )}
         </div>
 
-        {/* ── Mode comparison chips ─────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {['push', 'maintain', 'deload'].map(m => {
-            const r = recs[m]
-            const isSelected = selectedMode === m
-            const MODE_LABELS = { push: 'Push', maintain: 'Maintain', deload: 'Deload' }
-            const MODE_EMOJI  = { push: '↑',    maintain: '→',        deload: '↓'      }
+        {/* ── e1RM sparkline (only when we have ≥ 2 data points) ───── */}
+        {history.length >= 2 && (
+          <div className="rounded-xl bg-base/30 border border-white/5 px-3 py-2 mb-4">
+            <E1RMSparkline
+              history={history}
+              accentColor={accentColor}
+              rate={selected.meta?.progressionRate ?? 0}
+            />
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-c-faint mt-1">
+              <span>e1RM trend</span>
+              <span>{Math.min(history.length, 6)} sessions</span>
+            </div>
+          </div>
+        )}
+
+        {/* ── Mode chips (Maintain | Push) ─────────────────────────── */}
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {[
+            { id: 'maintain', label: 'Maintain', sub: 'Keep it steady' },
+            { id: 'push',     label: 'Push',     sub: 'Go for progress' },
+          ].map(m => {
+            const r = recs[m.id]
+            const isSelected = selectedMode === m.id
             return (
               <button
-                key={m}
+                key={m.id}
                 type="button"
-                onClick={() => setSelectedMode(m)}
-                className={`py-2.5 px-2 rounded-xl text-center transition-colors ${
+                onClick={() => setSelectedMode(m.id)}
+                className={`py-3 px-3 rounded-xl text-center transition-colors ${
                   isSelected
                     ? 'bg-white/10 border border-white/20 text-c-primary'
                     : 'bg-item border border-transparent text-c-secondary hover:bg-hover'
                 }`}
               >
-                <div className="text-[10px] uppercase tracking-wider text-c-faint flex items-center justify-center gap-1">
-                  <span>{MODE_EMOJI[m]}</span> {MODE_LABELS[m]}
-                </div>
-                <div className="text-sm font-bold text-c-primary mt-0.5 tabular-nums">
+                <div className="text-[10px] uppercase tracking-wider text-c-faint">{m.label}</div>
+                <div className="text-base font-bold text-c-primary mt-0.5 tabular-nums">
                   {r.prescription ? `${r.prescription.weight}×${r.prescription.reps}` : '—'}
                 </div>
+                <div className="text-[10px] text-c-faint mt-0.5">{m.sub}</div>
               </button>
             )
           })}
         </div>
 
-        {/* ── Reasoning ─────────────────────────────────────────────── */}
-        <div className="rounded-xl border border-white/5 bg-base/30 px-4 py-3 mb-4">
+        {/* ── Reasoning (plain English) ────────────────────────────── */}
+        <div className="rounded-xl border border-white/5 bg-base/30 px-4 py-3 mb-3">
           <div className="text-[10px] uppercase tracking-wider text-c-faint mb-1">Why</div>
           <div className="text-sm text-c-secondary leading-relaxed">{selected.reasoning}</div>
         </div>
 
-        {/* ── Stats / context ───────────────────────────────────────── */}
-        <div className="space-y-1.5 text-xs">
-          {selected.meta?.currentE1RM > 0 && (
-            <ContextRow label="Current e1RM" value={`${selected.meta.currentE1RM} lbs`} />
-          )}
-          {last && (
-            <ContextRow
-              label="Last session"
-              value={`${last.weight} × ${last.reps}  ·  ${daysAgoLabel(last.date, now)}`}
-            />
-          )}
-          {selected.meta?.n >= 3 && (
-            <ContextRow
-              label="Progression fit"
-              value={`${selected.meta.n} session${selected.meta.n === 1 ? '' : 's'}, R²=${(selected.meta.rSquared).toFixed(2)}${
-                selected.meta.usedFit ? `, ${formatWeeklyRate(selected.meta.progressionRate)}` : '  ·  fallback rate'
-              }`}
-            />
-          )}
-          {selected.meta?.layer2Weight > 0 && (
-            <ContextRow
-              label={`Target @ ${targetReps} reps`}
-              value={`${selected.meta.layer2Weight} lbs (e1RM × ${Math.round(selected.meta.layer2Weight / Math.max(selected.meta.currentE1RM || 1, 1) * 100)}%)`}
-            />
-          )}
-        </div>
+        {/* ── Confidence with tap-to-explain ───────────────────────── */}
+        {pct != null && (
+          <div className="mb-3">
+            <button
+              type="button"
+              onClick={() => setWhyOpen(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-item text-left"
+            >
+              <div className="flex items-center gap-2">
+                <span style={{ color }} aria-hidden="true">●</span>
+                <span className="text-sm font-semibold" style={{ color }}>{pct}% confident</span>
+              </div>
+              <span className="text-c-faint text-sm">{whyOpen ? '▴' : '?'}</span>
+            </button>
+            {whyOpen && (
+              <div className="mt-2 px-4 py-3 text-xs text-c-muted leading-relaxed border border-white/5 rounded-xl bg-base/20">
+                <p className="mb-2">
+                  Based on {selected.meta?.n ?? 0} prior {selected.meta?.n === 1 ? 'session' : 'sessions'}
+                  {selected.meta?.rSquared > 0 && (
+                    <> — your e1RM has been tracking {describeFit(selected.meta.rSquared)} against the trend line.</>
+                  )}
+                </p>
+                {(selected.meta?.n ?? 0) < 6 && (
+                  <p>Log {6 - (selected.meta?.n ?? 0)} more consistent {6 - (selected.meta?.n ?? 0) === 1 ? 'session' : 'sessions'} and confidence will climb.</p>
+                )}
+                {(selected.meta?.n ?? 0) >= 6 && selected.meta?.rSquared < 0.9 && (
+                  <p>Your recent sessions have varied more than usual — trend confidence will rise once they settle into a cleaner pattern.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Details toggle — the math for the curious ────────────── */}
+        <button
+          type="button"
+          onClick={() => setDetailsOpen(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-item text-c-secondary"
+        >
+          <span className="text-xs font-semibold uppercase tracking-wider">Details</span>
+          <span className="text-c-faint">{detailsOpen ? '▴' : '▾'}</span>
+        </button>
+
+        {detailsOpen && (
+          <div className="mt-2 space-y-1.5 text-xs px-1">
+            {selected.meta?.currentE1RM > 0 && (
+              <ContextRow
+                label="Estimated 1-rep max"
+                value={`${selected.meta.currentE1RM} lbs`}
+                hint="The heaviest single rep you could probably hit right now, estimated from your top set using Epley's formula: w × (1 + reps/30)."
+              />
+            )}
+            {last && (
+              <ContextRow
+                label="Last session"
+                value={`${last.weight} × ${last.reps}  ·  ${daysAgoLabel(last.date, now)}`}
+              />
+            )}
+            {selected.meta?.n >= 3 && (
+              <ContextRow
+                label="Trend fit"
+                value={`${selected.meta.n} sessions · R²=${(selected.meta.rSquared).toFixed(2)} · ${formatWeeklyRate(selected.meta.progressionRate)}${selected.meta.usedFit ? '' : ' (default)'}`}
+                hint="Linear fit of your e1RM across recent sessions. R² (0–1) is how cleanly the points land on a straight line — higher = more predictable trend."
+              />
+            )}
+            {selected.meta?.thisSessionNudgePct > 0 && selectedMode === 'push' && (
+              <ContextRow
+                label="This session's nudge"
+                value={`+${selected.meta.thisSessionNudgePct.toFixed(1)}%`}
+                hint="How much we're adding to your last weight. Capped at +3%/week for safety even if your trend is faster."
+              />
+            )}
+            {selected.meta?.layer2Weight > 0 && (
+              <ContextRow
+                label={`Floor @ ${targetReps} reps`}
+                value={`${selected.meta.layer2Weight} lbs`}
+                hint={`Standard strength tables say a ${targetReps}-rep max is about ${Math.round(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM) * 100)}% of a 1-rep max. Push recommendations never drop below this.`}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>,
     document.body
@@ -267,11 +399,32 @@ export function RecommendationSheet({
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function ContextRow({ label, value }) {
+function describeFit(rSquared) {
+  if (rSquared >= 0.9)  return 'very closely'
+  if (rSquared >= 0.75) return 'closely'
+  if (rSquared >= 0.5)  return 'roughly'
+  return 'loosely'
+}
+
+function ContextRow({ label, value, hint }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-c-faint">{label}</span>
-      <span className="text-c-secondary text-right">{value}</span>
+    <div>
+      <button
+        type="button"
+        onClick={() => hint && setOpen(v => !v)}
+        className={`w-full flex items-center justify-between gap-3 text-left py-1 ${hint ? 'active:opacity-70' : 'cursor-default'}`}
+        style={!hint ? { pointerEvents: 'none' } : undefined}
+      >
+        <span className="text-c-faint flex items-center gap-1.5">
+          {label}
+          {hint && <span className="text-c-muted text-[10px] opacity-60">{open ? '▴' : 'ⓘ'}</span>}
+        </span>
+        <span className="text-c-secondary text-right tabular-nums">{value}</span>
+      </button>
+      {open && hint && (
+        <div className="text-[11px] text-c-muted leading-relaxed pb-1 pr-4 italic">{hint}</div>
+      )}
     </div>
   )
 }
