@@ -199,6 +199,16 @@ function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Batch 16k — ISO timestamps in the store (sessions, cardio, rest days) are
+// UTC via `new Date().toISOString()`. Splitting on 'T' gives the UTC date,
+// which drifts a day for users west of UTC when they log in the evening.
+// Parse as Date and use LOCAL getDate/Month/Year so the calendar strip,
+// streak, and soreness check-in all land on the correct local day.
+function isoToLocalDateStr(iso) {
+  if (!iso) return null
+  return toDateStr(new Date(iso))
+}
+
 function daysBetween(a, b) {
   const aMs = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()
   const bMs = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime()
@@ -421,7 +431,7 @@ export default function Dashboard() {
   const today    = new Date()
   const todayStr = toDateStr(today)
   const todayLogged = sessions.some(s => {
-    const d = s.date ? s.date.split('T')[0] : null
+    const d = isoToLocalDateStr(s.date)
     return d === todayStr
   })
 
@@ -432,7 +442,7 @@ export default function Dashboard() {
   const yesterdayRotationItem = rotation?.length && sessions.length
     ? getRotationItemOnDate(yesterdayStr, sessions, rotation)
     : null
-  const yesterdayLogged = sessions.some(s => s.date?.split('T')[0] === yesterdayStr) || cardioSessions.some(c => c.date?.split('T')[0] === yesterdayStr) || (restDaySessions || []).some(r => r.date?.split('T')[0] === yesterdayStr)
+  const yesterdayLogged = sessions.some(s => isoToLocalDateStr(s.date) === yesterdayStr) || cardioSessions.some(c => isoToLocalDateStr(c.date) === yesterdayStr) || (restDaySessions || []).some(r => isoToLocalDateStr(r.date) === yesterdayStr)
   const missedYesterdayWorkout = (!todayLogged && yesterdayRotationItem && yesterdayRotationItem !== 'rest' && !yesterdayLogged)
     ? yesterdayRotationItem
     : null
@@ -443,7 +453,7 @@ export default function Dashboard() {
   const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[activePreviewId] || []
 
   const pendingSorenessSession = sessions.find(s => {
-    const d = s.date ? s.date.split('T')[0] : null
+    const d = isoToLocalDateStr(s.date)
     return d === yesterdayStr && s.mode === 'bb' && !s.soreness
   })
 
@@ -485,7 +495,7 @@ export default function Dashboard() {
   }
 
   const restDayDateSet = new Set(
-    (restDaySessions || []).map(r => r.date?.split('T')[0]).filter(Boolean)
+    (restDaySessions || []).map(r => isoToLocalDateStr(r.date)).filter(Boolean)
   )
   const restDayLoggedToday = restDayDateSet.has(todayStr)
   // Count rest day allotment per rotation cycle
@@ -496,7 +506,7 @@ export default function Dashboard() {
   // ── Session map ───────────────────────────────────────────────────────────
   const sessionByDate = {}
   sessions.forEach(s => {
-    const d = s.date ? s.date.split('T')[0] : null
+    const d = isoToLocalDateStr(s.date)
     if (!d) return
     if (!sessionByDate[d] || new Date(s.date) > new Date(sessionByDate[d].date)) {
       sessionByDate[d] = s
@@ -1328,7 +1338,7 @@ export default function Dashboard() {
           onClick={() => {
             if (restDayLoggedToday) {
               // Un-log: find and remove today's rest day entry
-              const todayEntry = (restDaySessions || []).find(r => r.date?.split('T')[0] === todayStr)
+              const todayEntry = (restDaySessions || []).find(r => isoToLocalDateStr(r.date) === todayStr)
               if (todayEntry) deleteRestDaySession(todayEntry.id)
             } else {
               addRestDaySession(new Date().toISOString())

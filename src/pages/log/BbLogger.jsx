@@ -1457,9 +1457,6 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onC
     })
   }
 
-  // Scenario B — no cardio
-  const handleSaveNo = () => onSave({ grade, cardioAction: 'none' })
-
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-5 overflow-y-auto py-10">
       <div className="bg-card rounded-3xl p-6 w-full max-w-sm">
@@ -1486,6 +1483,10 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onC
         {/* Cardio */}
         <p className="text-xs text-c-dim font-semibold uppercase tracking-wide mb-2">Cardio</p>
 
+        {/* Scenario B tri-state: null = unselected, 'yes' = inline form open,
+            'no' = explicitly marked no cardio (Batch 16k — was auto-saving
+            before; now just fills in the choice; main Save button below
+            commits). */}
         {isScenarioA ? (
           /* ── Scenario A: cardio already logged today ─────────────── */
           <>
@@ -1537,8 +1538,15 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onC
                 Log Now
               </button>
               <button
-                onClick={handleSaveNo}
-                className="flex-1 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-dim"
+                onClick={() => setCardioChoice(cardioChoice === 'no' ? null : 'no')}
+                className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
+                  cardioChoice === 'no'
+                    ? 'bg-c-secondary text-bg-base border border-white/30'
+                    : 'bg-item text-c-dim'
+                }`}
+                style={cardioChoice === 'no'
+                  ? { backgroundColor: 'rgba(255,255,255,0.15)', color: 'var(--text-primary)' }
+                  : undefined}
               >
                 No
               </button>
