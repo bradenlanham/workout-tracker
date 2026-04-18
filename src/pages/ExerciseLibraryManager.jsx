@@ -1,20 +1,20 @@
 // Batch 16j — Manage Exercise Library page.
+// Batch 16l — added workout + usage filter chips so users don't have to
+// wade through all 109 entries every time.
 //
 // Route: /exercises. Linked from HamburgerMenu ("My Exercises"). Lists
-// every library entry with filter chips, search, and a summary of each
-// entry's muscles/equipment. Tapping an entry opens ExerciseEditSheet.
-// Deleting a custom entry cascades through mergeExercises isn't exposed
-// here (merging is specialized — that's a future enhancement surfaced
-// only when duplicates are detected at save-time).
+// library entries filtered by source (All / Custom / Built-in / Untagged)
+// AND by workout context (Any / [each workout in active split] / Never
+// logged). Tapping an entry opens ExerciseEditSheet.
 
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { perSideLoad, formatDate } from '../utils/helpers'
+import { perSideLoad, formatDate, normalizeExerciseName } from '../utils/helpers'
 import ExerciseEditSheet from '../components/ExerciseEditSheet'
 
-const FILTERS = [
+const SOURCE_FILTERS = [
   { id: 'all',      label: 'All'       },
   { id: 'custom',   label: 'Custom'    },
   { id: 'builtin',  label: 'Built-in'  },
@@ -53,21 +53,78 @@ export default function ExerciseLibraryManager() {
     exerciseLibrary,
     sessions,
     settings,
+    splits,
+    activeSplitId,
     updateExerciseInLibrary,
     deleteExerciseFromLibrary,
   } = useStore()
   const theme = getTheme(settings.accentColor)
+  const activeSplit = splits?.find(s => s.id === activeSplitId)
 
-  const [filter, setFilter]       = useState('all')
-  const [search, setSearch]       = useState('')
-  const [editingId, setEditingId] = useState(null)
+  const [sourceFilter,  setSourceFilter]  = useState('all')
+  const [workoutFilter, setWorkoutFilter] = useState('any')  // 'any' | workoutId | 'logged' | 'never'
+  const [search,        setSearch]        = useState('')
+  const [editingId,     setEditingId]     = useState(null)
+
+  // Build a lookup: exerciseIds referenced by each workout in the active split.
+  // section.exercises items can be strings or {name, rec} objects (Batch 13),
+  // so we unwrap the name and resolve against the library by id, canonical
+  // name, or alias — same approach the v2→v3 migration uses.
+  const exerciseIdsByWorkout = useMemo(() => {
+    const byNormalized = new Map()
+    for (const ex of exerciseLibrary || []) {
+      byNormalized.set(normalizeExerciseName(ex.name), ex.id)
+      for (const alias of ex.aliases || []) {
+        if (!byNormalized.has(normalizeExerciseName(alias))) {
+          byNormalized.set(normalizeExerciseName(alias), ex.id)
+        }
+      }
+    }
+    const map = new Map()
+    for (const w of activeSplit?.workouts || []) {
+      const ids = new Set()
+      for (const section of w.sections || []) {
+        for (const raw of section.exercises || []) {
+          const name = typeof raw === 'string' ? raw : raw?.name
+          if (!name) continue
+          const id = byNormalized.get(normalizeExerciseName(name))
+          if (id) ids.add(id)
+        }
+      }
+      map.set(w.id, ids)
+    }
+    return map
+  }, [activeSplit, exerciseLibrary])
+
+  // Set of every exerciseId that has at least one logged session set
+  const loggedIds = useMemo(() => {
+    const s = new Set()
+    for (const sess of sessions || []) {
+      if (sess?.mode !== 'bb' || !sess?.data?.exercises) continue
+      for (const ex of sess.data.exercises) {
+        if (ex.exerciseId) s.add(ex.exerciseId)
+      }
+    }
+    return s
+  }, [sessions])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return (exerciseLibrary || []).filter(e => {
-      if (filter === 'custom'  && e.isBuiltIn) return false
-      if (filter === 'builtin' && !e.isBuiltIn) return false
-      if (filter === 'tagging' && !e.needsTagging) return false
+      // Source filter
+      if (sourceFilter === 'custom'  && e.isBuiltIn)    return false
+      if (sourceFilter === 'builtin' && !e.isBuiltIn)   return false
+      if (sourceFilter === 'tagging' && !e.needsTagging) return false
+
+      // Workout / usage filter
+      if (workoutFilter === 'logged' && !loggedIds.has(e.id)) return false
+      if (workoutFilter === 'never'  &&  loggedIds.has(e.id)) return false
+      if (workoutFilter !== 'any' && workoutFilter !== 'logged' && workoutFilter !== 'never') {
+        const ids = exerciseIdsByWorkout.get(workoutFilter)
+        if (!ids || !ids.has(e.id)) return false
+      }
+
+      // Search
       if (!q) return true
       const names = [e.name, ...(e.aliases || [])]
       return names.some(n => (n || '').toLowerCase().includes(q))
@@ -76,7 +133,7 @@ export default function ExerciseLibraryManager() {
       if (!!a.needsTagging !== !!b.needsTagging) return a.needsTagging ? -1 : 1
       return (a.name || '').localeCompare(b.name || '')
     })
-  }, [exerciseLibrary, filter, search])
+  }, [exerciseLibrary, sourceFilter, workoutFilter, search, exerciseIdsByWorkout, loggedIds])
 
   const editing = editingId ? filtered.find(e => e.id === editingId) || exerciseLibrary.find(e => e.id === editingId) : null
 
@@ -89,12 +146,22 @@ export default function ExerciseLibraryManager() {
     setEditingId(null)
   }
 
-  const counts = useMemo(() => ({
+  const sourceCounts = useMemo(() => ({
     all:     (exerciseLibrary || []).length,
     custom:  (exerciseLibrary || []).filter(e => !e.isBuiltIn).length,
     builtin: (exerciseLibrary || []).filter(e =>  e.isBuiltIn).length,
     tagging: (exerciseLibrary || []).filter(e =>  e.needsTagging).length,
   }), [exerciseLibrary])
+
+  const workoutCounts = useMemo(() => {
+    const counts = {
+      any:    (exerciseLibrary || []).length,
+      logged: loggedIds.size,
+      never:  (exerciseLibrary || []).filter(e => !loggedIds.has(e.id)).length,
+    }
+    for (const [wid, ids] of exerciseIdsByWorkout) counts[wid] = ids.size
+    return counts
+  }, [exerciseLibrary, loggedIds, exerciseIdsByWorkout])
 
   return (
     <div className="min-h-screen bg-base text-c-primary pb-24" style={{ paddingTop: 'max(2rem, env(safe-area-inset-top, 2rem))' }}>
@@ -102,7 +169,7 @@ export default function ExerciseLibraryManager() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold">My Exercises</h1>
-            <p className="text-xs text-c-muted mt-0.5">{filtered.length} of {counts.all} shown</p>
+            <p className="text-xs text-c-muted mt-0.5">{filtered.length} of {sourceCounts.all} shown</p>
           </div>
           <button
             onClick={() => navigate('/dashboard')}
@@ -112,27 +179,78 @@ export default function ExerciseLibraryManager() {
           </button>
         </div>
 
-        {/* Filter chips */}
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {FILTERS.map(f => {
-            const n = counts[f.id] || 0
+        {/* Source filter chips */}
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {SOURCE_FILTERS.map(f => {
+            const n = sourceCounts[f.id] || 0
             if (f.id === 'tagging' && n === 0) return null
+            const selected = sourceFilter === f.id
             return (
               <button
                 key={f.id}
                 type="button"
-                onClick={() => setFilter(f.id)}
+                onClick={() => setSourceFilter(f.id)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  filter === f.id
-                    ? `${theme.bg} text-white`
-                    : 'bg-item text-c-secondary'
+                  selected ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
                 }`}
-                style={filter === f.id ? { color: theme.contrastText } : undefined}
+                style={selected ? { color: theme.contrastText } : undefined}
               >
                 {f.label} <span className="opacity-70 ml-0.5">{n}</span>
               </button>
             )
           })}
+        </div>
+
+        {/* Workout / usage filter chips */}
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          <button
+            type="button"
+            onClick={() => setWorkoutFilter('any')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              workoutFilter === 'any' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+            }`}
+            style={workoutFilter === 'any' ? { color: theme.contrastText } : undefined}
+          >
+            Any workout
+          </button>
+          {(activeSplit?.workouts || []).map(w => {
+            const n = workoutCounts[w.id] || 0
+            if (n === 0) return null
+            const selected = workoutFilter === w.id
+            return (
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => setWorkoutFilter(w.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  selected ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+                }`}
+                style={selected ? { color: theme.contrastText } : undefined}
+              >
+                {w.name?.split(' — ')[0] || w.id} <span className="opacity-70 ml-0.5">{n}</span>
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => setWorkoutFilter('logged')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              workoutFilter === 'logged' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+            }`}
+            style={workoutFilter === 'logged' ? { color: theme.contrastText } : undefined}
+          >
+            Logged <span className="opacity-70 ml-0.5">{workoutCounts.logged}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setWorkoutFilter('never')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              workoutFilter === 'never' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+            }`}
+            style={workoutFilter === 'never' ? { color: theme.contrastText } : undefined}
+          >
+            Never logged <span className="opacity-70 ml-0.5">{workoutCounts.never}</span>
+          </button>
         </div>
 
         <input
