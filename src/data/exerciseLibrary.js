@@ -3,6 +3,10 @@ export const MUSCLE_GROUPS = [
   'Biceps', 'Triceps', 'Core', 'Calves', 'Forearms', 'Full Body',
 ]
 
+export const EQUIPMENT_TYPES = [
+  'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell', 'Other',
+]
+
 export const EXERCISE_LIBRARY = [
   // Chest
   { name: 'Bench Press',                  muscleGroup: 'Chest',      equipment: 'Barbell'    },

@@ -238,7 +238,7 @@ const PARTICLES = [
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession, restDaySessions, addRestDaySession, deleteRestDaySession } = useStore()
+  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession, restDaySessions, addRestDaySession, deleteRestDaySession, exerciseLibrary } = useStore()
   const theme = getTheme(settings.accentColor)
 
   const isDark = settings.backgroundTheme !== 'daylight'
@@ -799,6 +799,41 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Backfill banner ─────────────────────────────────────────────────
+           Shown only while needsTagging entries remain in the library.
+           Tap → /backfill, the one-time muscle-group + equipment prompt
+           that the V2→V3 migration may have created user-facing records
+           for. See Batch 15c. */}
+      {(() => {
+        const pendingCount = (exerciseLibrary || []).filter(e => e.needsTagging).length
+        if (pendingCount === 0) return null
+        return (
+          <div style={{ padding: '0 16px', marginBottom: 12 }}>
+            <button
+              onPointerDown={() => navigate('/backfill')}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 12,
+                background: 'rgba(59,130,246,0.12)',
+                border: '1px solid rgba(59,130,246,0.35)',
+                color: 'rgb(147,197,253)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <span>📋 Tag {pendingCount} custom {pendingCount === 1 ? 'exercise' : 'exercises'} to unlock smarter recommendations</span>
+              <span style={{ opacity: 0.7 }}>→</span>
+            </button>
+          </div>
+        )
+      })()}
 
       {/* ── SECTION 2: Circle Calendar ──────────────────────────────────────── */}
       <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10, marginTop: -28 }}>
