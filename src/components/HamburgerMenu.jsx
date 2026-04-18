@@ -13,11 +13,12 @@ export default function HamburgerMenu({ open, setOpen }) {
   const [showDataSection, setShowDataSection] = useState(false)
   const [showTrackingInfo, setShowTrackingInfo] = useState(false)
   const [showStreakInfo, setShowStreakInfo] = useState(false)
+  const [showCoachingInfo, setShowCoachingInfo] = useState(false)
 
   const isLogging = loc.pathname.startsWith('/log/bb/')
   if (isLogging) return null
 
-  const close = () => { setOpen(false); setSubScreen(null); setShowDataSection(false); setShowTrackingInfo(false); setShowStreakInfo(false) }
+  const close = () => { setOpen(false); setSubScreen(null); setShowDataSection(false); setShowTrackingInfo(false); setShowStreakInfo(false); setShowCoachingInfo(false) }
   const go = (path) => { navigate(path); close() }
 
   const handleImport = () => {
@@ -151,10 +152,22 @@ export default function HamburgerMenu({ open, setOpen }) {
               {subScreen === 'settings' && (
                 <div className="space-y-6 pt-4">
 
-                  {/* ── Appearance ──────────────────────────────────────────── */}
+                  {/* ── Profile Settings ────────────────────────────────────── */}
                   <div>
-                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Appearance</p>
+                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Profile Settings</p>
                     <div className="space-y-4">
+                      {/* Your Name */}
+                      <div>
+                        <p className="text-sm font-semibold text-c-primary mb-2">Your Name</p>
+                        <input
+                          type="text"
+                          value={settings.userName || ''}
+                          onChange={e => updateSettings({ userName: e.target.value })}
+                          placeholder="Your name"
+                          className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-sm placeholder-gray-500 focus:outline-none"
+                        />
+                      </div>
+
                       {/* Theme */}
                       <div>
                         <p className="text-sm font-semibold text-c-primary mb-2">Theme</p>
@@ -283,11 +296,11 @@ export default function HamburgerMenu({ open, setOpen }) {
                         </button>
                       </div>
 
-                      {/* AI Coaching (Batch 16i) */}
+                      {/* AI Coaching (Batch 16i; scope expanded in 16q) */}
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-semibold text-c-primary">AI coaching</p>
-                          <p className="text-xs text-c-dim mt-0.5">Show the coach's call banner + sheet</p>
+                          <p className="text-xs text-c-dim mt-0.5">Coach's Call tip + anomaly banners</p>
                         </div>
                         <button
                           onClick={() => updateSettings({ enableAiCoaching: !settings.enableAiCoaching })}
@@ -322,21 +335,6 @@ export default function HamburgerMenu({ open, setOpen }) {
                           />
                         </button>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* ── Account ──────────────────────────────────────────────── */}
-                  <div>
-                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Account</p>
-                    <div>
-                      <p className="text-sm font-semibold text-c-primary mb-2">Your Name</p>
-                      <input
-                        type="text"
-                        value={settings.userName || ''}
-                        onChange={e => updateSettings({ userName: e.target.value })}
-                        placeholder="Your name"
-                        className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-sm placeholder-gray-500 focus:outline-none"
-                      />
                     </div>
                   </div>
 
@@ -388,6 +386,57 @@ export default function HamburgerMenu({ open, setOpen }) {
                         <li>❌ Logging <strong className="text-c-secondary">nothing</strong> → streak resets to 0</li>
                       </ul>
                       <p className="pt-1"><strong className="text-c-primary">Every day has to be logged.</strong> If you don't log anything on a given day — no workout, no cardio, no rest day — your streak resets. Your rotation rest slots don't automatically bridge; you have to actually tap <strong className="text-c-secondary">Log Rest Day</strong> to keep the streak alive on an off day.</p>
+                    </div>
+                  )}
+
+                  <button
+                    className={rowClass}
+                    style={{ ...rowStyle, borderBottom: showCoachingInfo ? 'none' : '1px solid var(--bg-item)' }}
+                    onClick={() => setShowCoachingInfo(v => !v)}
+                  >
+                    <span>How AI Coaching Works</span>
+                    <span className="text-c-dim text-sm">{showCoachingInfo ? '▾' : '▸'}</span>
+                  </button>
+
+                  {showCoachingInfo && (
+                    <div className="bg-item rounded-xl p-4 text-sm text-c-dim space-y-3 mt-1" style={{ borderBottom: '1px solid var(--bg-item)' }}>
+                      <p>The coach looks at your session history and suggests a weight for each exercise. It gets smarter as you log more sessions. You can turn it off any time with the AI coaching toggle in Workout Defaults.</p>
+
+                      <p><strong className="text-c-primary">Your strength</strong></p>
+                      <p>After a few sessions on an exercise, the coach estimates your one-rep max using your top working set (the heaviest set where you hit your reps). A common formula turns sets like 180 × 10 into an estimated one-rep max of about 240 lbs. The estimate updates every session.</p>
+
+                      <p><strong className="text-c-primary">Today's suggestion</strong></p>
+                      <p>From your strength estimate and the target rep range for the exercise, the coach picks a weight you should be able to handle for that many reps. If your progression trend is going up, it bumps the weight a little, capped at 3% per week so the jump is sustainable.</p>
+
+                      <p><strong className="text-c-primary">Your check-in</strong></p>
+                      <p>Before each session you tap three things: energy (low, mid, high), sleep (poor, mid, good), and today's goal (Recover, Match, or Push). Push is the default. Recover tells the coach to prescribe an easier day. Match keeps things steady. Poor sleep or low energy makes Push nudge more conservatively; feeling fresh makes it nudge harder.</p>
+
+                      <p><strong className="text-c-primary">What the coach watches between sessions</strong></p>
+                      <ul className="space-y-1.5 pl-2">
+                        <li>Your last session's <strong className="text-c-secondary">grade</strong> (A+ means push harder, D means back off)</li>
+                        <li>Whether you did <strong className="text-c-secondary">all-out cardio</strong> in the last 24 hours</li>
+                        <li>Whether you logged a <strong className="text-c-secondary">rest day</strong> recently</li>
+                        <li>How many days <strong className="text-c-secondary">since your last session</strong> (long gaps get ramped back up gradually, not all at once)</li>
+                      </ul>
+
+                      <p><strong className="text-c-primary">When you miss your reps</strong></p>
+                      <p>If you fall one rep short, the coach keeps the same weight next time and tells you to chase the full rep target. If you fall two or more reps short two sessions in a row, the coach automatically prescribes a 10% deload to let you reset before pushing again.</p>
+
+                      <p><strong className="text-c-primary">Anomaly banners</strong></p>
+                      <p>On each exercise card, the coach flags three things:</p>
+                      <ul className="space-y-1.5 pl-2">
+                        <li><strong className="text-c-secondary">Plateau</strong> — six or more sessions flat, no movement up or down. Suggests dropping 10% and chasing reps to break through.</li>
+                        <li><strong className="text-c-secondary">Regression</strong> — a clear downward trend. Suggests a lighter recovery week.</li>
+                        <li><strong className="text-c-secondary">Swing</strong> — your top set jumped more than 30% from last time. Asks if you used a different machine or range of motion.</li>
+                      </ul>
+                      <p>Dismissing a banner hides it for the rest of today's session. It returns next session if the pattern is still there.</p>
+
+                      <p><strong className="text-c-primary">What the coach won't do</strong></p>
+                      <ul className="space-y-1.5 pl-2">
+                        <li>Your data never leaves your device. No cloud, no account.</li>
+                        <li>The suggestion is a starting point, not a rule. Lift what feels right.</li>
+                        <li>For the first couple sessions of an exercise, the coach says nothing. It waits until it has enough history to be useful.</li>
+                      </ul>
                     </div>
                   )}
                 </>
