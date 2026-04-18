@@ -18,7 +18,7 @@ import SplitBuilder from './pages/SplitBuilder'
 import Welcome from './pages/Welcome'
 
 function ThemedApp() {
-  const { settings, initSplits, sessions, hasCompletedOnboarding } = useStore()
+  const { settings, initSplits, initLibrary, sessions, hasCompletedOnboarding } = useStore()
   const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -26,9 +26,11 @@ function ThemedApp() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [settings.backgroundTheme])
 
-  // Auto-create the built-in split on first load if splits array is empty
+  // Auto-create the built-in split + seed the exercise library on first
+  // load. Both are idempotent — no-op on returning users.
   useEffect(() => {
     initSplits()
+    initLibrary()
   }, []) // eslint-disable-line
 
   // Show welcome screen for new users who haven't completed onboarding

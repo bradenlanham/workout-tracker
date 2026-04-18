@@ -7,6 +7,42 @@ import {
   BB_WORKOUT_EMOJI,
   BB_EXERCISE_GROUPS,
 } from '../data/exercises'
+import { EXERCISE_LIBRARY as BUILT_IN_RAW } from '../data/exerciseLibrary'
+
+// ── Exercise library seeding ───────────────────────────────────────────────────
+// Transforms the raw { name, muscleGroup, equipment } shape from
+// data/exerciseLibrary.js into the canonical Exercise entity used by the
+// recommender, backfill UI, and dedup matching. IDs are slug-derived so
+// they stay stable across runs.
+
+function slugifyExerciseName(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+// Exposed for the v2→v3 migration (step 2b) and the library dedup pass.
+export function builtInExerciseIdForName(name) {
+  return `ex_${slugifyExerciseName(name)}`
+}
+
+function buildBuiltInLibrary() {
+  return BUILT_IN_RAW.map(raw => ({
+    id:                builtInExerciseIdForName(raw.name),
+    name:              raw.name,
+    aliases:           [],
+    primaryMuscles:    [raw.muscleGroup],
+    equipment:         raw.equipment,
+    isBuiltIn:         true,
+    defaultUnilateral: false,
+    loadIncrement:     5,
+    defaultRepRange:   [8, 12],
+    progressionClass:
+      raw.muscleGroup === 'Full Body' ? 'compound'
+      : raw.equipment === 'Bodyweight' ? 'bodyweight'
+      : 'isolation',
+    needsTagging:      false,
+    createdAt:         '2026-04-17',
+  }))
+}
 
 // ── Built-in split factory ─────────────────────────────────────────────────────
 
@@ -56,7 +92,12 @@ const useStore = create(
       // ── Splits ─────────────────────────────────────────────────────────────
       splits: [],
       activeSplitId: null,
-      // User's custom exercises (pre-built exercises stay in exercises.js)
+      // Canonical exercise library. Seeded from data/exerciseLibrary.js on
+      // first app mount via initLibrary() (and extended by the v2→v3 persist
+      // migration with any user-created names found in session history).
+      // Every entry has a stable slug-derived `id`; entries with
+      // `needsTagging: true` are waiting on muscle-group/equipment backfill
+      // from the user. See Batch 15.
       exerciseLibrary: [],
 
       // ── Cardio ─────────────────────────────────────────────────────────────
@@ -80,6 +121,90 @@ const useStore = create(
           : BB_WORKOUT_SEQUENCE
 
         set({ splits: [buildBuiltInSplit(rotation)], activeSplitId: 'split_bam' })
+      },
+
+      // ── Exercise library init + CRUD ──────────────────────────────────────
+      // initLibrary() seeds from built-in data on fresh installs. Returning
+      // users post-v3 already have a populated library from the migration, so
+      // this is a no-op for them. Idempotent.
+
+      initLibrary: () => {
+        const state = get()
+        if (state.exerciseLibrary && state.exerciseLibrary.length > 0) return
+        set({ exerciseLibrary: buildBuiltInLibrary() })
+      },
+
+      addExerciseToLibrary: (exercise) => {
+        // Required-field validation — enforces the §3.2.1 constraint that every
+        // Exercise carries at least one primaryMuscles value and one equipment.
+        if (!exercise?.name?.trim()) {
+          throw new Error('addExerciseToLibrary: name required')
+        }
+        if (!Array.isArray(exercise.primaryMuscles) || exercise.primaryMuscles.length === 0) {
+          throw new Error('addExerciseToLibrary: at least one primaryMuscles value required')
+        }
+        if (!exercise.equipment) {
+          throw new Error('addExerciseToLibrary: equipment required')
+        }
+        const newEx = {
+          id:                `ex_${generateId()}`,
+          name:              exercise.name.trim(),
+          aliases:           exercise.aliases || [],
+          primaryMuscles:    exercise.primaryMuscles,
+          equipment:         exercise.equipment,
+          isBuiltIn:         false,
+          defaultUnilateral: !!exercise.defaultUnilateral,
+          loadIncrement:     exercise.loadIncrement    || 5,
+          defaultRepRange:   exercise.defaultRepRange  || [8, 12],
+          progressionClass:  exercise.progressionClass || 'isolation',
+          needsTagging:      false,
+          createdAt:         new Date().toISOString(),
+          ...(exercise.sessionGymTags ? { sessionGymTags: exercise.sessionGymTags } : {}),
+        }
+        set(state => ({ exerciseLibrary: [...state.exerciseLibrary, newEx] }))
+        return newEx
+      },
+
+      updateExerciseInLibrary: (id, patch) => {
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex =>
+            ex.id === id ? { ...ex, ...patch } : ex
+          ),
+        }))
+      },
+
+      deleteExerciseFromLibrary: (id) => {
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.filter(ex => ex.id !== id),
+        }))
+      },
+
+      // Merge one or more exercises INTO keepId. Rewrites every session's
+      // exerciseId references from any mergeIds → keepId, then removes the
+      // merged entries from the library. Used by the v2→v3 migration's
+      // dedup pass and by the user-facing merge UI (future).
+      mergeExercises: (keepId, mergeIds) => {
+        if (!keepId || !Array.isArray(mergeIds) || mergeIds.length === 0) return
+        const mergeSet = new Set(mergeIds.filter(id => id !== keepId))
+        if (mergeSet.size === 0) return
+        set(state => {
+          const newSessions = (state.sessions || []).map(s => {
+            if (!s?.data?.exercises) return s
+            return {
+              ...s,
+              data: {
+                ...s.data,
+                exercises: s.data.exercises.map(ex =>
+                  ex.exerciseId && mergeSet.has(ex.exerciseId)
+                    ? { ...ex, exerciseId: keepId }
+                    : ex
+                ),
+              },
+            }
+          })
+          const newLibrary = state.exerciseLibrary.filter(ex => !mergeSet.has(ex.id))
+          return { sessions: newSessions, exerciseLibrary: newLibrary }
+        })
       },
 
       // ── Split CRUD ────────────────────────────────────────────────────────
