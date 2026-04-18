@@ -619,6 +619,8 @@ export function percent1RM(targetReps) {
 // working set is fine for fit purposes). Returns chronological ascending.
 // Prefers exerciseId when present; falls back to name match for pre-v3
 // sessions that haven't been migrated through the live persist hook yet.
+// rpe (1–10, optional) carried through when set so Layer 3's Δreps can
+// factor in reps-in-reserve (§3.7).
 export function getExerciseHistory(sessions, exerciseId, exerciseName = null) {
   if (!Array.isArray(sessions) || !exerciseId) return []
   const out = []
@@ -641,7 +643,16 @@ export function getExerciseHistory(sessions, exerciseId, exerciseName = null) {
       const w = perSideLoad(st)
       const r = Number(st.reps) || 0
       const e = e1RM(w, r)
-      if (e > topE) { topE = e; top = { weight: w, reps: r, e1RM: e } }
+      if (e > topE) {
+        topE = e
+        const rpe = Number(st.rpe)
+        top = {
+          weight: w,
+          reps:   r,
+          e1RM:   e,
+          rpe:    Number.isFinite(rpe) && rpe >= 1 && rpe <= 10 ? rpe : null,
+        }
+      }
     }
     if (top) out.push({ date: s.date, ...top })
   }
@@ -754,10 +765,17 @@ export function recommendNextLoad({
 
   // Auto-deload trigger (spec §2.2 rule 3): missed by 2+ reps in the last
   // two consecutive sessions. Only applies when the user hasn't already
-  // explicitly declared maintain/deload — otherwise mode wins.
-  const lastTwo     = h.slice(-2)
-  const autoDeload  = mode === 'push' && lastTwo.length >= 2 &&
-                      lastTwo.every(p => (targetReps - p.reps) >= 2)
+  // explicitly declared maintain/deload — otherwise mode wins. When RPE
+  // is logged, "miss" is evaluated against effective reps (reps + RIR);
+  // a set at RPE 8 with 2 RIR counts as hitting target even if raw reps
+  // fell short (§3.7).
+  const effReps = p => {
+    const rir = p.rpe ? Math.max(0, 10 - p.rpe) : 0
+    return p.reps + rir
+  }
+  const lastTwo    = h.slice(-2)
+  const autoDeload = mode === 'push' && lastTwo.length >= 2 &&
+                     lastTwo.every(p => (targetReps - effReps(p)) >= 2)
 
   let prescriptionWeight
   let reasoning
@@ -784,14 +802,24 @@ export function recommendNextLoad({
     const hitTarget      = last.reps >= targetReps
     const missedByOne    = (targetReps - last.reps) === 1
 
-    if (hitTarget) {
-      const deltaReps    = last.reps - targetReps
+    // Effective-reps: factor in RIR when the user logged an RPE on last top
+    // set. RIR = Math.max(0, 10 − RPE). E.g. 10 reps @ RPE 8 = 12 effective.
+    // Spec §3.7: "effectiveRepsBeaten = repsHit + estimatedRIR − targetReps".
+    // No RPE → RIR 0, behavior identical to pre-16c.
+    const lastRIR          = last.rpe ? Math.max(0, 10 - last.rpe) : 0
+    const effectiveReps    = last.reps + lastRIR
+    const hitEffective     = effectiveReps >= targetReps
+    const effectiveMissBy1 = (targetReps - effectiveReps) === 1
+
+    if (hitTarget || hitEffective) {
+      const deltaReps    = effectiveReps - targetReps
       const layer3Weight = last.weight * (1 + P * alpha) + 0.033 * last.weight * deltaReps
       prescriptionWeight = Math.max(layer3Weight, layer2Weight)
       const nudgePct     = (P * alpha * 100)
-      reasoning          = `Hit target last session — pushing +${nudgePct.toFixed(1)}% based on your trend.`
+      const rirNote      = lastRIR > 0 ? ` (${last.reps}×@RPE${last.rpe}≈${effectiveReps} effective)` : ''
+      reasoning          = `Hit target last session — pushing +${nudgePct.toFixed(1)}% based on your trend.${rirNote}`
       if (layer3Weight < layer2Weight) reasoning += ' (e1RM floor holds.)'
-    } else if (missedByOne) {
+    } else if (missedByOne || effectiveMissBy1) {
       prescriptionWeight = Math.max(last.weight, layer2Weight)
       reasoning          = 'Missed by 1 last session — same weight, go for the reps.'
     } else {
