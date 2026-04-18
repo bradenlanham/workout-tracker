@@ -4,3 +4,5 @@ dist
 *.local
 
 .vercel
+debug-backup.json
+streak-debug.mjs

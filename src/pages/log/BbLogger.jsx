@@ -6,11 +6,13 @@ import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../da
 import {
   getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
   findSimilarExercises, normalizeExerciseName,
+  getExerciseHistory, recommendNextLoad,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
+import { RecommendationHint, RecommendationBanner, RecommendationSheet } from './Recommendation'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -466,7 +468,9 @@ function ExerciseItem({
     // eslint-disable-next-line
   }, [expanded])
   const { settings, setRestEndTimestamp } = useStore()
+  const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const numpadCtx = useContext(NumpadContext)
+  const [recSheetOpen, setRecSheetOpen] = useState(false)
 
   // ── Focus mode: when numpad is open, check if THIS exercise owns the active field.
   // If the numpad is open but the active field belongs to a different exercise,
@@ -572,6 +576,43 @@ function ExerciseItem({
     isSetPR(scopedSessions, exercise.name, parseFloat(s.weight) || 0, parseInt(s.reps) || 0)
   )
 
+  // ── Recommendation (Batch 16b) ───────────────────────────────────────
+  // Cross-workout-type by design: if the user does Pec Dec in push and
+  // push2, recommendations should see both (spec §1.3 and §3.2). We pass
+  // allSessions, not scopedSessions — different scoping from PR logic,
+  // which is per workout type by the user's preference.
+  const libraryEntry = useMemo(() => {
+    if (!exercise.exerciseId && !exercise.name) return null
+    return (
+      exerciseLibrary.find(e => e.id === exercise.exerciseId) ||
+      exerciseLibrary.find(e => e.name === exercise.name)
+    )
+  }, [exerciseLibrary, exercise.exerciseId, exercise.name])
+
+  const recTargetReps = useMemo(() => {
+    const range = libraryEntry?.defaultRepRange
+    if (Array.isArray(range) && range.length === 2) {
+      return Math.round((range[0] + range[1]) / 2)
+    }
+    return 10
+  }, [libraryEntry])
+
+  const recHistory = useMemo(
+    () => getExerciseHistory(allSessions, libraryEntry?.id || exercise.exerciseId, exercise.name),
+    [allSessions, libraryEntry?.id, exercise.exerciseId, exercise.name]
+  )
+
+  const recommendation = useMemo(() => {
+    if (!recHistory.length) return null
+    return recommendNextLoad({
+      history:          recHistory,
+      targetReps:       recTargetReps,
+      mode:             'push',
+      progressionClass: libraryEntry?.progressionClass || 'isolation',
+      loadIncrement:    libraryEntry?.loadIncrement    || 5,
+    })
+  }, [recHistory, recTargetReps, libraryEntry?.progressionClass, libraryEntry?.loadIncrement])
+
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
   const prevSets   = lastSessionEx?.sets || []
@@ -650,12 +691,17 @@ function ExerciseItem({
                 )
               )}
             </div>
-            {!expanded && !exercise.done && lastTopSet && (
-              <p style={{ fontSize: 10 }} className="text-c-faint opacity-50 mt-0.5 leading-none">
-                {lastTopSet.plates && formatPlateBreakdown(lastTopSet.plates)
-                  ? `Last: ${formatPlateBreakdown(lastTopSet.plates)} = ${perSideLoad(lastTopSet)}`
-                  : `Last: ${perSideLoad(lastTopSet) || '—'}${lastTopSet.reps ? `×${lastTopSet.reps}` : ''}`}
-              </p>
+            {!expanded && !exercise.done && (lastTopSet || recommendation?.prescription) && (
+              <div className="flex items-center gap-1.5 mt-0.5 leading-none">
+                {lastTopSet && (
+                  <span style={{ fontSize: 10 }} className="text-c-faint opacity-50">
+                    {lastTopSet.plates && formatPlateBreakdown(lastTopSet.plates)
+                      ? `Last: ${formatPlateBreakdown(lastTopSet.plates)} = ${perSideLoad(lastTopSet)}`
+                      : `Last: ${perSideLoad(lastTopSet) || '—'}${lastTopSet.reps ? `×${lastTopSet.reps}` : ''}`}
+                  </span>
+                )}
+                <RecommendationHint recommendation={recommendation} />
+              </div>
             )}
             {!expanded && !exercise.done && topSet && (topSet.reps || topSet.weight) && (
               <p className={`text-xs ${theme.text} mt-0.5`}>
@@ -709,6 +755,14 @@ function ExerciseItem({
       {/* ── Expanded body ─────────────────────────────────────────────── */}
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
+
+          {/* Recommendation banner — tap for coaching details */}
+          {recommendation?.prescription && (
+            <RecommendationBanner
+              recommendation={recommendation}
+              onTap={() => setRecSheetOpen(true)}
+            />
+          )}
 
           {/* Plate mode + Uni toggles + Last session */}
           <div className="flex items-center gap-2">
@@ -851,6 +905,16 @@ function ExerciseItem({
           )}
         </div>
       )}
+
+      <RecommendationSheet
+        open={recSheetOpen}
+        onClose={() => setRecSheetOpen(false)}
+        exerciseName={exercise.name}
+        history={recHistory}
+        targetReps={recTargetReps}
+        progressionClass={libraryEntry?.progressionClass || 'isolation'}
+        loadIncrement={libraryEntry?.loadIncrement || 5}
+      />
     </div>
   )
 }
