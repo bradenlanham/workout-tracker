@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16n — readiness check-in)
+> Last updated: April 19, 2026 (Batch 16n + 16n-1 — readiness check-in + Coach's Call polish)
 
 ## Rules for Claude
 
@@ -96,12 +96,17 @@ src/
         ├── BbLogger.jsx       # THE MAIN SESSION LOGGER — exercise cards, sets, plates mode, uni toggle,
         │                      # previous session ghost rows, add exercise panel, finish modal, session comparison,
         │                      # auto-persist to split template, share card integration
-        ├── Recommendation.jsx # Recommender UI: RecommendationHint (inline), RecommendationBanner,
-        │                      # RecommendationSheet (bottom-sheet w/ inline e1RM sparkline, 2 mode
-        │                      # chips by default, 3 when readiness.goal='recover', tap-to-explain
-        │                      # confidence %, plain-English reasoning, expandable Details section,
+        ├── Recommendation.jsx # Recommender UI: RecommendationChip (toolbar-row "Tip" pill,
+        │                      # 16n-1), RecommendationSheet (bottom-sheet w/ one-line header
+        │                      # "Recommended top set: W×R" + exercise name above + last-session
+        │                      # subtitle, e1RM sparkline w/ explicit Peak/Growth key, compact
+        │                      # 1-line mode chips, tap-to-explain confidence %, plain-English
+        │                      # reasoning, expandable Details section w/ "vs last session" delta,
         │                      # accepts aggressivenessMultiplier + defaultMode from readiness
-        │                      # check-in). Batches 16b + 16f + 16n.
+        │                      # check-in). Batches 16b + 16f + 16n + 16n-1.
+        │                      # Exports: RecommendationChip, RecommendationSheet.
+        │                      # (Legacy RecommendationHint + RecommendationBanner still exported
+        │                      # but unused — candidates for removal in a cleanup pass.)
         ├── ReadinessCheckIn.jsx # Batch 16n — three-tap pre-session overlay (§2.5): Energy /
         │                      # Sleep / Goal rows + gym chip. Goal→mode, Energy+Sleep→multiplier.
         │                      # Defaults OK/OK/Push = no-op (mult 1.0). Skip link + Go back.
@@ -776,3 +781,60 @@ Step 4 of the AI Coaching Recommender plan — pre-session prompt per spec §2.5
 167. **RecommendationSheet wakes up on each open** (`Recommendation.jsx`). New `useEffect([open, validInitial])` syncs `selectedMode` to the readiness-derived `defaultMode` every time the sheet opens. Previously useState's initializer only ran on first mount, so a user who picked Recover after the sheet had been opened once in Push mode would still see Push selected. Also a new `showDeloadChip` path surfaces a 3-chip layout (Deload | Maintain | Push) when `defaultMode === 'deload'`; user can still tap Maintain/Push to compare. Orange accent for the Deload chip with a new `DescendingLineIcon` SVG so the three chips read as an easier→harder continuum.
 168. **`readiness-sanity.mjs` at repo root.** Node ESM — loads `debug-backup.json`, migrates through v2+v3, runs the recommender across the 3 readiness bands and the 3 goals against Pec Dec's real history. 9/9 multiplier lookups and 3/3 goal→mode mappings verified. Confirms Recover goal → 155 lbs (65% of e1RM deload), Match → 175 (maintain), Push → 185 (push).
 169. **Verified live in preview** (mobile 375×812, debug-backup.json data, theme=blue): overlay renders with rows + gym chip + Start Session; selecting Low/Poor/Match persists `readiness.aggressivenessMultiplier=0.85, suggestedMode=maintain`; expanded Pec Dec card shows maintain prescription on the banner; tapping banner opens sheet with Maintain chip selected + "Matching your e1RM at 10 reps" reasoning. Recover-goal flow: banner 155×10, sheet opens 3 chips with Deload selected + orange accent. Skip flow: `readiness=null`, sessionStarted=true, push defaults apply. No console errors. ✓
+
+### Batch 16n-1 (April 19, 2026) — Coach's Call polish
+
+UX review round on readiness + Coach's Call after 16n shipped. No engine changes, no new data. Pure copy, layout, and chart clarity.
+
+170. **Readiness labels: OK → Mid** (`ReadinessCheckIn.jsx`). Energy `Low/Mid/High`, Sleep `Poor/Mid/Good`. Keys stay `'ok'` internally so nothing migrates; only the display label changed.
+171. **Banner → compact `RecommendationChip`** (`Recommendation.jsx`, `BbLogger.jsx`). The wide `RecommendationBanner` at the top of the expanded card is replaced by a small emerald pill `[✨ Tip]` in the toolbar row. Opens the sheet on tap. Same rendering guard (`settings.enableAiCoaching && prescription && confidence !== 'none'`). Banner export kept for back-compat but no longer consumed — candidate for deletion with a cleanup pass.
+172. **Toolbar row unified** (`BbLogger.jsx`). All five chips (Plates, Uni, Last, PR, Tip) use `px-3 py-1.5 text-xs font-semibold` with `gap-2` between them. "Last Time" shortened to "Last" for fit. PR chip bumped up to match the other heights (was `px-2 py-1 fontSize:11`). Removes the inner `ml-auto` group wrapper — chips flow naturally left-to-right with even spacing.
+173. **Sheet header collapsed to one line** (`Recommendation.jsx`). Previous two-eyebrow layout (`COACH'S CALL / Pec Dec` left, `TOP SET / 175×10` right, close far right) replaced with a single-line `✨ Recommended top set: **175 × 10**` in emerald, with `Last session's top set: 150 × 10` as a subtle subtitle beneath. Close button stays right. Exercise name (`Pec Dec`) promoted to a small heading ABOVE the recommended row, left-indented to align with the sparkle icon.
+174. **Sparkline rewritten with explicit variable labels** (`Recommendation.jsx`, `E1RMSparkline`). Removed all in-chart text (floating "EST. 1-REP MAX" caption, rate label, peak callout). The chart now renders ONLY the line, trend line, and dots — clean visual. Explicit labels wrap it:
+    - **Title above**: `Estimated 1-rep max · last 6 sessions`
+    - **Stat key below**: `Peak: 239 lbs` (left) · `Growth: +7.0%/wk` (right)
+    Each number has a named label; no orphaned numbers on the chart. Trend line kept; peak dot is 4.5px (vs 3.5px for latest, 2.5px for others) so the peak stands out visually as the "239 lbs" value the label refers to.
+175. **Mode chips collapsed to single line** (`Recommendation.jsx`, `ModeChip`). Was 3 stacked rows (icon+label / weight×reps / sub-label). Now one row: `[icon] LABEL  weight×reps`. Dropped the "Keep it steady" / "Go for progress" sub-labels — redundant with icon+label. Padding reduced from `py-3 px-3` to `py-2 px-3`. Significant vertical and horizontal space saved.
+176. **Hit-target reasoning split by math driver** (`helpers.js`, `recommendNextLoad`). Vague "Adding a little more weight based on how fast you've been progressing" replaced with branch-specific strings:
+    - **Floor-driven, catching up** (most common): "Your recent top sets put your estimated 1-rep max around {e1RM} lbs, which projects to {floor} for {targetReps} reps. Last session you went {last.weight}×{last.reps}, lighter than your strength suggests, so today's weight catches you back up to your actual level."
+    - **Floor-driven, steady**: "Matching your current strength level: {e1RM} lb e1RM projects to {floor} for {targetReps} reps, right around last session's {last.weight}×{last.reps}."
+    - **Nudge-driven**: "You hit {last.weight}×{last.reps} last session, right at your current strength level. Bumping load by +{bump} lbs today based on your progression trend (capped at +3% per elapsed week to keep it sustainable)."
+177. **Details: `This session's nudge` → `vs last session: +25 lbs (+16.7%)`** (`Recommendation.jsx`). The old "nudge" row reported an internal engine sub-value (Layer 3's `P × alpha × 100`) that was 0% whenever `daysSince=0` and irrelevant when the Floor drove the prescription — confusing. Replaced with the actual session-over-session delta, which matches what the user sees on the banner. Old nudge row is gone from the UI; `thisSessionNudgePct` is still computed in the engine meta block for anyone who wants it.
+178. **`daysAgoLabel(0)`: `today` → `earlier today`** (`Recommendation.jsx`). "Last session: 150×10 · today" was ambiguous alongside a session in progress. `earlier today` disambiguates — explicitly a prior session.
+179. **Pec Dec heading spacing tightened** (`Recommendation.jsx`). `mb-1` (4px) below the exercise name reduced to `mb-0.5` (2px) to match the `mt-0.5` between Recommended and Last session subtitle. Visual rhythm now balanced across the three title lines.
+
+No console errors. All changes verified in the preview across Push (default), Match (maintain), Recover (deload), and Skip flows.
+
+---
+
+## Where to Go From Here
+
+### Immediate open UX items (spawned by 16n-1 review, not yet shipped)
+
+- **Maintain = Push when Floor dominates.** When the user's last session is well below their Floor, Push collapses to `max(Layer3, Floor) = Floor = Maintain`. The two chips show identical numbers, which is confusing. Options: hide Maintain when equal (simplest), or annotate with "Same as Maintain today". Recommended approach: hide Maintain when `recs.maintain.prescription.weight === recs.push.prescription.weight` — cleaner UI, zero new concept.
+- **"Floor @ 10 reps" label.** User asked about but deferred — the word "Floor" reads as "lowest allowed" which is odd when it equals the prescription. Could rename to "Strength at 10 reps", "10-rep target", or "e1RM at 10 reps". Low-priority polish.
+- **Sparkline tap-to-select** was removed during 16n-1 cleanup. If we want it back (e.g., to peek at per-session values), the pattern is: lift `selectedIdx` state up to the sheet, label swap between "Peak: 239 lbs" and "Session N: 225 lbs" based on selection.
+- **Legacy `RecommendationHint` + `RecommendationBanner` exports** in `Recommendation.jsx` are now unused. Safe to delete with a small follow-up PR.
+
+### Next feature per the AI Coaching plan (build order §3)
+
+Step 6 — **Fatigue signals (spec §4)**. Engine-only, no UI (or small reasoning additions). Adds four inputs to `recommendNextLoad`:
+
+- **Grade multiplier** — the user's prior session grade (D–A+) scales aggressiveness. Mirror of the readiness multiplier but from past session quality.
+- **Cardio-within-48h damping** — if user did cardio ≤48h ago, trim aggressiveness ~0.9×. Read from `cardioSessions`.
+- **Rest-day boost** — coming off a logged rest day → slight aggressiveness boost (~1.05×).
+- **Inter-session gap adjustments** — if `daysSince` is unusually long (e.g. ≥14d), temper the prescription (rust, detraining).
+
+Each is a multiplier stacked onto `aggressivenessMultiplier`. Sanity-test against real sessions in `debug-backup.json`. Surface the dominant fatigue signal in the reasoning string when it materially changed the prescription (e.g., "Taking it easier today — you logged cardio yesterday"). Similar shape to 16n's engine + sanity pattern.
+
+### Post-v1 roadmap (deferred, per plan Part 4)
+
+- **Step 7 — Equipment instance (§3.4)**: per-session `equipmentInstance` on LoggedExercise + anomaly prompt when per-side e1RM swings >30% session-over-session ("same machine?").
+- **Step 8 — Gym tagging full loop (§3.5, §9.7)**: exercise-level `sessionGymTags`, auto-tag-on-use prompts, picker filter ("Only available at VASA"). The readiness chip already collects `gymId`; step 8 connects it to exercise availability. Settings UI for managing the gym list would also land here (currently gyms are added inline from the readiness overlay only).
+- **Step 9 — Anomaly coaching surfaces (§4.5)**: plateau detection (flat for 6+), regression detection (negative for 2+), swing detection (>30% per-side e1RM). Surfaced per §9.3 (contextual banner on the exercise card, persistent until answered).
+- **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI for this expansion — trivial engine work, interesting UI work.
+- **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in for sub-failure lifters.
+
+### Recommended sequencing
+
+My default: **step 6 (fatigue signals) next** — rounds out the engine before any more UI-heavy steps. The Maintain=Push UX issue is a 10-minute fix that could bundle in alongside, either before or after.
