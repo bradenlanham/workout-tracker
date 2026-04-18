@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 18, 2026 (Batch 16d–f)
+> Last updated: April 19, 2026 (Batch 16g–j)
 
 ## Rules for Claude
 
@@ -69,7 +69,8 @@ src/
 │   ├── HamburgerMenu.jsx      # Slide-in menu: My Splits, Progress, Settings, Info (incl. "How Streaks Work"), Manage Data
 │   ├── RestTimer.jsx          # Floating draggable rest timer with progress ring (visible only during logging)
 │   ├── CustomNumpad.jsx       # Numpad overlay used by BbLogger for weight/reps entry
-│   └── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
+│   ├── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
+│   └── ExerciseEditSheet.jsx   # Bottom-sheet editor for existing library entries (Batch 16j)
 │
 │
 └── pages/
@@ -84,7 +85,12 @@ src/
     ├── SplitBuilder.jsx       # 4-step wizard: name/emoji → add workouts → set rotation → review & save
     ├── SplitEditor.jsx        # Legacy built-in split rotation reorder (kept for backward compat)
     ├── TemplateEditor.jsx     # Create/edit custom workout templates (legacy, pre-splits feature)
-    ├── Backfill.jsx           # One-time tagging screen for library entries with needsTagging: true
+    ├── Backfill.jsx           # One-time tagging screen for library entries with needsTagging: true.
+    │                          # Per-card draft state + Confirm button (Batch 16j) — auto-save
+    │                          # reverted so users get an explicit "I'm done" before the card
+    │                          # drops off the list.
+    ├── ExerciseLibraryManager.jsx # /exercises — list/filter/search/edit all library entries
+    │                          # via ExerciseEditSheet. Batch 16j.
     │
     └── log/
         ├── BbLogger.jsx       # THE MAIN SESSION LOGGER — exercise cards, sets, plates mode, uni toggle,
@@ -118,6 +124,8 @@ src/
     defaultFirstSetType: 'warmup', // 'warmup' | 'working'
     restTimerChime: true,          // Play beep when timer ends
     hasSeenTutorial: false,        // Dashboard tutorial overlay
+    enableAiCoaching: true,        // Batch 16i — gates the recommender UI (banner + sheet)
+    showRecPill: true,             // Batch 16i — gates the per-exercise blue REC chip
   },
 
   // ── Splits ──
@@ -385,6 +393,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 | `/splits/new` | SplitBuilder | New split wizard |
 | `/splits/edit/:id` | SplitBuilder | Edit existing split |
 | `/backfill` | Backfill | One-time muscle-group + equipment tagging for user-created exercises |
+| `/exercises` | ExerciseLibraryManager | Full library management — filter, search, edit any entry |
 
 ---
 
@@ -683,3 +692,35 @@ Second feedback round: the math in the sheet was "esoteric," "Maybe confidence" 
 137. **"Top set" labeling** on both banner and sheet headline. Explicitly frames the scope so users know the prescription is for the top working set, not every set — primes the UI for the future back-off-sets expansion flagged in 16d.
 
 Step 3 follow-up round complete — the recommender UI now matches user's design feedback. Next up per plan: step 4 readiness check-in (§2.5) and step 6 fatigue signals (§4).
+
+### Batch 16g (April 18, 2026) — Sheet polish round 2
+
+Round-2 feedback on the redesigned Coach's Call sheet. Largely cosmetic.
+
+138. **ModeChip sub-component** (`Recommendation.jsx`). Maintain chip now has a blue flat-line SVG icon + blue accent; Push has an emerald rising-arrow SVG icon + emerald accent. Selected state tints its own accent color (border 40%, bg 10%). Default selected mode stays `push` — now visually unambiguous thanks to the green treatment.
+139. **Copy cleanup.** Dropped the "WHY" eyebrow above the reasoning box — reasoning stands alone. "81% confident" became "Confidence: 81%" with pct in accent color and label in `text-c-secondary`. Chevrons unified to `▾`/`▴` on both Confidence and Details (removed the `?` icon that was confusing out of context).
+140. **Hint rewrites** (all em dashes stripped, multi-line via `\n` + `whitespace-pre-line`). Formula on e1RM hint now on its own line so it doesn't wrap mid-expression. Trend fit, this-session nudge, and Floor @ N reps rewritten to be more educational — the nudge hint directly answers "why cap at 3% if the trend is 10%?", the floor hint shows the actual math worked through.
+141. **Engine reasoning strings** (`helpers.js`) also scrubbed of em dashes.
+
+### Batch 16h (April 19, 2026) — Collapsed card cleanup + plate reorder + plate Confirm
+
+142. **Collapsed exercise-card cleanup.** Removed the inline "● Try: 185×10" hint AND the faded "Last: 175×11" line from collapsed rows. All prescription / historical info lives only in the expanded card's banner + sheet. The collapsed card now shows exercise name + REC pill (if enabled) + in-progress summary + completed state only.
+143. **Toolbar emojis removed.** 🏋️ from Plates and ⏱️ from Last Time buttons — Last Time was wrapping to two lines on mobile because of the emoji padding. Labels read cleanly without them.
+144. **Banner hidden when `confidence === 'none'`.** Cold-start exercises (fewer than 3 logged sessions) no longer surface a "Log N more sessions" banner whose only content is saying there's no prescription yet. Banner returns as soon as there are 3+ sessions.
+145. **Plate split reorder.** `COMMON_PLATES` = `[100, 45, 35, 25, 10]` (100 promoted inline since it's used regularly); `RARE_PLATES` = `[5, 2.5]` (behind the + expand icon). Loaded rare plates still always visible so decrement works even when collapsed.
+146. **Bar weight chip order.** Popover chips now ascend: `[None] [25 lb] [45 lb]` (was `[45][None][25]`). 45 still the init default via `barDefault` fallback. `BAR_CYCLE` constant updated.
+147. **Plate popover Confirm button.** Bottom row is now `[Turn off plate mode]` (flex-grow 2) + `[✓ Confirm]` (flex-grow 1, emerald pill). Tapping Confirm closes the popover — state already applies on each tap, but the button gives users an explicit "I'm done" affordance without having to tap outside.
+
+### Batch 16i (April 19, 2026) — AI coaching + Rec pill toggles; Dashboard banner move
+
+148. **`settings.enableAiCoaching`** (default `true`). Gates `RecommendationBanner` + `RecommendationSheet`. When off, both disappear from the expanded card; engine (`getExerciseHistory`, `recommendNextLoad`, etc.) still runs in the render path — flipping back on is instant. Data collection is unaffected.
+149. **`settings.showRecPill`** (default `true`). Gates the per-exercise blue REC chip (added in Batch 13). Some users never use the free-text prescription slot. Does not hide existing `exercise.rec` values; flipping back on re-reveals them.
+150. **HamburgerMenu toggles.** Both added under the existing "Workout Defaults" section using the same switch pattern as `autoStartRest` / `restTimerChime`. Same theme-colored track when on.
+151. **Dashboard banner moved.** The "Tag N custom exercises to unlock smarter recommendations" banner now sits between `SECTION 3: Hero Workout Card` and `SECTION 4: Stat Cards`, instead of at the top of the page (where it was encroaching on the "This Week" calendar header). Also dropped the 📋 emoji per the 16h "labels over emojis" principle.
+
+### Batch 16j (April 19, 2026) — Manage Exercise Library + Backfill confirm flow
+
+152. **`/exercises` page** (`src/pages/ExerciseLibraryManager.jsx`). Full library management surface. Header with filter chips (`All` / `Custom` / `Built-in` / `Untagged` — Untagged hidden when count=0), optional search input, scrollable list. Needs-tagging entries sort to the top within any filter that includes them. Each row shows name, TAG badge (for needsTagging) or Custom label (for `!isBuiltIn`), one-line summary of muscles/equipment, most-recent logged set + date. Tap → opens `ExerciseEditSheet`.
+153. **`ExerciseEditSheet`** (`src/components/ExerciseEditSheet.jsx`). Bottom-sheet portal at z-index 260 (above `RecommendationSheet`'s 250). Pre-fills from the exercise's current values. Fields: name input, multi-pill primaryMuscles (≥1 required), single-pill equipment (Other filtered out so user has to pick a real type), `loadIncrement` choice chips (2.5 / 5 / 10), unilateral checkbox. Save button disabled until name + ≥1 muscle + real equipment. Delete button only for non-built-in entries and goes through a two-step "Delete → Delete permanently" confirm to prevent accidental wipes. Built-in entries remain editable — "built-in" just means seeded, not immutable.
+154. **"My Exercises" link in HamburgerMenu** between "My Splits" and "Settings" — the new surface is discoverable without users needing to know the URL.
+155. **`Backfill.jsx` rewrite — confirm flow.** Each card now holds LOCAL DRAFT STATE for muscle/equipment instead of auto-committing on every tap. User can fiddle freely; only an explicit Confirm commits to store. Confirm button at the bottom of each card is disabled ("Pick muscle group + equipment" in muted text) until both fields valid, then transitions to emerald "✓ Confirm". On tap: phase → 'saving', inline "✓ Saved" text shows, 350ms CSS fade + translateY(-6px), then `tagExercise` fires and the card drops off the list. Copy also rewritten to emphasize "edit later in My Exercises, no pressure to get it perfect first try." Completion screen now links to `/exercises` explicitly.
