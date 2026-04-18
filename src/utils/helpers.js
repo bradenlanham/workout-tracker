@@ -374,6 +374,66 @@ export function normalizeExerciseName(name) {
   return (name || '').toLowerCase().trim().replace(/\s+/g, ' ')
 }
 
+// Token-sort form: tokenize, sort tokens alphabetically, rejoin. Makes
+// "DB Lateral Raises" and "Lateral DB Raises" hash to the same key so
+// fuzzy match catches word-order variants.
+function tokenSort(name) {
+  return normalizeExerciseName(name).split(' ').filter(Boolean).sort().join(' ')
+}
+
+// Trigram-based Jaccard similarity — fast, robust against typos and
+// word-order variants, 0.0–1.0. Works well for exercise-name dedup:
+// - "Seated Cable Row" vs "Seated cable row" → 1.0 (identical after
+//   normalization)
+// - "DB Lateral Raises" vs "Lateral DB Raises" → ~0.55 on bigrams
+//   but 1.0 on token-sort, so we max them together.
+// - "Bench Press" vs "Incline Bench Press" → ~0.6 (partial match).
+function trigramSet(s) {
+  const padded = `  ${s}  `
+  const grams = new Set()
+  for (let i = 0; i < padded.length - 2; i++) grams.add(padded.slice(i, i + 3))
+  return grams
+}
+
+function jaccard(a, b) {
+  if (!a.size || !b.size) return 0
+  let inter = 0
+  for (const g of a) if (b.has(g)) inter++
+  return inter / (a.size + b.size - inter)
+}
+
+export function similarExerciseScore(queryName, candidateName) {
+  const q = normalizeExerciseName(queryName)
+  const c = normalizeExerciseName(candidateName)
+  if (!q || !c) return 0
+  if (q === c) return 1
+  if (tokenSort(q) === tokenSort(c)) return 0.95
+  return jaccard(trigramSet(q), trigramSet(c))
+}
+
+// Returns up to `max` library entries whose names score >= suggestThreshold
+// against `query`, sorted by score desc. Scans every alias too so an entry
+// with "Seated Cable Row" canonical and "seated cable row" alias hits either.
+// See spec §3.3 — auto-suggest threshold 0.85, prompt threshold 0.7.
+export function findSimilarExercises(query, library, {
+  suggestThreshold = 0.7,
+  max             = 3,
+} = {}) {
+  if (!query || !Array.isArray(library)) return []
+  const scored = []
+  for (const ex of library) {
+    const names = [ex.name, ...(ex.aliases || [])]
+    let best = 0
+    for (const n of names) {
+      const s = similarExerciseScore(query, n)
+      if (s > best) best = s
+    }
+    if (best >= suggestThreshold) scored.push({ exercise: ex, score: best })
+  }
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, max)
+}
+
 export function migrateSessionsToV3({ sessions, library } = {}) {
   const sessionsIn = Array.isArray(sessions) ? sessions : []
   const libraryIn  = Array.isArray(library)  ? library  : []

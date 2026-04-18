@@ -1,14 +1,16 @@
-import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, createContext, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../data/exercises'
 import {
   getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
+  findSimilarExercises, normalizeExerciseName,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
+import CreateExerciseModal from '../../components/CreateExerciseModal'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -867,58 +869,113 @@ function GroupLabel({ label, isCompleted }) {
 // ── Add exercise panel ─────────────────────────────────────────────────────────
 
 function AddExercisePanel({ onAdd, onClose, theme }) {
+  const exerciseLibrary     = useStore(s => s.exerciseLibrary)
+  const addExerciseToLibrary = useStore(s => s.addExerciseToLibrary)
   const [query, setQuery] = useState('')
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [pendingName, setPendingName] = useState('')
 
-  const suggestions = [
-    'Barbell Row', 'Pull-ups', 'Face Pulls', 'Tricep Pushdown', 'Preacher Curl',
-    'Lat Pulldown', 'Cable Row', 'Chest Fly', 'Skull Crushers', 'Arnold Press',
-    'Incline Curl', 'Rope Pushdown', 'Sumo Deadlift', 'Hip Thrust', 'Glute Bridge',
-  ]
+  // Suggestions: fuzzy-match when typing, otherwise show a starter set of
+  // common compound/isolation exercises from the library.
+  const suggestions = useMemo(() => {
+    if (!query.trim()) {
+      const starterNames = [
+        'Barbell Row', 'Pull-ups', 'Face Pulls', 'Tricep Pushdown',
+        'Preacher Curl', 'Lat Pulldown', 'Cable Row', 'Chest Fly',
+        'Arnold Press', 'Cable Curls', 'Bench Press', 'Pec Dec',
+      ]
+      return starterNames
+        .map(n => exerciseLibrary.find(e => e.name === n))
+        .filter(Boolean)
+    }
+    return findSimilarExercises(query, exerciseLibrary, {
+      suggestThreshold: 0.25,  // lower bar — inline suggestion list, not auto-apply
+      max:              10,
+    }).map(m => m.exercise)
+  }, [query, exerciseLibrary])
 
-  const filtered = query.trim()
-    ? suggestions.filter(e => e.toLowerCase().includes(query.toLowerCase()))
-    : suggestions
+  // Handle "Add [typed]" button: if there's a high-similarity match in the
+  // library, use it directly (the dedup win). Otherwise open the creation
+  // modal so the user provides muscle + equipment up-front (§3.2.1).
+  const handleAddTyped = () => {
+    const typed = query.trim()
+    if (!typed) return
+    const topMatch = findSimilarExercises(typed, exerciseLibrary, {
+      suggestThreshold: 0.85,
+      max:              1,
+    })[0]
+    if (topMatch) {
+      onAdd(topMatch.exercise.name, topMatch.exercise.id)
+      onClose()
+      return
+    }
+    setPendingName(typed)
+    setCreateModalOpen(true)
+  }
+
+  const handleCreateSave = (payload) => {
+    try {
+      const newEntry = addExerciseToLibrary(payload)
+      setCreateModalOpen(false)
+      onAdd(newEntry.name, newEntry.id)
+      onClose()
+    } catch (err) {
+      // Validation failed (missing muscle/equipment) — CreateExerciseModal
+      // already guards this via disabled Save, so this is a defensive catch.
+      console.warn('Exercise creation failed:', err.message)
+    }
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-end" onClick={onClose}>
-      <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5" onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold text-lg mb-3">Add Exercise</h3>
-        <input
-          autoFocus
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Type exercise name…"
-          className="w-full bg-item text-c-primary rounded-xl px-4 py-3 text-base mb-3"
-          onKeyDown={e => {
-            if (e.key === 'Enter' && query.trim()) { onAdd(query.trim()); onClose() }
-          }}
-        />
-        <div className="space-y-1 max-h-64 overflow-y-auto">
-          {query.trim() && (
-            <button
-              onClick={() => { onAdd(query.trim()); onClose() }}
-              className={`w-full text-left px-4 py-3 rounded-xl ${theme.bg} text-white font-semibold`}
-              style={{ color: theme.contrastText }}
-            >
-              + Add "{query.trim()}"
-            </button>
-          )}
-          {filtered.slice(0, 8).map(name => (
-            <button
-              key={name}
-              onClick={() => { onAdd(name); onClose() }}
-              className="w-full text-left px-4 py-3 rounded-xl bg-item text-c-secondary text-base"
-            >
-              {name}
-            </button>
-          ))}
+    <>
+      <div className="fixed inset-0 bg-black/70 z-50 flex items-end" onClick={onClose}>
+        <div className="bg-card w-full max-w-lg mx-auto rounded-t-3xl p-5" onClick={e => e.stopPropagation()}>
+          <h3 className="font-bold text-lg mb-3">Add Exercise</h3>
+          <input
+            autoFocus
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Type exercise name…"
+            className="w-full bg-item text-c-primary rounded-xl px-4 py-3 text-base mb-3"
+            onKeyDown={e => { if (e.key === 'Enter' && query.trim()) handleAddTyped() }}
+          />
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {query.trim() && (
+              <button
+                onClick={handleAddTyped}
+                className={`w-full text-left px-4 py-3 rounded-xl ${theme.bg} text-white font-semibold`}
+                style={{ color: theme.contrastText }}
+              >
+                + Add "{query.trim()}"
+              </button>
+            )}
+            {suggestions.map(ex => (
+              <button
+                key={ex.id}
+                onClick={() => { onAdd(ex.name, ex.id); onClose() }}
+                className="w-full text-left px-4 py-3 rounded-xl bg-item text-c-secondary text-base flex items-center justify-between gap-3"
+              >
+                <span className="truncate">{ex.name}</span>
+                <span className="text-[10px] text-c-muted shrink-0 uppercase tracking-wide">
+                  {ex.primaryMuscles?.[0] || '?'}
+                </span>
+              </button>
+            ))}
+          </div>
+          <button onClick={onClose} className="w-full mt-3 py-3 rounded-xl bg-item text-c-dim font-semibold">
+            Cancel
+          </button>
         </div>
-        <button onClick={onClose} className="w-full mt-3 py-3 rounded-xl bg-item text-c-dim font-semibold">
-          Cancel
-        </button>
       </div>
-    </div>
+      <CreateExerciseModal
+        open={createModalOpen}
+        initialName={pendingName}
+        onSave={handleCreateSave}
+        onCancel={() => setCreateModalOpen(false)}
+        theme={theme}
+      />
+    </>
   )
 }
 
@@ -1657,10 +1714,11 @@ export default function BbLogger() {
     })
   }, [])
 
-  const addExercise = (name) => {
+  const addExercise = (name, exerciseId) => {
     setExercises(prev => [...prev, {
       id:    `custom-${name}-${Date.now()}`,
       name,
+      exerciseId,                 // links row to library entry; undefined OK for legacy adds
       group: 'Custom',
       sets:  [{ type: firstSetType, reps: '', weight: '' }],
       notes: '',
@@ -1680,8 +1738,22 @@ export default function BbLogger() {
         const filledSets = ex.sets.filter(s => s.reps || s.weight)
         if (!filledSets.length) return null
         const uni = !!ex.unilateral
+        // Resolve exerciseId: prefer the row's linked id (from AddExercisePanel
+        // selection), fall back to a library lookup by canonical/alias name.
+        // If nothing matches, leave undefined — future save-time migrations
+        // can resolve it by name as long as the library has an entry.
+        const library = useStore.getState().exerciseLibrary || []
+        const libEntry = ex.exerciseId
+          ? library.find(e => e.id === ex.exerciseId)
+          : library.find(e =>
+              normalizeExerciseName(e.name) === normalizeExerciseName(ex.name)
+              || (e.aliases || []).some(a =>
+                normalizeExerciseName(a) === normalizeExerciseName(ex.name)
+              )
+            )
         return {
-          name:  ex.name,
+          name:       libEntry?.name ?? ex.name,  // canonicalize on save
+          exerciseId: libEntry?.id,
           notes: ex.notes,
           completedAt: ex.completedAt || 0,
           unilateral: uni,

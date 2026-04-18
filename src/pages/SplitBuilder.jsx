@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { EXERCISE_LIBRARY, MUSCLE_GROUPS } from '../data/exerciseLibrary'
-import { generateId } from '../utils/helpers'
+import { generateId, findSimilarExercises } from '../utils/helpers'
+import CreateExerciseModal from '../components/CreateExerciseModal'
 
 const FITNESS_EMOJIS = ['🏋️','💪','🦵','🏃','🔥','⚡','🎯','💎','🏆','👊','🦾','🧘','🏊','🚴']
 const DEFAULT_SECTION_LABELS = ['Primary', 'Choose 1', 'If You Have Time']
@@ -103,13 +104,29 @@ function RecInline({ rec, onChange }) {
 // ── Exercise Picker (full-screen overlay) ──────────────────────────────────────
 
 function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
+  const storeLibrary = useStore(s => s.exerciseLibrary)
+  const addExerciseToLibrary = useStore(s => s.addExerciseToLibrary)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState('All')
   const [customInput, setCustomInput] = useState('')
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [pendingName, setPendingName] = useState('')
 
   const tabs = ['All', ...MUSCLE_GROUPS]
 
-  const filtered = EXERCISE_LIBRARY.filter(ex => {
+  // Use the store library when populated (post-migration users); fall back
+  // to the raw data file for fresh installs before initLibrary() fires.
+  // Shape difference: store entries have primaryMuscles[]; raw entries have
+  // muscleGroup string. Normalize both.
+  const library = useMemo(() => {
+    const source = storeLibrary && storeLibrary.length > 0 ? storeLibrary : EXERCISE_LIBRARY
+    return source.map(e => ({
+      ...e,
+      muscleGroup: e.muscleGroup || (e.primaryMuscles && e.primaryMuscles[0]) || 'Other',
+    }))
+  }, [storeLibrary])
+
+  const filtered = library.filter(ex => {
     const matchTab = tab === 'All' || ex.muscleGroup === tab
     const matchSearch = !search || ex.name.toLowerCase().includes(search.toLowerCase())
     return matchTab && matchSearch
@@ -118,8 +135,26 @@ function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
   const handleAddCustom = () => {
     const name = customInput.trim()
     if (!name) return
-    onAdd(name)
-    setCustomInput('')
+    // Check for high-similarity match → use existing; otherwise open creation modal.
+    const topMatch = findSimilarExercises(name, library, { suggestThreshold: 0.85, max: 1 })[0]
+    if (topMatch) {
+      onAdd(topMatch.exercise.name)
+      setCustomInput('')
+      return
+    }
+    setPendingName(name)
+    setCreateModalOpen(true)
+  }
+
+  const handleCreateSave = (payload) => {
+    try {
+      const newEntry = addExerciseToLibrary(payload)
+      setCreateModalOpen(false)
+      onAdd(newEntry.name)
+      setCustomInput('')
+    } catch (err) {
+      console.warn('Exercise creation failed:', err.message)
+    }
   }
 
   return (
@@ -217,6 +252,13 @@ function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
           </div>
         </div>
       </div>
+      <CreateExerciseModal
+        open={createModalOpen}
+        initialName={pendingName}
+        onSave={handleCreateSave}
+        onCancel={() => setCreateModalOpen(false)}
+        theme={theme}
+      />
     </div>
   )
 }
