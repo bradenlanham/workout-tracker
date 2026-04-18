@@ -559,6 +559,267 @@ export function migrateSessionsToV3({ sessions, library } = {}) {
   return { sessions: finalSessions, library: libOut }
 }
 
+// ── Recommendation engine ──────────────────────────────────────────────────
+//
+// Per-exercise, per-session load recommender. The spec (§2 of
+// coaching-recommender-spec-v3.pdf) defines three layers:
+//
+//   Layer 1 — e1RM:          Epley  w × (1 + reps/30)
+//   Layer 2 — target load:   currentE1RM × %1RM(targetReps)
+//   Layer 3 — progressive nudge:
+//     nextWeight = w_last × (1 + P·α) + 0.033 · w_last · Δreps
+//       where P = min(personalWeeklyGain, 0.03), α = daysSince/7,
+//             Δreps = repsHitLastSession − targetReps
+//
+// Decision rule (spec §2.2): hit target → Layer 3; missed by 1 → hold weight;
+// missed by 2+ twice in a row → auto 10% deload; never below Layer 2.
+//
+// Modes (spec §2.5): push (full formula, aggressiveness 1.15), maintain
+// (Layer 2 only), deload (65% of e1RM). Readiness UI (§2.5 proper) lives in
+// a later batch; the engine already accepts the `mode` parameter so it can
+// slot in without an API change.
+
+// Epley — per-side load required. Returns 0 for empty / invalid input.
+export function e1RM(weight, reps) {
+  const w = Number(weight) || 0
+  const r = Number(reps)   || 0
+  if (w <= 0 || r <= 0) return 0
+  return w * (1 + r / 30)
+}
+
+// Linear interpolation between spec §2.2 Layer 2 anchors. Clamped at the
+// table endpoints so a weird targetReps (1 or 30) still returns a sane number.
+const PERCENT_1RM_TABLE = [
+  { reps: 3,  pct: 0.93 },
+  { reps: 5,  pct: 0.86 },
+  { reps: 6,  pct: 0.83 },
+  { reps: 8,  pct: 0.78 },
+  { reps: 10, pct: 0.73 },
+  { reps: 12, pct: 0.69 },
+  { reps: 15, pct: 0.63 },
+]
+
+export function percent1RM(targetReps) {
+  const r = Number(targetReps) || 0
+  if (r <= PERCENT_1RM_TABLE[0].reps)                             return PERCENT_1RM_TABLE[0].pct
+  if (r >= PERCENT_1RM_TABLE[PERCENT_1RM_TABLE.length - 1].reps)  return PERCENT_1RM_TABLE[PERCENT_1RM_TABLE.length - 1].pct
+  for (let i = 0; i < PERCENT_1RM_TABLE.length - 1; i++) {
+    const lo = PERCENT_1RM_TABLE[i]
+    const hi = PERCENT_1RM_TABLE[i + 1]
+    if (r >= lo.reps && r <= hi.reps) {
+      const t = (r - lo.reps) / (hi.reps - lo.reps)
+      return lo.pct + t * (hi.pct - lo.pct)
+    }
+  }
+  return 0.73
+}
+
+// Per-session top set for an exercise — the working set with the highest
+// e1RM. Skips warmups; drop sets count (same per-side load as the parent
+// working set is fine for fit purposes). Returns chronological ascending.
+// Prefers exerciseId when present; falls back to name match for pre-v3
+// sessions that haven't been migrated through the live persist hook yet.
+export function getExerciseHistory(sessions, exerciseId, exerciseName = null) {
+  if (!Array.isArray(sessions) || !exerciseId) return []
+  const out = []
+  for (const s of sessions) {
+    if (s?.mode !== 'bb' || !s?.data?.exercises) continue
+    const ex = s.data.exercises.find(e =>
+      e.exerciseId === exerciseId ||
+      (exerciseName && e.name === exerciseName)
+    )
+    if (!ex) continue
+    const working = (ex.sets || []).filter(st =>
+      (st.type === 'working' || st.type === 'drop') &&
+      (perSideLoad(st) > 0) &&
+      (Number(st.reps) > 0)
+    )
+    if (!working.length) continue
+    let top = null
+    let topE = 0
+    for (const st of working) {
+      const w = perSideLoad(st)
+      const r = Number(st.reps) || 0
+      const e = e1RM(w, r)
+      if (e > topE) { topE = e; top = { weight: w, reps: r, e1RM: e } }
+    }
+    if (top) out.push({ date: s.date, ...top })
+  }
+  return out.sort((a, b) => new Date(a.date) - new Date(b.date))
+}
+
+// Layer 1 — current e1RM as the max of the last two sessions' top sets.
+// Using the max filters out a single low day (illness, fatigue, etc.).
+export function getCurrentE1RM(history) {
+  if (!Array.isArray(history) || !history.length) return 0
+  const last2 = history.slice(-2)
+  return Math.max(...last2.map(h => h.e1RM || 0))
+}
+
+// §2.3 — linear regression of e1RM on days, sliding window of the last 6
+// sessions. Returns fractional weekly gain (e.g. 0.015 = 1.5% /wk), plus
+// the R² and n so the caller can gate usability (n ≥ 4 and R² ≥ 0.4 per
+// spec) and pick a confidence label (§2.4).
+export function getProgressionRate(history) {
+  const h = Array.isArray(history) ? history : []
+  const window = h.slice(-6)
+  const n = window.length
+  if (n < 2) return { rate: 0, rSquared: 0, n, slope: 0, meanE1RM: 0 }
+
+  const x0 = new Date(window[0].date).getTime()
+  const xs = window.map(p => (new Date(p.date).getTime() - x0) / 86400000) // days
+  const ys = window.map(p => p.e1RM || 0)
+
+  const meanX = xs.reduce((a, b) => a + b, 0) / n
+  const meanY = ys.reduce((a, b) => a + b, 0) / n
+  let ssxy = 0, ssxx = 0, ssyy = 0
+  for (let i = 0; i < n; i++) {
+    ssxy += (xs[i] - meanX) * (ys[i] - meanY)
+    ssxx += (xs[i] - meanX) ** 2
+    ssyy += (ys[i] - meanY) ** 2
+  }
+  if (ssxx === 0) return { rate: 0, rSquared: 0, n, slope: 0, meanE1RM: meanY }
+
+  const slope    = ssxy / ssxx                                 // e1RM per day
+  const rSquared = ssyy === 0 ? 0 : (ssxy ** 2) / (ssxx * ssyy)
+  const rate     = meanY > 0 ? (slope * 7) / meanY : 0         // fractional /wk
+
+  return { rate, rSquared, n, slope, meanE1RM: meanY }
+}
+
+// §2.4 confidence labels. `none` means the caller should show "Last:" only.
+export function getRecommendationConfidence(n, rSquared) {
+  const nn = Number(n) || 0
+  const rr = Number(rSquared) || 0
+  if (nn < 3)                     return 'none'
+  if (nn >= 6 && rr >= 0.9)       return 'high'
+  if (nn >= 4 && rr >= 0.6)       return 'moderate'
+  return 'building'
+}
+
+// Top-level — takes per-exercise history (chronological, from
+// getExerciseHistory) plus the exercise's defaults and mode. Caller rounds
+// the returned prescription to `loadIncrement` already; we return numbers.
+//
+// Returns:
+//   { mode, confidence, prescription: { weight, reps } | null, reasoning,
+//     meta: { currentE1RM, progressionRate, rSquared, n, daysSince, usedFit, layer2Weight } }
+//
+// If history has <3 sessions we return prescription = last set (or null) and
+// confidence = 'none', matching spec §2.4: "No prescription — show last
+// session only."
+export function recommendNextLoad({
+  history,
+  targetReps       = 10,
+  mode             = 'push',
+  progressionClass = 'isolation',
+  loadIncrement    = 5,
+  now              = Date.now(),
+} = {}) {
+  const h = Array.isArray(history) ? history : []
+  const n = h.length
+
+  if (n === 0) {
+    return {
+      mode,
+      confidence: 'none',
+      prescription: null,
+      reasoning:  'No prior sessions logged — pick a weight you can do for ' + targetReps + ' clean reps.',
+      meta: { n: 0, rSquared: 0 },
+    }
+  }
+  if (n < 3) {
+    const last = h[n - 1]
+    const remaining = 3 - n
+    return {
+      mode,
+      confidence: 'none',
+      prescription: { weight: last.weight, reps: last.reps },
+      reasoning:  `Building data — ${remaining} more ${remaining === 1 ? 'session' : 'sessions'} until recommendations.`,
+      meta: { n, rSquared: 0, daysSince: Math.max(0, Math.round((now - new Date(last.date).getTime()) / 86400000)) },
+    }
+  }
+
+  const currentE1RM = getCurrentE1RM(h)
+  const last        = h[n - 1]
+  const daysSince   = Math.max(0, (now - new Date(last.date).getTime()) / 86400000)
+
+  const fit          = getProgressionRate(h)
+  const fallbackRate = progressionClass === 'compound' ? 0.01 : 0.005
+  const usedFit      = fit.n >= 4 && fit.rSquared >= 0.4
+  const personalRate = usedFit ? fit.rate : fallbackRate
+  const confidence   = getRecommendationConfidence(fit.n, fit.rSquared)
+
+  const layer2Weight = currentE1RM * percent1RM(targetReps)
+
+  // Auto-deload trigger (spec §2.2 rule 3): missed by 2+ reps in the last
+  // two consecutive sessions. Only applies when the user hasn't already
+  // explicitly declared maintain/deload — otherwise mode wins.
+  const lastTwo     = h.slice(-2)
+  const autoDeload  = mode === 'push' && lastTwo.length >= 2 &&
+                      lastTwo.every(p => (targetReps - p.reps) >= 2)
+
+  let prescriptionWeight
+  let reasoning
+  let effectiveMode = mode
+
+  if (mode === 'deload') {
+    // User-declared deload — 65% of current e1RM (midpoint of 60–70%).
+    prescriptionWeight = currentE1RM * 0.65
+    reasoning          = `Deload day — 65% of your e1RM (~${Math.round(currentE1RM)}) for recovery.`
+  } else if (autoDeload) {
+    // 10% off the last working weight, per the decision rule.
+    prescriptionWeight = last.weight * 0.90
+    reasoning          = `Missed target by 2+ reps two sessions running — 10% deload to reset.`
+    effectiveMode      = 'deload'
+  } else if (mode === 'maintain') {
+    // Layer 2 only — match the e1RM at the target reps, no nudge.
+    prescriptionWeight = layer2Weight
+    reasoning          = `Maintain day — matching your e1RM at ${targetReps} reps.`
+  } else {
+    // Push (default) — full Layer 3 with aggressiveness 1.15, clamped to Layer 2.
+    const aggressiveness = 1.15
+    const P              = Math.min(personalRate * aggressiveness, 0.03)
+    const alpha          = daysSince / 7
+    const hitTarget      = last.reps >= targetReps
+    const missedByOne    = (targetReps - last.reps) === 1
+
+    if (hitTarget) {
+      const deltaReps    = last.reps - targetReps
+      const layer3Weight = last.weight * (1 + P * alpha) + 0.033 * last.weight * deltaReps
+      prescriptionWeight = Math.max(layer3Weight, layer2Weight)
+      const nudgePct     = (P * alpha * 100)
+      reasoning          = `Hit target last session — pushing +${nudgePct.toFixed(1)}% based on your trend.`
+      if (layer3Weight < layer2Weight) reasoning += ' (e1RM floor holds.)'
+    } else if (missedByOne) {
+      prescriptionWeight = Math.max(last.weight, layer2Weight)
+      reasoning          = 'Missed by 1 last session — same weight, go for the reps.'
+    } else {
+      prescriptionWeight = Math.max(last.weight, layer2Weight)
+      reasoning          = 'Missed last session — same weight, push for reps before adding load.'
+    }
+  }
+
+  const inc     = Number(loadIncrement) > 0 ? Number(loadIncrement) : 5
+  const rounded = Math.round(prescriptionWeight / inc) * inc
+
+  return {
+    mode: effectiveMode,
+    confidence,
+    prescription: { weight: rounded, reps: targetReps },
+    reasoning,
+    meta: {
+      currentE1RM:      Math.round(currentE1RM),
+      progressionRate:  Number(personalRate.toFixed(4)),
+      rSquared:         Number(fit.rSquared.toFixed(3)),
+      n:                fit.n,
+      daysSince:        Math.round(daysSince),
+      usedFit,
+      layer2Weight:     Math.round(layer2Weight),
+    },
+  }
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {
