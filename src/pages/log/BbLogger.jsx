@@ -12,7 +12,7 @@ import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
-import { RecommendationHint, RecommendationBanner, RecommendationSheet } from './Recommendation'
+import { RecommendationBanner, RecommendationSheet } from './Recommendation'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -32,9 +32,9 @@ const WORKOUT_COLORS = {
 // ── Plate-loaded mode constants ────────────────────────────────────────────────
 
 const PLATE_OPTIONS = [100, 45, 35, 25, 10, 5, 2.5]
-const COMMON_PLATES = [45, 35, 25, 10, 5]
-const RARE_PLATES   = [100, 2.5]
-const BAR_CYCLE = [45, 0, 25]
+const COMMON_PLATES = [100, 45, 35, 25, 10]      // 16h: 100 moves inline; 5/2.5 behind + expand
+const RARE_PLATES   = [5, 2.5]
+const BAR_CYCLE     = [0, 25, 45]                // 16h: ascending order in popover; 45 remains default
 const CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨']
 const circled = n => n >= 1 && n <= 9 ? CIRCLED[n - 1] : `×${n}`
 const emptyPlates = () => ({ 100: 0, 45: 0, 35: 0, 25: 0, 10: 0, 5: 0, 2.5: 0 })
@@ -99,7 +99,7 @@ function SetTypeBtn({ value, onChange, theme }) {
 // set Bar weight and 1×/2× multiplier without permanent real estate on the
 // card. Outside click or the Turn off button dismisses.
 
-function PlateConfigPopover({ open, onClose, anchorRef, barWeight, multiplier, onBarChange, onMultChange, onTurnOff, theme }) {
+function PlateConfigPopover({ open, onClose, anchorRef, barWeight, multiplier, onBarChange, onMultChange, onTurnOff, onConfirm, theme }) {
   const popoverRef = useRef(null)
   const [pos, setPos] = useState(null)
 
@@ -188,13 +188,24 @@ function PlateConfigPopover({ open, onClose, anchorRef, barWeight, multiplier, o
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={onTurnOff}
-        className="w-full py-2 rounded-lg bg-item text-c-muted text-xs font-semibold"
-      >
-        Turn off plate mode
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onTurnOff}
+          className="flex-1 py-2 rounded-lg bg-item text-c-muted text-xs font-semibold"
+          style={{ flexBasis: '0', flexGrow: 2 }}
+        >
+          Turn off plate mode
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold"
+          style={{ flexBasis: '0', flexGrow: 1 }}
+        >
+          ✓ Confirm
+        </button>
+      </div>
     </div>,
     document.body
   )
@@ -817,18 +828,10 @@ function ExerciseItem({
                 )
               )}
             </div>
-            {!expanded && !exercise.done && (lastTopSet || recommendation?.prescription) && (
-              <div className="flex items-center gap-1.5 mt-0.5 leading-none">
-                {lastTopSet && (
-                  <span style={{ fontSize: 10 }} className="text-c-faint opacity-50">
-                    {lastTopSet.plates && formatPlateBreakdown(lastTopSet.plates)
-                      ? `Last: ${formatPlateBreakdown(lastTopSet.plates)} = ${perSideLoad(lastTopSet)}`
-                      : `Last: ${perSideLoad(lastTopSet) || '—'}${lastTopSet.reps ? `×${lastTopSet.reps}` : ''}`}
-                  </span>
-                )}
-                <RecommendationHint recommendation={recommendation} />
-              </div>
-            )}
+            {/* Collapsed row: Last / Try hints removed per 16h feedback —
+                cleaner collapsed state, all prescription detail lives in the
+                expanded banner + sheet. In-progress/completed summaries
+                below still render. */}
             {!expanded && !exercise.done && topSet && (topSet.reps || topSet.weight) && (
               <p className={`text-xs ${theme.text} mt-0.5`}>
                 {topSet.weight ? `${topSet.weight} lbs` : ''}
@@ -882,8 +885,10 @@ function ExerciseItem({
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
 
-          {/* Recommendation banner — tap for coaching details */}
-          {recommendation?.prescription && (
+          {/* Recommendation banner — tap for coaching details. Hidden when
+              confidence is 'none' (cold-start / <3 sessions) so the UI
+              only surfaces real prescriptions, not countdown messages. */}
+          {recommendation?.prescription && recommendation.confidence !== 'none' && (
             <RecommendationBanner
               recommendation={recommendation}
               onTap={() => setRecSheetOpen(true)}
@@ -916,7 +921,7 @@ function ExerciseItem({
                     : 'bg-item text-c-dim'
                 }`}
               >
-                <span>🏋️</span> Plates
+                Plates
                 {exercise.plateLoaded && (
                   <span className="text-[10px] opacity-70 tabular-nums">
                     {exercise.barDefault ?? 45}·{exercise.plateMultiplier ?? 2}×
@@ -951,6 +956,7 @@ function ExerciseItem({
                   setPlateConfigOpen(false)
                   onUpdate({ ...exercise, plateLoaded: false })
                 }}
+                onConfirm={() => setPlateConfigOpen(false)}
                 theme={theme}
               />
             </div>
@@ -976,7 +982,7 @@ function ExerciseItem({
                       : 'bg-item text-c-dim'
                   }`}
                 >
-                  <span>⏱️</span> Last Time
+                  Last Time
                 </button>
               )}
               {exercisePR.maxWeight > 0 && (
