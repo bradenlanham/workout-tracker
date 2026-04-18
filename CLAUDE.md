@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 18, 2026 (Batch 16c)
+> Last updated: April 18, 2026 (Batch 16d–f)
 
 ## Rules for Claude
 
@@ -91,8 +91,9 @@ src/
         │                      # previous session ghost rows, add exercise panel, finish modal, session comparison,
         │                      # auto-persist to split template, share card integration
         ├── Recommendation.jsx # Recommender UI: RecommendationHint (inline), RecommendationBanner,
-        │                      # RecommendationSheet (bottom-sheet w/ mode chips). Batch 16b.
-        ├── RpePill.jsx        # Per-set RPE (1–10) chip + bottom-sheet picker. Batch 16c.
+        │                      # RecommendationSheet (bottom-sheet w/ inline e1RM sparkline, 2 mode
+        │                      # chips, tap-to-explain confidence %, plain-English reasoning, and
+        │                      # an expandable Details section). Batches 16b + 16f.
         ├── ShareCard.jsx      # Trading card share card: 5 tiers by streak, selfie, stats bar, JPEG export
         └── CameraCapture.jsx  # Selfie camera component for share card
 ```
@@ -183,7 +184,9 @@ src/
             isNewPR: false,
             plates: { 45: 2, 25: 1, ... },  // Only present if logged in plate mode
             barWeight: 45,                    // Only present if logged in plate mode
-            rpe: 8,                     // Optional 1–10 RPE (Batch 16c, spec §3.7)
+            // rpe: 8                          // (16c shipped + reverted in 16d — engine
+            //                                  //  still reads rpe if present, but no UI
+            //                                  //  captures it; field no longer saved)
           }
         ]
       }
@@ -645,3 +648,38 @@ Step 3 per-set effort signal — spec §3.7 calls RPE "the single largest accura
 126. **Verified live in preview:** Pec Dec expanded → RPE pill tap → picker → select 8 → pill shows fuchsia "8". Toggle to Plates mode → RPE pill persists with same value. Clear button → pill returns to muted "RPE". Reload page mid-session → RPE value preserved via `activeSession` roundtrip. Ghost-row alignment correct. No console errors. ✓
 
 Step 3 complete — the recommender is wired end-to-end: engine (16a) → inline+sheet UI (16b) → per-set RPE signal (16c). Step 4 (readiness check-in per §2.5) and step 6 (fatigue signals per §4) are next up in the plan.
+
+### Batch 16d (April 18, 2026) — Revert RPE UI + back-off-sets future scope
+
+First feedback round on the recommender. User observation: "most sets go to failure" → RPE captures zero signal for their logging pattern and adds visible clutter. Spec called RPE "largest accuracy improvement" but that assumed varied effort across sets.
+
+127. **Reverted RPE UI** — deleted `src/pages/log/RpePill.jsx`. Removed the pill + picker from SetRow / PlateSetRow / PrevSetRow. Removed the `rpe` field from `buildExerciseData`'s saved set shape. Engine-side plumbing is **kept** (cheap and invisible): `getExerciseHistory` still carries `rpe` if present, `recommendNextLoad` still does RIR-aware Layer 3 math if set. Re-enabling later is a UI-only change.
+128. **Back-off-sets future scope flagged** (`coaching-recommender-plan.md` Part 4). v1 prescribes the top working set only; a future expansion could prescribe back-off sets (e.g. `top: 185×10, back-off: 2× 175×10`). Trivial formula extension, interesting UI work. Revisit after readiness (step 4) ships.
+
+### Batch 16e (April 18, 2026) — Plate clutter → nested popover + compact picker
+
+User: "nest buttons within buttons" to conserve real estate. The bar selector, multiplier toggle, and 7-plate picker all living persistently on the card was too much.
+
+129. **`PlateConfigPopover` (`BbLogger.jsx`)** — anchored-below-button popover rendered via `createPortal` (escapes the card's `overflow-hidden`). Fixed positioning computed from the anchor's `getBoundingClientRect` at open. Outside-click dismiss via `mousedown` + `touchstart` document listeners, with a 0ms `setTimeout` so the opening click doesn't immediately close it. z-index 220 — below RecommendationSheet (250) and above page content. Contains: Bar (45 / None / 25), Multiplier (1× / 2×), and "Turn off plate mode" button (the only way to disable plate mode — tapping Plates when already on re-opens the popover instead of toggling off, to prevent accidental data loss).
+130. **Plates button summary inline.** When plate mode is active the Plates toggle shows a compact `45·2×` config summary so users see current state without opening the popover.
+131. **`PlatePicker` (extracted sub-component in `BbLogger.jsx`)** — plate row now renders 5 common plates always (45/35/25/10/5), rare plates (100, 2.5) only when loaded OR user tapped the expand icon. Expand icon is a single-character `+` (collapsed) / `×` (expanded) — no text label per user feedback. Hidden entirely when all rare plates are already loaded. Loaded-rare plates stay visible even after collapse so users can still decrement them.
+
+### Batch 16f (April 18, 2026) — Coach's Call sheet redesign (sparkline + plain English)
+
+Second feedback round: the math in the sheet was "esoteric," "Maybe confidence" was meaningless out of context, three modes was one too many. Largely a rewrite of `Recommendation.jsx`.
+
+132. **Inline SVG sparkline** — new `E1RMSparkline` component inside `Recommendation.jsx`. Plots the last 6 e1RM data points as circles + connecting line with a subtle dashed linear trend line underneath, `+10.5%/wk` rate label in the top-right. Auto-scales to window's min/max with 15% padding. Uses the exercise's accent color (`theme.hex` threaded from `ExerciseItem` → sheet → sparkline). The "killer feature" per user feedback — makes progression visceral in one glance instead of demanding the user parse R² and weekly %.
+133. **Two modes, not three.** Maintain (left, easier) | Push (right, harder). Deload is gone as a user-selectable mode — it's still an algorithmic override when `autoDeload` triggers (reflected in `recs.push`'s output and its reasoning string). Default-selected chip is always 'push' so sheet stays aligned with the banner.
+134. **Confidence as a percentage with tap-to-explain.** Replaced the opaque "Maybe confidence" amber label with `N% confident` — percent computed from `min(1, n/6) × R² × 100`, clamped 1–99. Green ≥80%, amber ≥50%, blue below. Tap the row to expand an explainer: "Based on N prior sessions — your e1RM has been tracking [very closely / closely / roughly / loosely] against the trend line" plus agency language ("Log M more consistent sessions and confidence will climb" when n<6, or a noise callout when n≥6 but R²<0.9). Hidden entirely when n<3.
+135. **Plain-English reasoning** in the WHY panel. All strings in `recommendNextLoad` rewritten:
+    - Hit target → "You hit W×R last session. Adding a little more weight based on how fast you've been progressing."
+    - Missed by 1 → "You got R reps at W last time (target was T). Same weight — go for all T this session."
+    - Missed by 2+ → "... Holding the weight — push for the reps before adding load."
+    - Auto-deload → "You've missed the rep target two sessions in a row. Backing off 10% today to reset before pushing again."
+    - Maintain → "Matching your e1RM at T reps — a solid maintenance day."
+    - Deload → "Recovery day — 65% of your e1RM for an easier session."
+    - Cold start → "Log M more sessions and I'll start prescribing weights."
+136. **Details ▾ accordion** for the math: Estimated 1-rep max, Last session, Trend fit (n/R²/rate), This session's nudge (push mode only), Layer-2 Floor @ targetReps. Each row with an ⓘ is tappable to reveal a one-sentence explainer (what e1RM is, what R² means, why the floor exists, what the +3% cap is). New meta field `thisSessionNudgePct` on the recommender output (cap-adjusted, α-scaled) surfaces only in Details.
+137. **"Top set" labeling** on both banner and sheet headline. Explicitly frames the scope so users know the prescription is for the top working set, not every set — primes the UI for the future back-off-sets expansion flagged in 16d.
+
+Step 3 follow-up round complete — the recommender UI now matches user's design feedback. Next up per plan: step 4 readiness check-in (§2.5) and step 6 fatigue signals (§4).
