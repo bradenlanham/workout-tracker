@@ -103,6 +103,11 @@ export default function HamburgerMenu({ open, setOpen }) {
                     <span className="text-c-dim">→</span>
                   </button>
 
+                  <button className={rowClass} style={rowStyle} onClick={() => go('/exercises')}>
+                    <span>My Exercises</span>
+                    <span className="text-c-dim">→</span>
+                  </button>
+
                   <button className={rowClass} style={rowStyle} onClick={() => setSubScreen('settings')}>
                     <span>Settings</span>
                     <span className="text-c-dim">→</span>

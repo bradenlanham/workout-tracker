@@ -17,6 +17,7 @@ import SplitManager from './pages/SplitManager'
 import SplitBuilder from './pages/SplitBuilder'
 import Welcome from './pages/Welcome'
 import Backfill from './pages/Backfill'
+import ExerciseLibraryManager from './pages/ExerciseLibraryManager'
 
 function ThemedApp() {
   const { settings, initSplits, initLibrary, sessions, hasCompletedOnboarding } = useStore()
@@ -57,6 +58,7 @@ function ThemedApp() {
           <Route path="/splits/new" element={<SplitBuilder />} />
           <Route path="/splits/edit/:id" element={<SplitBuilder />} />
           <Route path="/backfill" element={<Backfill />} />
+          <Route path="/exercises" element={<ExerciseLibraryManager />} />
         </Routes>
       </div>
       <HamburgerMenu open={menuOpen} setOpen={setMenuOpen} />
