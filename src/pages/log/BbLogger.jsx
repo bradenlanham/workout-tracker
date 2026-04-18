@@ -6,7 +6,7 @@ import { BB_EXERCISE_GROUPS, BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../../da
 import {
   getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
   findSimilarExercises, normalizeExerciseName,
-  getExerciseHistory, recommendNextLoad, buildReadiness,
+  getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -588,6 +588,7 @@ function ExerciseItem({
   exercise, lastSessionEx, allSessions, onUpdate, theme,
   isFirst, isLast, onMoveUp, onMoveDown, reorderMode, workoutType,
   aggressivenessMultiplier = 1, suggestedMode = 'push',
+  fatigueSignals = null,
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
@@ -744,6 +745,8 @@ function ExerciseItem({
   // Recommendation: mode derives from the readiness "goal" answer (Batch 16n,
   // spec §2.5). Defaults to 'push' when no readiness data is present — same
   // behavior as pre-16n. aggressivenessMultiplier scales push-mode nudging.
+  // fatigueSignals (Batch 16o, spec §4) adds grade / cardio / rest / gap
+  // adjustments on top of readiness — all default to no-op when absent.
   const recommendation = useMemo(() => {
     if (!recHistory.length) return null
     return recommendNextLoad({
@@ -753,8 +756,9 @@ function ExerciseItem({
       progressionClass: libraryEntry?.progressionClass || 'isolation',
       loadIncrement:    libraryEntry?.loadIncrement    || 5,
       aggressivenessMultiplier,
+      fatigueSignals:   fatigueSignals || {},
     })
-  }, [recHistory, recTargetReps, libraryEntry?.progressionClass, libraryEntry?.loadIncrement, suggestedMode, aggressivenessMultiplier])
+  }, [recHistory, recTargetReps, libraryEntry?.progressionClass, libraryEntry?.loadIncrement, suggestedMode, aggressivenessMultiplier, fatigueSignals])
 
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
@@ -1097,6 +1101,7 @@ function ExerciseItem({
         accentColor={theme.hex}
         defaultMode={suggestedMode}
         aggressivenessMultiplier={aggressivenessMultiplier}
+        fatigueSignals={fatigueSignals || {}}
       />
     </div>
   )
@@ -1971,6 +1976,15 @@ export default function BbLogger() {
     ? sessions.filter(s => s.mode === 'bb' && s.data?.workoutType === type)
     : sessions.filter(s => s.mode === 'bb')
 
+  // Fatigue signals (Batch 16o, spec §4) — resolved once per render from the
+  // store slices. Passes into every ExerciseItem's recommender call.
+  // `sessionStarted` is in the dep list so the signals refresh when the user
+  // finishes + reopens (not strictly needed, but avoids a stale-closure hazard).
+  const fatigueSignals = useMemo(
+    () => buildFatigueSignals({ sessions, cardioSessions, restDaySessions }),
+    [sessions, cardioSessions, restDaySessions, sessionStarted] // eslint-disable-line
+  )
+
   const updateExercise = useCallback((id, updated) =>
     setExercises(prev => prev.map(ex => ex.id === id ? updated : ex)),
   [])
@@ -2422,6 +2436,7 @@ export default function BbLogger() {
                       reorderMode={false}
                       aggressivenessMultiplier={readiness?.aggressivenessMultiplier ?? 1}
                       suggestedMode={readiness?.suggestedMode ?? 'push'}
+                      fatigueSignals={fatigueSignals}
                     />
                   )
                 })}

@@ -222,16 +222,18 @@ export function RecommendationSheet({
   accentColor = '#3b82f6',
   defaultMode = 'push',
   aggressivenessMultiplier = 1,
+  fatigueSignals = {},
   now = Date.now(),
 }) {
   // Recompute per mode so chip tap can swap between them without a recalc.
   // aggressivenessMultiplier (Batch 16n) scales push-mode nudging based on
   // the user's readiness answers; maintain/deload ignore it.
+  // fatigueSignals (Batch 16o) adds grade / cardio / rest / gap modulation.
   const recs = useMemo(() => ({
-    push:     recommendNextLoad({ history, targetReps, mode: 'push',     progressionClass, loadIncrement, aggressivenessMultiplier, now }),
+    push:     recommendNextLoad({ history, targetReps, mode: 'push',     progressionClass, loadIncrement, aggressivenessMultiplier, fatigueSignals, now }),
     maintain: recommendNextLoad({ history, targetReps, mode: 'maintain', progressionClass, loadIncrement, now }),
     deload:   recommendNextLoad({ history, targetReps, mode: 'deload',   progressionClass, loadIncrement, now }),
-  }), [history, targetReps, progressionClass, loadIncrement, aggressivenessMultiplier, now])
+  }), [history, targetReps, progressionClass, loadIncrement, aggressivenessMultiplier, fatigueSignals, now])
 
   // When a readiness answer suggests a specific mode, open the sheet aligned
   // with that mode so the user sees the prescription that matches their

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16n + 16n-1 — readiness check-in + Coach's Call polish)
+> Last updated: April 19, 2026 (Batch 16o — fatigue signals)
 
 ## Rules for Claude
 
@@ -805,6 +805,22 @@ UX review round on readiness + Coach's Call after 16n shipped. No engine changes
 
 No console errors. All changes verified in the preview across Push (default), Match (maintain), Recover (deload), and Skip flows.
 
+### Batch 16o (April 19, 2026) — Fatigue signals (AI coaching step 6)
+
+Step 6 of the AI Coaching Recommender plan per spec §4. Engine-only (no new UI surfaces) — just four contextual multipliers stacked alongside the readiness multiplier, plus a one-sentence fatigue prefix on the reasoning when a signal materially moved the prescription. User explicitly called for the cardio factor to be "slightest manner" since routine cardio shouldn't drag next-day readiness; implemented accordingly.
+
+180. **`gradeMultiplier(grade)` (`helpers.js`).** Prior bb session's grade scales aggressiveness: A+=1.10, A=1.05, B=1.00, C=0.95, D=0.90, null=1.00. Mirror of readiness but from observed past performance. Scoped to most recent graded bb session (any workout type).
+181. **`cardioDamping(cardioRecent)` (`helpers.js`).** Deliberately minimal per user feedback: only triggers on `intensity === 'allout'` AND `hoursAgo < 24`, at 0.98× (2% reduction). Easy/moderate/hard cardio has zero effect regardless of timing; all-out cardio >24h ago also has zero effect. Tiny guardrail for the extreme case without being noisy for routine cardio.
+182. **Rest-day boost (`helpers.js`).** When a rest day was logged within ~36h (covers "yesterday" without timezone gymnastics), aggressiveness gets a 1.05× boost. No-op otherwise.
+183. **`gapAdjustment(daysSince)` (`helpers.js`).** Long inter-session gap tempers the final prescription and caps the nudge alpha. `daysSince > 14`: `{ mult: 0.85, alphaCap: 2 }`. `daysSince > 10`: `{ mult: 0.95, alphaCap: 2 }`. Otherwise no-op. Protects against the 3-week-gap → `alpha=3` → tripled nudge → injury scenario.
+184. **`buildFatigueSignals({sessions, cardioSessions, restDaySessions, now})` (`helpers.js`).** Resolves raw store slices into `{priorGrade, cardioRecent, restedYesterday}`. Called once per BbLogger render via `useMemo`; signals ride into every ExerciseItem's recommender call. Keeps the recommender pure (no direct store coupling).
+185. **`recommendNextLoad` accepts `fatigueSignals = {}`** (`helpers.js`). All four multipliers stack onto the existing `aggressivenessMultiplier` inside the push branch: `aggressiveness = 1.15 × readinessMult × gradeMult × cardioMult × restMult`. Alpha is clamped by `gapAdjustment.alphaCap`. Final prescription is additionally scaled by `gap.mult` when the gap is long enough to warrant tempering. Maintain and deload branches ignore fatigue signals entirely (as they ignore readiness).
+186. **`buildFatigueReasoningPrefix` (`helpers.js`).** Composes a one-sentence prefix for material signals: D/C grade → "Last session graded D, so holding back a touch."; A+/A → "Last session graded A — pushing a touch more today."; all-out cardio → "Taking it a touch easier after your all-out cardio session."; long gap → "It's been N days — ramping back up gradually, not catching up."; rest day (no cardio damp) → "Coming off a rest day, giving you a little more room." Only one prefix surfaces at a time; priority is warn-first (deload-ish signals before boost signals).
+187. **`thisSessionNudgePct` reflects composed aggressiveness** (`helpers.js`). The engine meta value is now computed against the full `readiness × grade × cardio × rest` product and the gap-capped alpha, for accuracy if any future UI surface exposes it. Currently unused in UI (replaced by "vs last session" delta in 16n-1).
+188. **BbLogger wiring** (`BbLogger.jsx`). `fatigueSignals` computed once at the top level via `useMemo(() => buildFatigueSignals({sessions, cardioSessions, restDaySessions}), [...])` and passed to every ExerciseItem. ExerciseItem threads it to both the recommendation useMemo and the RecommendationSheet. Sheet passes it into all three mode calls inside `recs`.
+189. **`fatigue-sanity.mjs` at worktree root.** Node ESM — validates 6/6 grade multipliers, 6/6 cardio damping cases, 6/6 gap adjustments, end-to-end reasoning prefix firing on real Pec Dec history, plus a synthetic slow-progression (+1%/wk) scenario that proves multipliers bite when the 3% cap isn't saturated (baseline nudge 1.14% → D 1.03% → A+ 1.26%), plus a 21-day gap scenario (150→130, "ramping back up gradually").
+190. **Verified live in preview** (mobile 375×812, debug-backup.json data, theme=blue). Opened Pec Dec Tip → sheet renders with reasoning: "Last session graded A — pushing a touch more today. You hit 175×11 last session, right at your current strength level. Bumping load by +10 lbs today based on your progression trend (capped at +3% per elapsed week to keep it sustainable)." Fatigue prefix fires correctly from the backup data's A-graded prior session. No console errors. ✓
+
 ---
 
 ## Where to Go From Here
@@ -818,23 +834,26 @@ No console errors. All changes verified in the preview across Push (default), Ma
 
 ### Next feature per the AI Coaching plan (build order §3)
 
-Step 6 — **Fatigue signals (spec §4)**. Engine-only, no UI (or small reasoning additions). Adds four inputs to `recommendNextLoad`:
+Steps 4, 5 (engine-only), and 6 are all shipped. The decision engine now has all §2 + §4 inputs wired: e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap. Remaining steps are about data collection and anomaly surfaces, not prescription math.
 
-- **Grade multiplier** — the user's prior session grade (D–A+) scales aggressiveness. Mirror of the readiness multiplier but from past session quality.
-- **Cardio-within-48h damping** — if user did cardio ≤48h ago, trim aggressiveness ~0.9×. Read from `cardioSessions`.
-- **Rest-day boost** — coming off a logged rest day → slight aggressiveness boost (~1.05×).
-- **Inter-session gap adjustments** — if `daysSince` is unusually long (e.g. ≥14d), temper the prescription (rust, detraining).
-
-Each is a multiplier stacked onto `aggressivenessMultiplier`. Sanity-test against real sessions in `debug-backup.json`. Surface the dominant fatigue signal in the reasoning string when it materially changed the prescription (e.g., "Taking it easier today — you logged cardio yesterday"). Similar shape to 16n's engine + sanity pattern.
+**Step 7 — Equipment instance (§3.4).** First step that leaves pure engine work: per-session `equipmentInstance: string` optional field on LoggedExercise (e.g., "Hoist Leg Press" vs "Cybex Leg Press"). Anomaly prompt when per-side e1RM swings >30% session-over-session with the same exercise name ("same machine?"). Trend fit scoping by instance to keep history clean. UI touch point: a tiny textbox or chip on the exercise card, opt-in per exercise. Size: moderate (persist change + anomaly detection + small UI).
 
 ### Post-v1 roadmap (deferred, per plan Part 4)
 
-- **Step 7 — Equipment instance (§3.4)**: per-session `equipmentInstance` on LoggedExercise + anomaly prompt when per-side e1RM swings >30% session-over-session ("same machine?").
 - **Step 8 — Gym tagging full loop (§3.5, §9.7)**: exercise-level `sessionGymTags`, auto-tag-on-use prompts, picker filter ("Only available at VASA"). The readiness chip already collects `gymId`; step 8 connects it to exercise availability. Settings UI for managing the gym list would also land here (currently gyms are added inline from the readiness overlay only).
 - **Step 9 — Anomaly coaching surfaces (§4.5)**: plateau detection (flat for 6+), regression detection (negative for 2+), swing detection (>30% per-side e1RM). Surfaced per §9.3 (contextual banner on the exercise card, persistent until answered).
 - **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI for this expansion — trivial engine work, interesting UI work.
 - **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in for sub-failure lifters.
 
+### Immediate open UX items (spawned by 16n-1 review, not yet shipped)
+
+Low-priority polish from prior rounds. Any of these can bundle with step 7 or ship separately:
+
+- **Maintain = Push when Floor dominates.** When the user's last session is well below their Floor, Push collapses to `max(Layer3, Floor) = Floor = Maintain`. The two chips show identical numbers, which is confusing. Options: hide Maintain when equal (simplest), or annotate with "Same as Maintain today". Recommended approach: hide Maintain when `recs.maintain.prescription.weight === recs.push.prescription.weight` — cleaner UI, zero new concept.
+- **"Floor @ 10 reps" label.** User asked about but deferred — the word "Floor" reads as "lowest allowed" which is odd when it equals the prescription. Could rename to "Strength at 10 reps", "10-rep target", or "e1RM at 10 reps". Low-priority polish.
+- **Sparkline tap-to-select** was removed during 16n-1 cleanup. If we want it back (e.g., to peek at per-session values), the pattern is: lift `selectedIdx` state up to the sheet, label swap between "Peak: 239 lbs" and "Session N: 225 lbs" based on selection.
+- **Legacy `RecommendationHint` + `RecommendationBanner` exports** in `Recommendation.jsx` are now unused. Safe to delete with a small follow-up PR.
+
 ### Recommended sequencing
 
-My default: **step 6 (fatigue signals) next** — rounds out the engine before any more UI-heavy steps. The Maintain=Push UX issue is a 10-minute fix that could bundle in alongside, either before or after.
+My default: **step 7 (equipment instance) next** — it's the last moderate-sized feature before we enter the UI-heavy tail of the plan (gym tagging full loop, anomaly banners). Alternatively, spend a quick session on the UX polish queue to sweep up the Maintain=Push collapse + dead export cleanup, since they're all 10–30 minute fixes.

@@ -731,6 +731,14 @@ export function recommendNextLoad({
   // fresh day. No effect in maintain/deload modes. Defaults to 1 so callers
   // without a readiness signal get identical behavior to pre-16n.
   aggressivenessMultiplier = 1,
+  // Fatigue signals (spec §4, Batch 16o). All optional, all default to
+  // no-op so pre-16o callers get identical output.
+  //   priorGrade:      'A+'|'A'|'B'|'C'|'D'|null — most recent bb session's grade
+  //   cardioRecent:    { intensity, hoursAgo } | null — most recent cardio
+  //                    session; only "allout" within 24h dampens (user said
+  //                    routine cardio should not factor)
+  //   restedYesterday: bool — a rest day was logged within the last 36h
+  fatigueSignals = {},
   now              = Date.now(),
 } = {}) {
   const h = Array.isArray(history) ? history : []
@@ -805,10 +813,16 @@ export function recommendNextLoad({
     // Readiness multiplier (§2.5) scales the aggressiveness coefficient so a
     // low-energy/low-sleep day nudges more conservatively. No effect when
     // callers don't provide readiness — multiplier defaults to 1.
-    const mult           = Number(aggressivenessMultiplier) || 1
-    const aggressiveness = 1.15 * mult
+    // Fatigue signals (§4, Batch 16o) stack additional multipliers on top.
+    const readinessMult = Number(aggressivenessMultiplier) || 1
+    const gradeMult  = gradeMultiplier(fatigueSignals.priorGrade)
+    const cardioMult = cardioDamping(fatigueSignals.cardioRecent)
+    const restMult   = fatigueSignals.restedYesterday ? 1.05 : 1.00
+    const gap        = gapAdjustment(daysSince)
+    const fatigueMult = gradeMult * cardioMult * restMult
+    const aggressiveness = 1.15 * readinessMult * fatigueMult
     const P              = Math.min(personalRate * aggressiveness, 0.03)
-    const alpha          = daysSince / 7
+    const alpha          = Math.min(daysSince / 7, gap.alphaCap)
     const hitTarget      = last.reps >= targetReps
     const missedByOne    = (targetReps - last.reps) === 1
 
@@ -849,6 +863,25 @@ export function recommendNextLoad({
       prescriptionWeight = Math.max(last.weight, layer2Weight)
       reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Holding the weight. Push for the reps before adding load.`
     }
+
+    // Gap adjustment — tempers the final prescription when the user has been
+    // away longer than ~10 days. Protects against the alpha=3 (21-day) case
+    // that would otherwise triple the nudge, risking injury on a detrained
+    // lifter. Applies after the mode-specific math so the Floor is tempered
+    // too when necessary.
+    if (gap.mult < 1.0) {
+      prescriptionWeight = prescriptionWeight * gap.mult
+    }
+
+    // Compose fatigue prefix: only mention signals that actually moved the
+    // aggressiveness meaningfully (±5% or more). Keep the reasoning terse —
+    // one short sentence prefix before the existing body.
+    const prefix = buildFatigueReasoningPrefix({
+      gradeMult, cardioMult, restMult, gap, daysSince,
+      priorGrade: fatigueSignals.priorGrade,
+      cardioRecent: fatigueSignals.cardioRecent,
+    })
+    if (prefix) reasoning = `${prefix} ${reasoning}`
   }
 
   const inc     = Number(loadIncrement) > 0 ? Number(loadIncrement) : 5
@@ -857,8 +890,16 @@ export function recommendNextLoad({
   // Actual this-session nudge percentage (P × α × 100). May be 0 in
   // maintain/deload modes. Displayed in the Details section of the sheet
   // for the curious.
+  // Effective aggressiveness = base × readiness × grade × cardio × rest,
+  // clamped via the standard 3%/wk P cap. Alpha is capped by the gap
+  // adjustment for long-gap safety.
+  const composedMult = (Number(aggressivenessMultiplier) || 1)
+    * gradeMultiplier(fatigueSignals.priorGrade)
+    * cardioDamping(fatigueSignals.cardioRecent)
+    * (fatigueSignals.restedYesterday ? 1.05 : 1.00)
+  const gapForMeta = gapAdjustment(daysSince)
   const thisSessionNudgePct = mode === 'push' && !autoDeload
-    ? Math.min(personalRate * 1.15 * (Number(aggressivenessMultiplier) || 1), 0.03) * (daysSince / 7) * 100
+    ? Math.min(personalRate * 1.15 * composedMult, 0.03) * Math.min(daysSince / 7, gapForMeta.alphaCap) * 100
     : 0
 
   return {
@@ -917,6 +958,129 @@ export function buildReadiness({ energy, sleep, goal, now = Date.now() } = {}) {
     suggestedMode:            READINESS_GOAL_TO_MODE[g],
     timestamp: new Date(now).toISOString(),
   }
+}
+
+// ── Fatigue signals (spec §4, Batch 16o) ───────────────────────────────────
+//
+// Four observed signals that modulate the push-mode aggressiveness alongside
+// the self-reported readiness multiplier:
+//
+//   1. Grade multiplier — previous bb session's grade (A+ to D) scales
+//      aggressiveness 1.10× to 0.90×. A strong prior session means the user
+//      is clearly progressing; a D means they're struggling.
+//   2. Cardio damping — only triggers on 'allout' intensity within 24h.
+//      2% reduction. Routine cardio has no effect (per user preference:
+//      "cardio within 48h should not really weigh in, or do so in the
+//      slightest manner").
+//   3. Rest-day boost — coming off a logged rest day (within ~36h) grants
+//      a 5% aggressiveness boost (user is fresher).
+//   4. Inter-session gap — `daysSince > 10` tempers the final prescription
+//      and caps the weekly-rate alpha at 2, so a 3-week gap doesn't triple
+//      the nudge on a detrained lifter.
+//
+// All four default to no-op when the caller doesn't supply data.
+
+export function gradeMultiplier(grade) {
+  switch (grade) {
+    case 'A+': return 1.10
+    case 'A':  return 1.05
+    case 'B':  return 1.00
+    case 'C':  return 0.95
+    case 'D':  return 0.90
+    default:   return 1.00
+  }
+}
+
+// Conservative per user feedback: only 'allout' within 24h counts; everything
+// else is a no-op. 2% damping is "slightest manner".
+export function cardioDamping(cardioRecent) {
+  if (!cardioRecent) return 1.00
+  const { intensity, hoursAgo } = cardioRecent
+  if (intensity === 'allout' && Number.isFinite(hoursAgo) && hoursAgo < 24) {
+    return 0.98
+  }
+  return 1.00
+}
+
+// Long-gap tempering. Beyond ~10 days we start getting conservative; beyond
+// 14 days more so. alphaCap prevents the nudge from exploding when
+// `daysSince/7` is large.
+export function gapAdjustment(daysSince) {
+  const d = Number(daysSince) || 0
+  if (d > 14) return { mult: 0.85, alphaCap: 2 }
+  if (d > 10) return { mult: 0.95, alphaCap: 2 }
+  return { mult: 1.00, alphaCap: Infinity }
+}
+
+// Helper for callers — resolves the fatigue signals from raw store slices.
+// BbLogger computes these once per session open and passes the result to
+// `recommendNextLoad`. Returns `{priorGrade, cardioRecent, restedYesterday}`.
+export function buildFatigueSignals({
+  sessions = [],
+  cardioSessions = [],
+  restDaySessions = [],
+  now = Date.now(),
+} = {}) {
+  // Most recent bb session's grade, across any workout type. Null when
+  // nothing has been graded.
+  const gradedSessions = sessions
+    .filter(s => s?.mode === 'bb' && s?.grade)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+  const priorGrade = gradedSessions[0]?.grade || null
+
+  // Most recent cardio session; only returned when within 24h (otherwise
+  // the damping function returns 1.0 anyway, but we skip to keep the meta
+  // payload clean).
+  const lastCardio = [...cardioSessions]
+    .sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date))[0]
+  let cardioRecent = null
+  if (lastCardio) {
+    const ts = new Date(lastCardio.createdAt || lastCardio.date).getTime()
+    const hoursAgo = (now - ts) / 3600000
+    if (hoursAgo >= 0 && hoursAgo < 48) {
+      cardioRecent = { intensity: lastCardio.intensity || null, hoursAgo }
+    }
+  }
+
+  // Rest day within 36h — captures "yesterday" without timezone gymnastics.
+  const lastRest = [...restDaySessions]
+    .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))[0]
+  let restedYesterday = false
+  if (lastRest) {
+    const ts = new Date(lastRest.date || lastRest.createdAt).getTime()
+    const hoursAgo = (now - ts) / 3600000
+    restedYesterday = hoursAgo >= 0 && hoursAgo < 36
+  }
+
+  return { priorGrade, cardioRecent, restedYesterday }
+}
+
+// Composes a one-sentence reasoning prefix mentioning the dominant fatigue
+// signal, when it materially affected aggressiveness (>= 5% shift) or when
+// the gap is long. Returns '' when nothing is worth surfacing. Ordering:
+// deload-ish signals (low grade, hard cardio, long gap) take priority over
+// boost signals (A+, rest day), because they warn the user.
+function buildFatigueReasoningPrefix({
+  gradeMult, cardioMult, restMult, gap, daysSince,
+  priorGrade, cardioRecent,
+}) {
+  if (gradeMult <= 0.95) {
+    return `Last session graded ${priorGrade}, so holding back a touch.`
+  }
+  if (cardioMult < 1.0) {
+    return `Taking it a touch easier after your all-out cardio session.`
+  }
+  if (gap.mult < 1.0) {
+    const days = Math.round(Number(daysSince) || 0)
+    return `It's been ${days} days — ramping back up gradually, not catching up.`
+  }
+  if (gradeMult >= 1.05) {
+    return `Last session graded ${priorGrade} — pushing a touch more today.`
+  }
+  if (restMult > 1.0 && cardioRecent?.intensity !== 'allout') {
+    return `Coming off a rest day, giving you a little more room.`
+  }
+  return ''
 }
 
 // ── Misc ───────────────────────────────────────────────────────────────────
