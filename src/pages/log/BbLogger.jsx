@@ -629,6 +629,10 @@ function ExerciseItem({
   const setWeightRefs = useRef({})
   const setRepsRefs   = useRef({})
   const pendingFocusRef = useRef(null)
+  // Populated after recHistory is computed below; read by updateSet's
+  // auto-classify branch (§3.8). Ref avoids TDZ since updateSet is declared
+  // earlier than recHistory.
+  const recHistoryRef = useRef([])
 
   // Focus the weight (or reps for plate mode) input of a newly added set after render.
   // Use preventScroll to avoid the browser yanking the viewport when the new row appears.
@@ -674,6 +678,20 @@ function ExerciseItem({
         // Plate-loaded drop: clear plates, carry barDefault
         const barWeight = exercise.barDefault ?? 45
         newSet = { ...newSet, plates: emptyPlates(), barWeight, weight: '' }
+      }
+    }
+    // Auto-classify on weight edits per spec §3.8: weight < 60% of recent
+    // top e1RM → warmup, > 80% → working. Middle band keeps the current
+    // type. Drop sets are never auto-reclassified. recHistory is declared
+    // later in this component so we read it lazily here.
+    if (newSet.weight !== oldSet.weight && newSet.type !== 'drop' && recHistoryRef.current?.length) {
+      const hist = recHistoryRef.current
+      const topE1RM = hist[hist.length - 1]?.e1RM || 0
+      const w = parseFloat(newSet.weight) || 0
+      if (w > 0 && topE1RM > 0) {
+        const pct = w / topE1RM
+        if (pct < 0.60)      newSet = { ...newSet, type: 'warmup' }
+        else if (pct > 0.80) newSet = { ...newSet, type: 'working' }
       }
     }
     sets[i] = newSet
@@ -741,6 +759,10 @@ function ExerciseItem({
     () => getExerciseHistory(allSessions, libraryEntry?.id || exercise.exerciseId, exercise.name),
     [allSessions, libraryEntry?.id, exercise.exerciseId, exercise.name]
   )
+
+  // Ref so the updateSet closure (declared above) can read the latest
+  // recHistory for auto-classify without a temporal-dead-zone ReferenceError.
+  recHistoryRef.current = recHistory
 
   // Recommendation: mode derives from the readiness "goal" answer (Batch 16n,
   // spec §2.5). Defaults to 'push' when no readiness data is present — same

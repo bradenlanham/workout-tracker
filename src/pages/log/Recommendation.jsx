@@ -1,23 +1,26 @@
-// Batch 16b + 16f — UI surfaces for the recommendation engine.
+// UI surfaces for the recommendation engine.
 //
-// Three display components:
-//   RecommendationHint      — inline "Try: 185×10" chip for the collapsed
-//                             exercise card (non-interactive).
-//   RecommendationBanner    — prominent tappable banner inside the expanded
-//                             card; opens the sheet.
-//   RecommendationSheet     — bottom-sheet modal with sparkline, two mode
-//                             chips (Maintain / Push), plain-English
-//                             reasoning, and an expandable Details section
-//                             for the math.
+// Exports:
+//   RecommendationChip — compact "Tip" pill that lives in the exercise
+//                        toolbar row (Plates / Uni / Last / PR / Tip). Tap
+//                        to open the sheet. Added in Batch 16n-1; replaced
+//                        the wider RecommendationBanner.
+//   RecommendationSheet — bottom-sheet modal with e1RM sparkline, mode
+//                         chips, plain-English reasoning, confidence
+//                         tap-to-explain, and an expandable Details pane.
 //
 // The recommendation is computed in the parent (ExerciseItem) via useMemo
 // and passed down — these components are pure display.
+//
+// History: legacy RecommendationHint (collapsed-card "Try: 185×10" snippet)
+// and RecommendationBanner (wide tappable banner) lived here through Batch
+// 16n-1 but were removed in the polish pass since nothing consumed them.
 
 import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { recommendNextLoad } from '../../utils/helpers'
 
-// ── Confidence → percent + label helpers ──────────────────────────────────
+// ── Confidence → percent helper ───────────────────────────────────────────
 //
 // Users asked for a percentage (and tap-to-explain) rather than an opaque
 // "Maybe"/"Solid" label. Percent combines sample size and R²: full data
@@ -38,39 +41,11 @@ function confidenceColor(pct) {
   return '#60a5fa'                       // blue-400
 }
 
-// For the old RecommendationHint (collapsed card). Keeps the tri-state
-// model internally — just used to decide whether to render the inline
-// "Try" chip at all.
-
-function hasRenderableHint(confidence) {
-  return confidence === 'high' || confidence === 'moderate' || confidence === 'building'
-}
-
-function hintDotColor(confidence) {
-  if (confidence === 'high')     return '#10b981'
-  if (confidence === 'moderate') return '#f59e0b'
-  return '#6b7280'
-}
-
 function formatWeeklyRate(rate) {
   const pct = Number(rate) * 100
   if (Math.abs(pct) < 0.1) return 'flat'
   const sign = pct > 0 ? '+' : ''
   return `${sign}${pct.toFixed(1)}%/wk`
-}
-
-// ── RecommendationHint — collapsed card inline snippet ────────────────────
-
-export function RecommendationHint({ recommendation }) {
-  if (!recommendation || !recommendation.prescription) return null
-  if (!hasRenderableHint(recommendation.confidence))   return null
-  const { weight, reps } = recommendation.prescription
-  return (
-    <span style={{ fontSize: 10 }} className="text-c-dim ml-1.5">
-      <span style={{ color: hintDotColor(recommendation.confidence) }} aria-hidden="true">●</span>{' '}
-      Try: {weight}×{reps}
-    </span>
-  )
 }
 
 // ── RecommendationChip — compact Tip chip in the exercise toolbar row ─────
@@ -106,51 +81,14 @@ function SparkleIcon({ color = 'currentColor', className }) {
   )
 }
 
-// ── RecommendationBanner — expanded card prominent CTA ─────────────────────
-
-export function RecommendationBanner({ recommendation, onTap }) {
-  if (!recommendation || !recommendation.prescription) return null
-  const { weight, reps } = recommendation.prescription
-  const { reasoning, meta } = recommendation
-  const pct = confidencePct(meta?.n, meta?.rSquared)
-  const color = confidenceColor(pct)
-
-  return (
-    <button
-      type="button"
-      onClick={onTap}
-      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-item border border-white/5 hover:bg-hover active:bg-hover transition-colors text-left"
-      title="Tap for coaching details"
-    >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-c-faint text-[11px] font-semibold uppercase tracking-wider">Top set</span>
-          <span className="text-c-primary text-base font-extrabold tabular-nums">
-            {weight} × {reps}
-          </span>
-        </div>
-        <div className="text-[11px] text-c-muted truncate mt-0.5">
-          {pct != null && (
-            <>
-              <span style={{ color }} aria-hidden="true">●</span>{' '}
-              <span style={{ color }} className="font-semibold">{pct}% confident</span>
-              <span> · </span>
-            </>
-          )}
-          <span className="truncate">{reasoning}</span>
-        </div>
-      </div>
-      <span className="shrink-0 text-c-faint text-sm">›</span>
-    </button>
-  )
-}
-
 // ── E1RMSparkline — inline SVG trend over last 6 sessions ─────────────────
 //
-// Plots e1RM as points + line, with a subtle linear-fit trend line, and a
-// rate label in the top-right. Auto-scales to the window's min/max e1RM.
+// Plots e1RM as points + line, with a subtle linear-fit trend line.
+// Dots are tappable: tapping a point highlights it and notifies the parent
+// via onPointSelect so the Peak stat can swap to that session's value.
+// Tapping the selected point (or a tap with no selectedIdx) clears.
 
-function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0 }) {
+function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0, selectedIdx = null, onPointSelect }) {
   const window = history.slice(-6)
   if (window.length < 2) return null
 
@@ -178,6 +116,9 @@ function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0 }) {
   const trendLast  = [points[points.length - 1][0], trendEndY]
 
   const peakIdx = values.indexOf(maxV)
+  const tapHandler = onPointSelect
+    ? (i) => onPointSelect(selectedIdx === i ? null : i)
+    : null
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" role="img" aria-label={`Estimated 1-rep max across ${window.length} sessions, peak ${Math.round(maxV)} lbs`}>
@@ -189,20 +130,29 @@ function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0 }) {
       />
       {/* Connecting polyline */}
       <polyline points={polylinePts} fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Data points — peak + latest emphasized */}
+      {/* Data points — peak highlighted by default, selected when tapped.
+          A larger invisible hit area makes the 2.5-4.5px dots easy to tap. */}
       {points.map(([x, y], i) => {
-        const isLast = i === points.length - 1
-        const isPeak = i === peakIdx
+        const isLast     = i === points.length - 1
+        const isPeak     = i === peakIdx
+        const isSelected = selectedIdx === i
+        const emphasized = isSelected || (selectedIdx === null && isPeak)
         return (
-          <circle
+          <g
             key={i}
-            cx={x} cy={y}
-            r={isPeak ? 4.5 : (isLast ? 3.5 : 2.5)}
-            fill={accentColor}
-            stroke={isPeak ? accentColor : 'none'}
-            strokeWidth="2"
-            opacity={isPeak ? 1 : (isLast ? 0.9 : 0.6)}
-          />
+            onClick={tapHandler ? () => tapHandler(i) : undefined}
+            style={tapHandler ? { cursor: 'pointer' } : undefined}
+          >
+            {tapHandler && <circle cx={x} cy={y} r={14} fill="transparent" />}
+            <circle
+              cx={x} cy={y}
+              r={emphasized ? 4.5 : (isLast ? 3.5 : 2.5)}
+              fill={accentColor}
+              stroke={emphasized ? accentColor : 'none'}
+              strokeWidth="2"
+              opacity={isSelected ? 1 : (isPeak ? 1 : (isLast ? 0.9 : 0.6))}
+            />
+          </g>
         )
       })}
     </svg>
@@ -242,21 +192,34 @@ export function RecommendationSheet({
   // when no readiness is present.
   const showDeloadChip = defaultMode === 'deload'
   const validInitial   = ['push', 'maintain', 'deload'].includes(defaultMode) ? defaultMode : 'push'
-  const [selectedMode,  setSelectedMode]  = useState(validInitial)
-  const [detailsOpen,   setDetailsOpen]   = useState(false)
-  const [whyOpen,       setWhyOpen]       = useState(false)
+  const [selectedMode,    setSelectedMode]    = useState(validInitial)
+  const [detailsOpen,     setDetailsOpen]     = useState(false)
+  const [whyOpen,         setWhyOpen]         = useState(false)
+  const [sparkSelectedIdx, setSparkSelectedIdx] = useState(null)
 
   // Re-sync the selected mode to the readiness suggestion each time the sheet
   // opens. useState's initializer only runs on first mount, and this component
   // stays mounted between opens (the parent gates via the `open` prop rather
   // than conditional mount), so without this the user would see stale state.
   useEffect(() => {
-    if (open) setSelectedMode(validInitial)
+    if (open) {
+      setSelectedMode(validInitial)
+      setSparkSelectedIdx(null)
+    }
   }, [open, validInitial])
 
   if (!open) return null
 
-  const selected = recs[selectedMode] || recs.push
+  // Degenerate-case collapse: when Maintain === Push (common in catch-up
+  // mode where the Floor dominates), hide Maintain and force selection to
+  // Push so the reasoning below matches what the remaining chip shows.
+  const collapseMaintain = !showDeloadChip
+    && typeof recs.push?.prescription?.weight === 'number'
+    && typeof recs.maintain?.prescription?.weight === 'number'
+    && recs.push.prescription.weight === recs.maintain.prescription.weight
+  const effectiveMode = collapseMaintain && selectedMode === 'maintain' ? 'push' : selectedMode
+
+  const selected = recs[effectiveMode] || recs.push
   const last     = history[history.length - 1]
   const pct      = confidencePct(selected.meta?.n, selected.meta?.rSquared)
   const color    = confidenceColor(pct)
@@ -330,15 +293,36 @@ export function RecommendationSheet({
                 history={history}
                 accentColor={accentColor}
                 rate={selected.meta?.progressionRate ?? 0}
+                selectedIdx={sparkSelectedIdx}
+                onPointSelect={setSparkSelectedIdx}
               />
             </div>
-            {/* Key: defines each number explicitly */}
+            {/* Key: defines each number explicitly. Left label swaps between
+                Peak (default) and the tapped session's value/date. Tap the
+                same dot again to reset. */}
             <div className="flex items-baseline justify-between gap-3 mt-2 text-[11px]">
               <div>
-                <span className="text-c-faint">Peak:</span>{' '}
-                <span className="text-c-primary font-semibold tabular-nums">
-                  {Math.round(Math.max(...history.slice(-6).map(p => p.e1RM || 0)))} lbs
-                </span>
+                {(() => {
+                  const windowHist = history.slice(-6)
+                  const peakE = Math.round(Math.max(...windowHist.map(p => p.e1RM || 0)))
+                  if (sparkSelectedIdx == null || !windowHist[sparkSelectedIdx]) {
+                    return (
+                      <>
+                        <span className="text-c-faint">Peak:</span>{' '}
+                        <span className="text-c-primary font-semibold tabular-nums">{peakE} lbs</span>
+                      </>
+                    )
+                  }
+                  const p = windowHist[sparkSelectedIdx]
+                  const sessionLabel = `Session ${sparkSelectedIdx + 1}`
+                  return (
+                    <>
+                      <span className="text-c-faint">{sessionLabel}:</span>{' '}
+                      <span className="text-c-primary font-semibold tabular-nums">{Math.round(p.e1RM || 0)} lbs</span>
+                      <span className="text-c-faint">{' '}· {p.weight}×{p.reps}</span>
+                    </>
+                  )
+                })()}
               </div>
               <div>
                 <span className="text-c-faint">Growth:</span>{' '}
@@ -353,26 +337,32 @@ export function RecommendationSheet({
         {/* ── Mode chips ──────────────────────────────────────────────
             2 chips by default (Maintain | Push). When the user's readiness
             goal was Recover, a Deload chip joins so they can compare the
-            65%-of-e1RM recovery prescription against the alternatives. */}
-        <div className={`grid ${showDeloadChip ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-3`}>
+            65%-of-e1RM recovery prescription against the alternatives.
+            When Maintain and Push produce the same weight (common in
+            "catch-up" mode where the Floor dominates), the Maintain chip
+            is hidden since it's redundant — one button reading the same
+            number is cleaner than two. */}
+        <div className={`grid ${showDeloadChip ? 'grid-cols-3' : (collapseMaintain ? 'grid-cols-1' : 'grid-cols-2')} gap-2 mb-3`}>
           {showDeloadChip && (
             <ModeChip
               mode="deload"
               recs={recs}
-              selected={selectedMode === 'deload'}
+              selected={effectiveMode === 'deload'}
               onSelect={() => setSelectedMode('deload')}
             />
           )}
-          <ModeChip
-            mode="maintain"
-            recs={recs}
-            selected={selectedMode === 'maintain'}
-            onSelect={() => setSelectedMode('maintain')}
-          />
+          {!collapseMaintain && (
+            <ModeChip
+              mode="maintain"
+              recs={recs}
+              selected={effectiveMode === 'maintain'}
+              onSelect={() => setSelectedMode('maintain')}
+            />
+          )}
           <ModeChip
             mode="push"
             recs={recs}
-            selected={selectedMode === 'push'}
+            selected={effectiveMode === 'push'}
             onSelect={() => setSelectedMode('push')}
           />
         </div>
@@ -467,16 +457,16 @@ export function RecommendationSheet({
                   })()
                 }
                 hint={
-                  "How much the prescribed weight changes from last session's top set. This can jump by a lot when your e1RM floor has climbed since last time (most often the case). A smaller per-session cap only kicks in if your e1RM plateaus and the engine is relying on the weekly nudge to push past the stall, not the floor."
+                  `How much the prescribed weight changes from last session's top set. This can jump by a lot when your strength level at ${targetReps} reps has climbed since last time (most often the case). A smaller per-session cap only kicks in if your e1RM plateaus and the engine is relying on the weekly nudge to push past the stall, not the strength projection.`
                 }
               />
             )}
             {selected.meta?.layer2Weight > 0 && (
               <ContextRow
-                label={`Floor @ ${targetReps} reps`}
+                label={`Strength at ${targetReps} reps`}
                 value={`${selected.meta.layer2Weight} lbs`}
                 hint={
-                  `Your strength baseline for ${targetReps} reps, based on your current e1RM.\n` +
+                  `What ${targetReps} reps should weigh given your current e1RM — a projection of your strength level at that rep target.\n` +
                   `Standard lifting math says a ${targetReps}-rep max is about ${Math.round(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM) * 100)}% of a 1-rep max. So ${selected.meta.currentE1RM} × ${(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM)).toFixed(2)} ≈ ${selected.meta.layer2Weight} lbs. Push recommendations stay at or above this, so a lighter day doesn't undo your gains.`
                 }
               />

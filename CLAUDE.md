@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16o — fatigue signals)
+> Last updated: April 19, 2026 (Batch 16p — polish sweep + §3.8 auto-classify)
 
 ## Rules for Claude
 
@@ -821,38 +821,42 @@ Step 6 of the AI Coaching Recommender plan per spec §4. Engine-only (no new UI 
 189. **`fatigue-sanity.mjs` at worktree root.** Node ESM — validates 6/6 grade multipliers, 6/6 cardio damping cases, 6/6 gap adjustments, end-to-end reasoning prefix firing on real Pec Dec history, plus a synthetic slow-progression (+1%/wk) scenario that proves multipliers bite when the 3% cap isn't saturated (baseline nudge 1.14% → D 1.03% → A+ 1.26%), plus a 21-day gap scenario (150→130, "ramping back up gradually").
 190. **Verified live in preview** (mobile 375×812, debug-backup.json data, theme=blue). Opened Pec Dec Tip → sheet renders with reasoning: "Last session graded A — pushing a touch more today. You hit 175×11 last session, right at your current strength level. Bumping load by +10 lbs today based on your progression trend (capped at +3% per elapsed week to keep it sustainable)." Fatigue prefix fires correctly from the backup data's A-graded prior session. No console errors. ✓
 
+### Batch 16p (April 19, 2026) — Polish sweep + §3.8 auto-classify
+
+Small-scope housekeeping pass. Sweeps the UX items flagged in 16n-1, deletes dead code, and ships the remaining small v1 engine item (§3.8 warmup/working auto-classification on weight entry). No new features or schema changes.
+
+191. **Maintain = Push chip collapse** (`Recommendation.jsx`). When `recs.maintain.prescription.weight === recs.push.prescription.weight` (the Floor-dominated case), the Maintain chip is hidden and the grid shrinks to `grid-cols-1`. `effectiveMode` forces selection to `push` when the stored `selectedMode` was `maintain`, so the reasoning and Details pane stay consistent with the visible chip. Deload-three-chip layout still takes precedence when the user's goal was Recover.
+192. **"Floor @ N reps" → "Strength at N reps"** (`Recommendation.jsx`). The word "Floor" read as "lowest allowed" and confused users when the Floor equaled the prescription (common in catch-up mode). Renamed throughout the Details pane and updated the hint copy to describe it as a strength-level projection (e1RM × %1RM at target reps), not a floor. The "vs last session" hint also swapped the internal "floor / nudge" wording for user-facing "strength level / weekly nudge".
+193. **Sparkline tap-to-select** (`Recommendation.jsx`, `E1RMSparkline`). Dots are tappable again with an invisible 14px hit area. Tapping swaps the "Peak: 239 lbs" key label to "Session N: 225 lbs · 150×10" (e1RM value + session's top set). Tapping the same dot clears back to Peak. State lives in the sheet (`sparkSelectedIdx`) and resets on each open. Re-enabled by lifting state out of the sparkline so the key line can reflect the selection.
+194. **Dead export cleanup** (`Recommendation.jsx`). Removed the unused `RecommendationHint` and `RecommendationBanner` exports plus their helper fns (`hasRenderableHint`, `hintDotColor`). Neither was consumed since Batch 16n-1 (banner → chip) and 16h (hint removal). Comment in `useStore.js` also updated `RecommendationBanner` → `RecommendationChip` for the `enableAiCoaching` setting.
+195. **Auto-classify warmup/working on weight entry** (`BbLogger.jsx`, spec §3.8). In `updateSet`, when the user changes the weight and the set isn't a drop set, we compute `weight / recentTopE1RM` and classify: `<60%` → `warmup`, `>80%` → `working`, middle band keeps current type. `recentTopE1RM` is read from the last session's top-set e1RM via `recHistoryRef` (a ref populated after `recHistory` is computed, so `updateSet`'s closure can read the latest value without a TDZ ReferenceError). No history → skip entirely. User can always manually override afterward.
+196. **Verified live in preview** (mobile 375×812, debug-backup.json). Pec Dec Tip sheet: renders with "Estimated 1-rep max · last 6 sessions" title, "Peak: 239 lbs · Growth: +7.0%/wk" key, clean chart. Both Maintain (175×10) and Push (185×10) chips render when they diverge. Details pane: "Strength at 10 reps: 175 lbs" row + "vs last session: +10 lbs (+5.7%)" row, no "Floor @" anywhere. No console errors. ✓
+
 ---
 
 ## Where to Go From Here
 
-### Immediate open UX items (spawned by 16n-1 review, not yet shipped)
+### What's remaining
 
-- **Maintain = Push when Floor dominates.** When the user's last session is well below their Floor, Push collapses to `max(Layer3, Floor) = Floor = Maintain`. The two chips show identical numbers, which is confusing. Options: hide Maintain when equal (simplest), or annotate with "Same as Maintain today". Recommended approach: hide Maintain when `recs.maintain.prescription.weight === recs.push.prescription.weight` — cleaner UI, zero new concept.
-- **"Floor @ 10 reps" label.** User asked about but deferred — the word "Floor" reads as "lowest allowed" which is odd when it equals the prescription. Could rename to "Strength at 10 reps", "10-rep target", or "e1RM at 10 reps". Low-priority polish.
-- **Sparkline tap-to-select** was removed during 16n-1 cleanup. If we want it back (e.g., to peek at per-session values), the pattern is: lift `selectedIdx` state up to the sheet, label swap between "Peak: 239 lbs" and "Session N: 225 lbs" based on selection.
-- **Legacy `RecommendationHint` + `RecommendationBanner` exports** in `Recommendation.jsx` are now unused. Safe to delete with a small follow-up PR.
+Core v1 engine work is DONE: steps 1–6 + §3.8 all shipped. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap) and §3.8 auto-classify fills in the last small engine item. Remaining steps are data-collection features and anomaly UI, not prescription math.
 
-### Next feature per the AI Coaching plan (build order §3)
+**Step 7 — Equipment instance (§3.4).** Per-session `equipmentInstance: string` optional field on LoggedExercise (e.g. "Hoist leg press" vs "Cybex leg press"). Anomaly prompt when per-side e1RM swings >30% session-over-session with the same exercise name ("same machine?"). Trend fit scoping by instance. UI: small chip on the exercise card, opt-in per exercise. Size: moderate (persist change + anomaly detection + small UI).
 
-Steps 4, 5 (engine-only), and 6 are all shipped. The decision engine now has all §2 + §4 inputs wired: e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap. Remaining steps are about data collection and anomaly surfaces, not prescription math.
+**Step 8 — Gym tagging full loop (§3.5, §9.7).** Exercise-level `sessionGymTags`, auto-tag-on-use prompts, picker filter ("Only available at VASA"). Settings UI for managing the gym list (currently gyms are added inline from the readiness overlay only). Size: moderate-to-large.
 
-**Step 7 — Equipment instance (§3.4).** First step that leaves pure engine work: per-session `equipmentInstance: string` optional field on LoggedExercise (e.g., "Hoist Leg Press" vs "Cybex Leg Press"). Anomaly prompt when per-side e1RM swings >30% session-over-session with the same exercise name ("same machine?"). Trend fit scoping by instance to keep history clean. UI touch point: a tiny textbox or chip on the exercise card, opt-in per exercise. Size: moderate (persist change + anomaly detection + small UI).
+**Step 9 — Anomaly coaching surfaces (§4.5).** Three detectors: plateau (flat e1RM for 6+), regression (negative trend for 2+), swing (>30% per-side e1RM delta). Surfaced per §9.3 as contextual banners on the exercise card, persistent until answered. Uses data we already have — no schema changes. Size: moderate.
 
-### Post-v1 roadmap (deferred, per plan Part 4)
+### Post-v1 roadmap (explicitly deferred per plan Part 4)
 
-- **Step 8 — Gym tagging full loop (§3.5, §9.7)**: exercise-level `sessionGymTags`, auto-tag-on-use prompts, picker filter ("Only available at VASA"). The readiness chip already collects `gymId`; step 8 connects it to exercise availability. Settings UI for managing the gym list would also land here (currently gyms are added inline from the readiness overlay only).
-- **Step 9 — Anomaly coaching surfaces (§4.5)**: plateau detection (flat for 6+), regression detection (negative for 2+), swing detection (>30% per-side e1RM). Surfaced per §9.3 (contextual banner on the exercise card, persistent until answered).
-- **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI for this expansion — trivial engine work, interesting UI work.
-- **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in for sub-failure lifters.
+- **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI. Trivial engine work, interesting UI work.
+- **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in.
+- **§8.x tracks** (visual goals, coaching commentary, coach marketplace, macro/nutrition, learned readiness model): out of v1 scope entirely.
 
-### Immediate open UX items (spawned by 16n-1 review, not yet shipped)
+### Recommended sequencing
 
-Low-priority polish from prior rounds. Any of these can bundle with step 7 or ship separately:
+**Step 9 next** is my pick. It's the one item that changes how the coach *feels* (from reactive to aware) and needs no schema work — all detection runs against existing session history + e1RM trends. Plateau detection in particular is the capstone insight: "you've been flat on Pec Dec for 6 sessions, let's try dropping weight and pushing reps." That's the kind of recommendation that separates a smart engine from an obvious one.
 
-- **Maintain = Push when Floor dominates.** When the user's last session is well below their Floor, Push collapses to `max(Layer3, Floor) = Floor = Maintain`. The two chips show identical numbers, which is confusing. Options: hide Maintain when equal (simplest), or annotate with "Same as Maintain today". Recommended approach: hide Maintain when `recs.maintain.prescription.weight === recs.push.prescription.weight` — cleaner UI, zero new concept.
-- **"Floor @ 10 reps" label.** User asked about but deferred — the word "Floor" reads as "lowest allowed" which is odd when it equals the prescription. Could rename to "Strength at 10 reps", "10-rep target", or "e1RM at 10 reps". Low-priority polish.
-- **Sparkline tap-to-select** was removed during 16n-1 cleanup. If we want it back (e.g., to peek at per-session values), the pattern is: lift `selectedIdx` state up to the sheet, label swap between "Peak: 239 lbs" and "Session N: 225 lbs" based on selection.
-- **Legacy `RecommendationHint` + `RecommendationBanner` exports** in `Recommendation.jsx` are now unused. Safe to delete with a small follow-up PR.
+Alternative: step 7 first if you want the data-collection schema change out of the way before the last UI feature. Either order works. Step 8 is naturally last since it depends on the gym list being populated (which grows organically as the user logs sessions).
 
 ### Recommended sequencing
 

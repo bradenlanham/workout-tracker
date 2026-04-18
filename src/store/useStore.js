@@ -78,7 +78,7 @@ const useStore = create(
         restTimerChime: true,
         hasSeenTutorial: false,
         // Batch 16i — AI coaching recommender UI toggle. When false, the
-        // RecommendationBanner and RecommendationSheet don't render; the
+        // RecommendationChip and RecommendationSheet don't render; the
         // engine still computes invisibly so flipping it back on is
         // instant. Session data collection is unaffected either way.
         enableAiCoaching: true,
