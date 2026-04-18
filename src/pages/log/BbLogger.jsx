@@ -13,7 +13,6 @@ import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
 import { RecommendationHint, RecommendationBanner, RecommendationSheet } from './Recommendation'
-import { RpePill } from './RpePill'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -119,7 +118,6 @@ function PrevSetRow({ set }) {
       <div className="flex-1 text-center text-sm">
         {set.isNewPR ? '🏆' : ''}
       </div>
-      <RpePill value={set.rpe} readOnly />
       <div className="w-8 shrink-0" />
     </div>
   )
@@ -216,10 +214,6 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           placeholder="reps"
           className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
           style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
-        />
-        <RpePill
-          value={typeof set.rpe === 'number' ? set.rpe : null}
-          onChange={v => onChange({ ...set, rpe: v, plates, barWeight, weight: String(total), plateMultiplier: mult })}
         />
         {set.reps && total > 0 ? (
           <button
@@ -439,10 +433,6 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
       />
       <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
-      <RpePill
-        value={typeof set.rpe === 'number' ? set.rpe : null}
-        onChange={v => onChange({ ...set, rpe: v })}
-      />
       <button
         type="button"
         onClick={onDelete}
@@ -1840,7 +1830,6 @@ export default function BbLogger() {
               type: s.type, reps: r, weight: w, rawWeight: rawW,
               isNewPR: isSetPR(scopedSessions, ex.name, rawW, r),
               ...(s.plates ? { plates: s.plates, barWeight: s.barWeight } : {}),
-              ...(typeof s.rpe === 'number' && s.rpe >= 1 && s.rpe <= 10 ? { rpe: s.rpe } : {}),
             }
           }),
         }

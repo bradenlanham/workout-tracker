@@ -139,6 +139,7 @@ Captured so it's not lost, but explicitly out of scope for this plan:
 - **§8.5 Macro/nutrition recommendations** — distinct product surface, v3+.
 - **§8.6 Learned readiness model** — replace static multiplier with per-user fit, once readiness data accumulates.
 - **§9.8–§9.11 design decisions** — visual goal interaction, check-in cadence, coach marketplace model, App Store launch timing. Decide when post-v1 tracks are scheduled.
+- **Back-off-set prescription** — the v1 recommender prescribes the **top working set only** (the heaviest set that anchors e1RM). A natural next step is to also prescribe back-off sets — e.g. `top set: 185×10, back-off: 2× 175×10` (5% drop) or classic 5/3/1-style wave-downs. Trivial formula extension; the interesting work is UI (per-set prescription display in the sheet and the exercise card). Flagged 2026-04-18 after the first preview round — keep top-set scope for v1, revisit once readiness (step 4) ships. See Batch 16f's "Top set: 185×10" labeling which already primes the user for this expansion.
 
 ---
 
