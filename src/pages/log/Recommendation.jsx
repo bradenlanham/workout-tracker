@@ -277,40 +277,26 @@ export function RecommendationSheet({
 
         {/* ── Mode chips (Maintain | Push) ─────────────────────────── */}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          {[
-            { id: 'maintain', label: 'Maintain', sub: 'Keep it steady' },
-            { id: 'push',     label: 'Push',     sub: 'Go for progress' },
-          ].map(m => {
-            const r = recs[m.id]
-            const isSelected = selectedMode === m.id
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setSelectedMode(m.id)}
-                className={`py-3 px-3 rounded-xl text-center transition-colors ${
-                  isSelected
-                    ? 'bg-white/10 border border-white/20 text-c-primary'
-                    : 'bg-item border border-transparent text-c-secondary hover:bg-hover'
-                }`}
-              >
-                <div className="text-[10px] uppercase tracking-wider text-c-faint">{m.label}</div>
-                <div className="text-base font-bold text-c-primary mt-0.5 tabular-nums">
-                  {r.prescription ? `${r.prescription.weight}×${r.prescription.reps}` : '—'}
-                </div>
-                <div className="text-[10px] text-c-faint mt-0.5">{m.sub}</div>
-              </button>
-            )
-          })}
+          <ModeChip
+            mode="maintain"
+            recs={recs}
+            selected={selectedMode === 'maintain'}
+            onSelect={() => setSelectedMode('maintain')}
+          />
+          <ModeChip
+            mode="push"
+            recs={recs}
+            selected={selectedMode === 'push'}
+            onSelect={() => setSelectedMode('push')}
+          />
         </div>
 
-        {/* ── Reasoning (plain English) ────────────────────────────── */}
+        {/* ── Reasoning (plain English; no "Why" subheader) ────────── */}
         <div className="rounded-xl border border-white/5 bg-base/30 px-4 py-3 mb-3">
-          <div className="text-[10px] uppercase tracking-wider text-c-faint mb-1">Why</div>
           <div className="text-sm text-c-secondary leading-relaxed">{selected.reasoning}</div>
         </div>
 
-        {/* ── Confidence with tap-to-explain ───────────────────────── */}
+        {/* ── Confidence with tap-to-explain (collapsed by default) ─ */}
         {pct != null && (
           <div className="mb-3">
             <button
@@ -320,23 +306,25 @@ export function RecommendationSheet({
             >
               <div className="flex items-center gap-2">
                 <span style={{ color }} aria-hidden="true">●</span>
-                <span className="text-sm font-semibold" style={{ color }}>{pct}% confident</span>
+                <span className="text-sm font-semibold text-c-secondary">
+                  Confidence: <span style={{ color }}>{pct}%</span>
+                </span>
               </div>
-              <span className="text-c-faint text-sm">{whyOpen ? '▴' : '?'}</span>
+              <span className="text-c-faint">{whyOpen ? '▴' : '▾'}</span>
             </button>
             {whyOpen && (
-              <div className="mt-2 px-4 py-3 text-xs text-c-muted leading-relaxed border border-white/5 rounded-xl bg-base/20">
-                <p className="mb-2">
+              <div className="mt-2 px-4 py-3 text-xs text-c-muted leading-relaxed border border-white/5 rounded-xl bg-base/20 space-y-2">
+                <p>
                   Based on {selected.meta?.n ?? 0} prior {selected.meta?.n === 1 ? 'session' : 'sessions'}
                   {selected.meta?.rSquared > 0 && (
-                    <> — your e1RM has been tracking {describeFit(selected.meta.rSquared)} against the trend line.</>
+                    <>. Your e1RM has been tracking {describeFit(selected.meta.rSquared)} against the trend line.</>
                   )}
                 </p>
                 {(selected.meta?.n ?? 0) < 6 && (
                   <p>Log {6 - (selected.meta?.n ?? 0)} more consistent {6 - (selected.meta?.n ?? 0) === 1 ? 'session' : 'sessions'} and confidence will climb.</p>
                 )}
                 {(selected.meta?.n ?? 0) >= 6 && selected.meta?.rSquared < 0.9 && (
-                  <p>Your recent sessions have varied more than usual — trend confidence will rise once they settle into a cleaner pattern.</p>
+                  <p>Your recent sessions have varied more than usual. Trend confidence will rise once they settle into a cleaner pattern.</p>
                 )}
               </div>
             )}
@@ -359,7 +347,10 @@ export function RecommendationSheet({
               <ContextRow
                 label="Estimated 1-rep max"
                 value={`${selected.meta.currentE1RM} lbs`}
-                hint="The heaviest single rep you could probably hit right now, estimated from your top set using Epley's formula: w × (1 + reps/30)."
+                hint={
+                  "The heaviest single rep you could probably hit right now, estimated from your top set.\n" +
+                  "Epley's formula: w × (1 + reps/30)."
+                }
               />
             )}
             {last && (
@@ -372,21 +363,30 @@ export function RecommendationSheet({
               <ContextRow
                 label="Trend fit"
                 value={`${selected.meta.n} sessions · R²=${(selected.meta.rSquared).toFixed(2)} · ${formatWeeklyRate(selected.meta.progressionRate)}${selected.meta.usedFit ? '' : ' (default)'}`}
-                hint="Linear fit of your e1RM across recent sessions. R² (0–1) is how cleanly the points land on a straight line — higher = more predictable trend."
+                hint={
+                  "Linear fit of your e1RM across recent sessions. R² (0 to 1) is how cleanly the points land on a straight line.\n" +
+                  "Higher = more predictable trend."
+                }
               />
             )}
             {selected.meta?.thisSessionNudgePct > 0 && selectedMode === 'push' && (
               <ContextRow
                 label="This session's nudge"
                 value={`+${selected.meta.thisSessionNudgePct.toFixed(1)}%`}
-                hint="How much we're adding to your last weight. Capped at +3%/week for safety even if your trend is faster."
+                hint={
+                  "How much weight we're adding this session, based on your progression rate.\n" +
+                  "Capped at 3% per elapsed week. It's a hard limit that applies every session, even when your e1RM trend is climbing faster (like +10%/wk). Protects you from chasing a single-PR outlier into injury or a plateau."
+                }
               />
             )}
             {selected.meta?.layer2Weight > 0 && (
               <ContextRow
                 label={`Floor @ ${targetReps} reps`}
                 value={`${selected.meta.layer2Weight} lbs`}
-                hint={`Standard strength tables say a ${targetReps}-rep max is about ${Math.round(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM) * 100)}% of a 1-rep max. Push recommendations never drop below this.`}
+                hint={
+                  `Your strength baseline for ${targetReps} reps, based on your current e1RM.\n` +
+                  `Standard lifting math says a ${targetReps}-rep max is about ${Math.round(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM) * 100)}% of a 1-rep max. So ${selected.meta.currentE1RM} × ${(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM)).toFixed(2)} ≈ ${selected.meta.layer2Weight} lbs. Push recommendations stay at or above this, so a lighter day doesn't undo your gains.`
+                }
               />
             )}
           </div>
@@ -395,6 +395,82 @@ export function RecommendationSheet({
     </div>,
     document.body
   )
+}
+
+// ── ModeChip — Maintain / Push chip with distinct color + icon ────────────
+// Maintain: flat line icon + blue accent. Push: rising line icon + emerald
+// accent. Selected state uses the accent color for bg tint + border.
+
+function ModeChip({ mode, recs, selected, onSelect }) {
+  const r = recs[mode]
+  const cfg = MODE_CHIP_CONFIG[mode]
+  const tintBg     = selected ? cfg.selectedBg     : 'bg-item'
+  const tintBorder = selected ? cfg.selectedBorder : 'border-transparent'
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`py-3 px-3 rounded-xl text-center transition-colors border ${tintBg} ${tintBorder}`}
+    >
+      <div className="flex items-center justify-center gap-1.5 mb-0.5" style={{ color: selected ? cfg.color : 'var(--text-faint)' }}>
+        <cfg.Icon className="w-5 h-3" color="currentColor" />
+        <span className="text-[10px] uppercase tracking-wider font-semibold">{cfg.label}</span>
+      </div>
+      <div className="text-base font-bold text-c-primary tabular-nums">
+        {r.prescription ? `${r.prescription.weight}×${r.prescription.reps}` : '—'}
+      </div>
+      <div className="text-[10px] text-c-faint mt-0.5">{cfg.sub}</div>
+    </button>
+  )
+}
+
+function FlatLineIcon({ color, className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 8" fill="none" aria-hidden="true">
+      <line x1="2" y1="4" x2="22" y2="4" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function RisingLineIcon({ color, className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 12" fill="none" aria-hidden="true">
+      <polyline
+        points="2,10 8,7 14,5 22,1"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <polyline
+        points="18,1 22,1 22,5"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+const MODE_CHIP_CONFIG = {
+  maintain: {
+    label:          'Maintain',
+    sub:            'Keep it steady',
+    Icon:           FlatLineIcon,
+    color:          '#60a5fa',
+    selectedBg:     'bg-blue-500/10',
+    selectedBorder: 'border-blue-500/40',
+  },
+  push: {
+    label:          'Push',
+    sub:            'Go for progress',
+    Icon:           RisingLineIcon,
+    color:          '#10b981',
+    selectedBg:     'bg-emerald-500/10',
+    selectedBorder: 'border-emerald-500/40',
+  },
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -423,7 +499,7 @@ function ContextRow({ label, value, hint }) {
         <span className="text-c-secondary text-right tabular-nums">{value}</span>
       </button>
       {open && hint && (
-        <div className="text-[11px] text-c-muted leading-relaxed pb-1 pr-4 italic">{hint}</div>
+        <div className="text-[11px] text-c-muted leading-relaxed pb-1 pr-4 italic whitespace-pre-line">{hint}</div>
       )}
     </div>
   )

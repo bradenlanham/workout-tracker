@@ -782,18 +782,18 @@ export function recommendNextLoad({
   let effectiveMode = mode
 
   if (mode === 'deload') {
-    // User-declared deload — 65% of current e1RM (midpoint of 60–70%).
+    // User-declared deload. 65% of current e1RM (midpoint of 60-70%).
     prescriptionWeight = currentE1RM * 0.65
-    reasoning          = `Recovery day — 65% of your e1RM for an easier session.`
+    reasoning          = `Recovery day. 65% of your e1RM for an easier session.`
   } else if (autoDeload) {
     // 10% off the last working weight, per the decision rule.
     prescriptionWeight = last.weight * 0.90
     reasoning          = `You've missed the rep target two sessions in a row. Backing off 10% today to reset before pushing again.`
     effectiveMode      = 'deload'
   } else if (mode === 'maintain') {
-    // Layer 2 only — match the e1RM at the target reps, no nudge.
+    // Layer 2 only: match the e1RM at the target reps, no nudge.
     prescriptionWeight = layer2Weight
-    reasoning          = `Matching your e1RM at ${targetReps} reps — a solid maintenance day.`
+    reasoning          = `Matching your e1RM at ${targetReps} reps. A solid maintenance day.`
   } else {
     // Push (default) — full Layer 3 with aggressiveness 1.15, clamped to Layer 2.
     const aggressiveness = 1.15
@@ -818,10 +818,10 @@ export function recommendNextLoad({
       reasoning          = `You hit ${last.weight}×${last.reps} last session. Adding a little more weight based on how fast you've been progressing.`
     } else if (missedByOne || effectiveMissBy1) {
       prescriptionWeight = Math.max(last.weight, layer2Weight)
-      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Same weight — go for all ${targetReps} this session.`
+      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Same weight. Go for all ${targetReps} this session.`
     } else {
       prescriptionWeight = Math.max(last.weight, layer2Weight)
-      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Holding the weight — push for the reps before adding load.`
+      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Holding the weight. Push for the reps before adding load.`
     }
   }
 
