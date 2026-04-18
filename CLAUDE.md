@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16g–l)
+> Last updated: April 19, 2026 (Batch 16g–m)
 
 ## Rules for Claude
 
@@ -735,3 +735,15 @@ Round-2 feedback on the redesigned Coach's Call sheet. Largely cosmetic.
 158. **Workout + usage filter row on `/exercises`.** 109 entries were too many to scroll through. Added a second chip row below the existing source filter (All/Custom/Built-in/Untagged): `Any workout` / `[each workout in the active split with its exercise count]` / `Logged` / `Never logged`. The two axes combine independently, so a user can show e.g. "Custom + Never logged" to find unused custom entries.
 159. **`exerciseIdsByWorkout` resolution (`ExerciseLibraryManager.jsx`).** `useMemo` walks each active-split workout's sections, unwraps string-or-`{name,rec}` exercises, and resolves names via `normalizeExerciseName` against a pre-built `(normalized name → library id)` map covering canonical names + aliases. Same approach as the v3 migration — renamed variants still match. Workout chips with 0 matching exercises are hidden.
 160. **`loggedIds` set.** Flat scan of sessions builds a Set of every `exerciseId` with at least one session set. O(sessions × exercises). Drives both the `Logged` / `Never logged` chip filters and their counts. Workout display name uses the first segment before " — " (e.g. "Push" instead of "Push — Chest") to keep chip widths reasonable.
+
+### Batch 16m (April 19, 2026) — Monthly calendar redesign
+
+161. **Monthly grid cells → circles matching the weekly pill strip** (`Dashboard.jsx`). Every day cell is now a 36px circle (aspectRatio 1, borderRadius 50%) with the day number centered inside. State mapping:
+    - Active day (session or cardio done): filled accent circle, contrastText number, bold.
+    - Today pending / today-rest: transparent with 2px accent border, number in accent.
+    - Today-logged-rest: muted white fill plus 2px accent ring.
+    - Logged rest (past): muted white 14% fill, secondary-text number.
+    - Rotation rest (past or future): 1px **dashed** border in muted color, muted number — dashed line signals "planned rest, not logged".
+    - Future planned workout: 1px subtle solid border, muted number.
+    - Empty past (missed): no shape, faint number.
+    Dropped the workout-type emojis (🏋️ / 🦵 / 💪 / 🎯 / 🦿), the R / C single-letter overlays, and the floating blue cardio dot. Workout-type detail lives in History → session detail on tap; the monthly grid now answers "what happened on this day" in terms of activity state only. Tap handlers preserved (active → session detail, future → preview sheet, future-rest → rest-day sheet). Grid gap 3px → 6px for visual balance.
