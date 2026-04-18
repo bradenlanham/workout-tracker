@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 17, 2026 (Batch 15)
+> Last updated: April 18, 2026 (Batch 16a)
 
 ## Rules for Claude
 
@@ -54,11 +54,15 @@ src/
 │   └── helpers.js             # getNextBbWorkout, getLastBbSession, perSideLoad, getExercisePRs, isSetPR, isPR,
 │                              # getWorkoutStreak, getBestStreak, getRotationItemOnDate, getAchievements,
 │                              # migrateSessionsToV2, migrateSessionsToV3, normalizeExerciseName,
-│                              # similarExerciseScore, findSimilarExercises, formatDate/Time, playBeep, generateId
+│                              # similarExerciseScore, findSimilarExercises, formatDate/Time, playBeep, generateId,
+│                              # e1RM, percent1RM, getExerciseHistory, getCurrentE1RM, getProgressionRate,
+│                              # getRecommendationConfidence, recommendNextLoad   ← recommender engine (Batch 16a)
 │                              # getWorkoutStreak signature: (sessions, cardioSessions, restDaySessions)
 │                              # getBestStreak    signature: (sessions, cardioSessions, restDaySessions)
 │                              # perSideLoad(set): canonical per-side load accessor — rawWeight ?? weight ?? 0
 │                              # findSimilarExercises(query, library, opts): trigram+token-sort fuzzy match
+│                              # recommendNextLoad({history, targetReps, mode, progressionClass, loadIncrement})
+│                              #   → { mode, confidence, prescription: {weight, reps}, reasoning, meta }
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -591,3 +595,25 @@ Step 2 of the AI Coaching Recommender plan. Eliminates name-based identity for e
 105. **BbLogger `AddExercisePanel` rewired.** Suggestions come from the store library via fuzzy match when the user types; a 12-name starter list (pulled from built-ins) shows on empty query. Tapping "+ Add [typed]" auto-uses any library match scoring ≥0.85 (so "pec dec" silently resolves to `ex_pec_dec`); otherwise opens `CreateExerciseModal` pre-filled with the typed name. `addExercise(name, exerciseId)` accepts an optional id so picked-from-library exercises carry the link through to save.
 106. **`buildExerciseData` saves canonical name + exerciseId** (`BbLogger.jsx`). On session save, resolves `exerciseId` — prefers the row's linked id from the picker selection, falls back to a library lookup by canonical/alias name. Canonicalizes `name` to the library's value too. Going forward every saved session has `{name: 'Canonical Name', exerciseId: 'ex_...'}` on every LoggedExercise.
 107. **SplitBuilder `ExercisePicker` wired to the same dedup path.** "Add your own" now fuzzy-matches against the store library before creating; high-similarity matches reuse the existing entry, low-similarity opens `CreateExerciseModal`. The full picker list now reads from the store library when populated (so user-created entries show up alongside built-ins), falling back to the raw data import for fresh installs before `initLibrary()` fires.
+
+### Batch 16a (April 18, 2026) — Recommendation engine (AI coaching prereq, step 3, substep a)
+
+Step 3 of the AI Coaching Recommender plan (see `coaching-recommender-plan.md` Part 3). Pure algorithm code — no UI wiring yet. Sanity-validated via `recommender-sanity.mjs` against `debug-backup.json`.
+
+108. **`e1RM(weight, reps)` + `percent1RM(targetReps)` (`helpers.js`).** Layer 1 (Epley: `w × (1 + r/30)`) and Layer 2 table lookup per spec §2.2. `percent1RM` linearly interpolates between the 7 anchors (3→93%, 5→86%, 6→83%, 8→78%, 10→73%, 12→69%, 15→63%) and clamps at the endpoints so off-table inputs still return a sane number.
+109. **`getExerciseHistory(sessions, exerciseId, exerciseName?)` (`helpers.js`).** Walks `bb`-mode sessions, prefers `exerciseId` match (with name fallback for pre-v3 safety), returns the per-session TOP SET (highest e1RM across working+drop sets with w>0 and r>0). Chronological ascending so the caller can `slice(-2)` / `slice(-6)` without resorting. Warmups are excluded.
+110. **`getCurrentE1RM(history)` (`helpers.js`).** Layer 1 input to the recommender — max of the last two sessions' top-set e1RMs. Filters out a single bad day per spec §2.1.
+111. **`getProgressionRate(history)` (`helpers.js`).** §2.3 linear regression of e1RM on days over the last 6 sessions. Returns `{ rate, rSquared, n, slope, meanE1RM }` where `rate` is the fractional weekly gain (`slope × 7 / mean`). Caller gates usability with `n ≥ 4 && R² ≥ 0.4` and falls back to `0.01` (compound) or `0.005` (isolation) when the fit is weak.
+112. **`getRecommendationConfidence(n, rSquared)` (`helpers.js`).** §2.4 labels: `high` (n≥6, R²≥0.9), `moderate` (n≥4, R²≥0.6), `building` (n≥3), `none` (<3 — caller shows "Last:" only, no prescription).
+113. **`recommendNextLoad({history, targetReps, mode, progressionClass, loadIncrement, now})` (`helpers.js`).** Top-level. Returns `{ mode, confidence, prescription: {weight, reps} | null, reasoning, meta }`. Implements the full §2.2 decision rule:
+    - **`mode: 'push'`** (default) — Layer 3 nudge with aggressiveness multiplier 1.15 on the progression rate, capped at 3%/wk. `nextWeight = lastWeight × (1 + P·α) + 0.033·lastWeight·Δreps` where α = daysSince/7 and Δreps = lastReps − targetReps. Clamped to Layer 2 floor.
+    - Hit target last session → apply Layer 3 nudge.
+    - Missed by 1 rep → hold weight, "go for the reps."
+    - Missed by 2+ reps → hold weight, push for reps (unless triggers auto-deload).
+    - Auto-deload: missed by 2+ reps for two consecutive sessions → override to `mode: 'deload'`, prescribe 10% off last weight.
+    - **`mode: 'maintain'`** — Layer 2 only (e1RM × %1RM(targetReps)), no nudge.
+    - **`mode: 'deload'`** — 65% of current e1RM for recovery (midpoint of §2.5's 60–70% range).
+    - <3 sessions → confidence=`none`, prescription=`last` (or null at n=0); reasoning counts down until recommendations unlock.
+    - Result weight rounded to `loadIncrement` (default 5).
+114. **`recommender-sanity.mjs` (repo root).** Node ESM — loads `debug-backup.json`, runs v2+v3 migrations to canonicalize sessions, then reports per-exercise fits + recommendations against the spec §5 high-confidence-ready list. Also exercises mode comparison on Pec Dec (push/maintain/deload produce distinct prescriptions), cold-start behavior (n=0/1/2), and the auto-deload trigger on a simulated 2-miss streak. Mirrors `migration-sanity.mjs` / `migration-v3-sanity.mjs` pattern — run from a worktree root with `node recommender-sanity.mjs`.
+115. **Nothing wired to UI yet.** Step 3b (next batch) adds the inline `Try: 185×10` hint + expand-on-tap bottom sheet per §9.1 to the exercise card. Step 3c adds RPE/RIR capture per §3.7. This substep is a clean revert point.
