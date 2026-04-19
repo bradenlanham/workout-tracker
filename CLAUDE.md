@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 19a — Machine chip UX polish)
+> Last updated: April 19, 2026 (Batch 19b — Rest timer: hide cog, long-press for settings)
 
 ## Rules for Claude
 
@@ -1187,6 +1187,26 @@ Two live-feedback fixes on Batch 19's Machine chip.
 320. **Verified live in preview** (mobile 375×812, debug-backup.json with synthetic Hoist seed). (a) Pec Dec (Machine) renders chip, pre-seeded to `Hoist` from prior session; chip text reads `Hoist` (not `Machine Hoist`). (b) Incline DB Press (Dumbbell) toolbar shows only `Plates / Uni / Last / Tip` — Machine chip absent. (c) Flat Bench Press (Barbell) and Dips (Bodyweight) also hide it. (d) Cable Fly (Cable) hides it too. (e) Any Plate-loaded Press (Machine, no prior tag) renders dashed-border empty-state `Machine` chip. No console errors.
 
 321. **Build.** `npx vite build --outDir /tmp/test-build` → 732.11 KB bundle (+0.2 KB vs 19, all in the gating branch). Gzipped 197.88 KB.
+
+### Batch 19b (April 19, 2026) — Rest timer: hide cog, long-press for settings
+
+User feedback on the floating rest timer: the always-visible settings cog was clutter and the timer's `scale(1.5)` on running made it feel "uncontrollable" as the visual jumped into a different space than where it was anchored.
+
+322. **Cog button removed** (`src/components/RestTimer.jsx`). The inline gear button to the left of the timer is gone. Settings are now accessible via long-press on the timer circle itself.
+
+323. **1-second long-press opens the settings panel.** Pointer/touch/mouse down starts a 1000ms timer; release cancels. A >10px drag also cancels so the existing outer drag-to-reposition behavior still wins when the user is moving the timer. When the long-press fires, the settings panel toggles open and a 15ms haptic vibration confirms the hold (when supported). The subsequent browser-synthesized `click` after release is guarded with a `longPressFired` ref so the timer doesn't also start/stop.
+
+324. **No text-selection / iOS callout on long-press.** Added `userSelect: none`, `WebkitUserSelect: none`, `WebkitTouchCallout: none`, `WebkitTapHighlightColor: transparent`, plus `onContextMenu: preventDefault` to the timer button. iOS won't show the copy/share callout menu; Android won't highlight the label text; desktop won't show the right-click context menu.
+
+325. **Removed the `scale(1.5)` on running.** The timer no longer visually grows when active. It sits stably at the same position before / during / after the rest period, so the tap target never "moves." The progress ring + color change (idle→blue→amber→green) still signal state clearly without needing the scale.
+
+326. **Settings panel accessible while running.** Dropped the `&& !isRunning` guard so long-press opens the duration editor mid-rest too (previously only visible when idle). Harmless — changing the stored duration doesn't retroactively alter an already-running countdown; it just applies to the next start.
+
+327. **`aria-label` updated.** `"Start rest timer (long-press for settings)"` / `"Pause rest timer (long-press for settings)"` — screen readers announce both actions.
+
+328. **Verified live in preview** (mobile 375×812). Cog button absent. Long-press (simulated touch start → 1100ms wait → touchend) opens the settings panel without starting the timer. Subsequent short-tap starts the timer. `user-select: none`, `transform: none`, `webkit-tap-highlight-color: rgba(0,0,0,0)` all confirmed via computed-style inspection. Screenshot shows running timer at fixed position with settings panel opened to its left, no overlap with session header or exercise cards. Zero console errors.
+
+329. **Build.** `npx vite build --outDir /tmp/test-build` → same bundle size (tiny refactor, no new dependencies).
 
 ---
 

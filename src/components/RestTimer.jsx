@@ -12,6 +12,43 @@ export default function RestTimer() {
   const dragStart = useRef(null)
   const location = useLocation()
 
+  // Long-press settings access (1s hold opens the settings panel).
+  // Replaces the inline gear button so the toolbar stays clean. A >10px
+  // movement cancels the long-press so the outer drag path still wins when
+  // the user is repositioning the timer.
+  const longPressTimer = useRef(null)
+  const longPressFired = useRef(false)
+  const pressStartPos  = useRef(null)
+
+  const beginLongPress = (x, y) => {
+    longPressFired.current = false
+    pressStartPos.current = { x, y }
+    clearTimeout(longPressTimer.current)
+    longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true
+      setExpanded(v => !v)
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try { navigator.vibrate(15) } catch { /* ignore */ }
+      }
+    }, 1000)
+  }
+
+  const movePressed = (x, y) => {
+    if (!pressStartPos.current) return
+    const dx = Math.abs(x - pressStartPos.current.x)
+    const dy = Math.abs(y - pressStartPos.current.y)
+    if (dx > 10 || dy > 10) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+
+  const cancelLongPress = () => {
+    clearTimeout(longPressTimer.current)
+    longPressTimer.current = null
+    pressStartPos.current  = null
+  }
+
   const handleTouchStart = (e) => {
     const touch = e.touches[0]
     const rect = dragRef.current.getBoundingClientRect()
@@ -148,31 +185,39 @@ export default function RestTimer() {
       className="flex flex-col items-end gap-2"
     >
       <div className="flex items-center gap-2">
-        {/* Cog — hidden while timer is running */}
-        {!isRunning && (
-          <button
-            onClick={() => setExpanded(v => !v)}
-            style={{ width: 32, height: 32, flexShrink: 0, padding: 7 }}
-            className="flex items-center justify-center rounded-full bg-item text-c-secondary shadow"
-            aria-label="Timer settings"
-          >
-            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-        )}
-
-        {/* Timer button — scales when running */}
-        <div
-          style={{
-            transition: 'transform 0.3s ease',
-            transform: isRunning && timeLeft > 0 ? 'scale(1.5)' : 'scale(1)',
-            transformOrigin: 'top right',
-          }}
-        >
+        {/* Timer button — tap to start/stop, long-press (1s) for settings */}
         <button
-          onClick={handleTap}
+          onClick={(e) => {
+            if (longPressFired.current) {
+              longPressFired.current = false
+              e.preventDefault()
+              e.stopPropagation()
+              return
+            }
+            handleTap()
+          }}
+          onTouchStart={(e) => {
+            const t = e.touches[0]
+            beginLongPress(t.clientX, t.clientY)
+          }}
+          onTouchMove={(e) => {
+            const t = e.touches[0]
+            movePressed(t.clientX, t.clientY)
+          }}
+          onTouchEnd={cancelLongPress}
+          onTouchCancel={cancelLongPress}
+          onMouseDown={(e) => beginLongPress(e.clientX, e.clientY)}
+          onMouseMove={(e) => movePressed(e.clientX, e.clientY)}
+          onMouseUp={cancelLongPress}
+          onMouseLeave={cancelLongPress}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-label={isRunning ? 'Pause rest timer (long-press for settings)' : 'Start rest timer (long-press for settings)'}
+          style={{
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+            WebkitTapHighlightColor: 'transparent',
+          }}
           className={`relative w-16 h-16 rounded-full shadow-lg flex flex-col items-center justify-center transition-colors font-bold ${
             isDone
               ? 'bg-green-500 text-white'
@@ -202,10 +247,9 @@ export default function RestTimer() {
             {isRunning ? 'REST' : isDone ? 'DONE' : 'TAP'}
           </span>
         </button>
-        </div>
       </div>
 
-      {expanded && !isRunning && (
+      {expanded && (
         <div className="bg-card border border-c-base rounded-2xl p-4 shadow-xl w-52">
           <p className="text-xs text-c-dim mb-2 font-medium">REST DURATION</p>
           <div className="flex gap-2 items-center">
