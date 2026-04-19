@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17h — structured REC rework)
+> Last updated: April 19, 2026 (Batch 17i+j+k — shared ExercisePicker + Skip-for-now + retire SplitBuilder)
 
 ## Rules for Claude
 
@@ -67,18 +67,22 @@ src/
 │                              #   → { mode, confidence, prescription: {weight, reps}, reasoning, meta }
 │                              # detectAnomalies(history): runs all three detectors, returns highest-priority
 │                              #   hit or null; priority: regression > swing > plateau
+│                              # predictExerciseMeta(name): Batch 17j — keyword-based best-effort
+│                              #   guess of {primaryMuscles, equipment} from an exercise name, or null
+│                              #   if nothing matches. Feeds CreateExerciseModal's auto-fill.
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
 │   ├── HamburgerMenu.jsx      # Slide-in menu: My Splits, Progress, Settings, Info (incl. "How Streaks Work"), Manage Data
 │   ├── RestTimer.jsx          # Floating draggable rest timer with progress ring (visible only during logging)
 │   ├── CustomNumpad.jsx       # Numpad overlay used by BbLogger for weight/reps entry
-│   ├── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
+│   ├── CreateExerciseModal.jsx # Shared modal for adding a new library entry. Batch 17j: 300ms debounced auto-predict on name (predictExerciseMeta) + "Skip for now — tag later" button that calls onSkip({name}) when provided by the caller.
 │   ├── ExerciseEditSheet.jsx   # Bottom-sheet editor for existing library entries (Batch 16j)
 │   ├── Toast.jsx               # Batch 17e — event-bus undo toast; showToast({message, undo}) from anywhere
 │   ├── RestDayChip.jsx         # Batch 17f — shared dashed-circle "R" rest chip (D3); size prop
 │   ├── EmojiPicker.jsx         # Batch 17g — curated 32-emoji grid + OS fallback via paste input (D5)
-│   ├── WorkoutEditSheet.jsx    # Batch 17g — bottom-sheet editor for a single workout; editable section labels, structured rec editor (via RecPill + RecEditor as of 17h), nested ExercisePicker
+│   ├── WorkoutEditSheet.jsx    # Batch 17g + 17i — bottom-sheet editor for a single workout; editable section labels, structured rec editor (via RecPill + RecEditor as of 17h), accepts recentInSplit prop and renders the shared ExercisePicker component.
+│   ├── ExercisePicker.jsx      # Batch 17i — shared exercise picker extracted from WorkoutEditSheet's inline version. Adds "Recent in this split" tab (union of exercises from sibling workouts) + "Search all muscles" checkbox (default on). Drives both the Canvas sheet and any future logger surface.
 │   ├── RecPill.jsx             # Batch 17h — shared rec-display pill; renders formatRec(rec) in any supported shape
 │   └── RecEditor.jsx           # Batch 17h — structured rec editor sheet (sets / reps / note with live preview)
 │
@@ -92,8 +96,7 @@ src/
     ├── Guide.jsx              # Static training guide (sets, reps, hypertrophy tips)
     ├── CardioLogger.jsx       # Cardio session logger: type selection, stopwatch, manual entry, HR, distance, intensity
     ├── SplitManager.jsx       # List all splits, set active, edit, clone, export/import, delete
-    ├── SplitBuilder.jsx       # 4-step wizard: name/emoji → add workouts → set rotation → review & save — KEPT as a component post-17g for the 72h stability window; no longer reachable via route
-    ├── SplitCanvas.jsx        # Batch 17g — single-canvas editor (the new /splits/new + /splits/edit/:id surface); identity + workouts + rotation always visible, sticky footer, cycle/week rotation toggle (D6), ⋮ overflow for Export/Delete
+    ├── SplitCanvas.jsx        # Batch 17g + 17k — sole split editor (the /splits/new + /splits/edit/:id surface); identity + workouts + rotation always visible, sticky footer, cycle/week rotation toggle (D6), ⋮ overflow for Export/Delete. Computes `recentInSplit` (sibling-workout exercises) and threads to WorkoutEditSheet as of 17i.
     ├── ChooseStartingPoint.jsx # Batch 17f — /splits/new/start template chooser (6 templates + Blank + Import)
     ├── TemplateEditor.jsx     # Create/edit custom workout templates (legacy, pre-splits feature)
     ├── Backfill.jsx           # One-time tagging screen for library entries with needsTagging: true.
@@ -962,6 +965,28 @@ Step 9 of the Split Builder redesign (see `split-builder-redesign-handoff.md` St
 250. **BbLogger display wired through `formatRec` (`BbLogger.jsx`).** The inline rec pill in the exercise card header now renders `formatRec(exercise.rec) || 'Rec'` instead of raw string access — so structured values set via Canvas render correctly mid-session. Empty / pill styling still keyed on `formatRec` truthy-ness. The in-session edit path stays string-based for speed: when the user taps the pill, the inline input pre-fills with `typeof rec === 'string' ? rec : formatRec(rec) || ''` so they see a coherent starting point, and save continues to write a trimmed string via the existing `onUpdate({...exercise, rec: val})` path. BbLogger never writes the structured shape itself — that's a future surface.
 251. **Backwards compatibility.** Per D7 there's no migration. Legacy strings stay strings in the store; new structured values get written side-by-side. `formatRec` + `RecPill` don't care which shape they're handed. `SplitBuilder`'s legacy `RecInline` component and auto-persist block still read/write strings verbatim — safe because `formatRec` handles both, and SplitBuilder isn't reachable via route after 17g.
 252. **Verified** via `node -e` sanity against `formatRec` for all 8 edge cases (null / empty / legacy / full structured / partial / sets-only / reps-only / sets=0). Build passes (`npx vite build` — 717.52 KB bundle, +3 KB for RecEditor + RecPill). Canvas-surface verification deferred to the upcoming user test — editor flow is a straight text-input surface with live preview, very low regression risk.
+
+### Batch 17i + 17j + 17k (April 19, 2026) — Shared ExercisePicker, predictive auto-fill + Skip-for-now, retire SplitBuilder
+
+Steps 10 + 11 + 12 of the Split Builder redesign shipped together in a single worktree because they share a surface area (the exercise creation path) and Step 12 is a subtractive cleanup. No schema changes. No persist bump. End-to-end preview-verified before commit.
+
+253. **`src/components/ExercisePicker.jsx` — shared picker extracted from WorkoutEditSheet's inline 17g version.** Pulled the ~220 line inline function out into its own module so future surfaces (a redesigned BbLogger Add panel, a library browser) can share the same implementation. Two improvements on top of the 17g behavior: (a) a new **"Recent in this split"** tab that front-loads library entries already used in sibling workouts — rendered only when `recentInSplit` has entries, and the initial selected tab when it does; (b) a **"Search all muscles"** checkbox (default ON) that controls whether typing in the search box ranges over the whole library or just the active tab's muscle-group slice. Empty-state copy branches: "No exercises from other workouts in this split yet." for the Recent tab, "No exercises match." everywhere else. z-index 275. Also exposes `onSkip` callback to `CreateExerciseModal` (Step 11, see below).
+
+254. **`SplitCanvas.jsx` computes `recentInSplit` and threads it into `WorkoutEditSheet`.** New `useMemo` keyed on `(editingWorkoutId, workouts, exerciseLibrary)` walks every workout except the currently-editing one, collects each exercise's name, resolves against a pre-built `(normalized name → library id)` map covering canonical names + aliases (same pattern as the v3 migration and 16l's ExerciseLibraryManager workout filter), and de-duplicates by library id. Subscribes to `exerciseLibrary` from the store and imports `normalizeExerciseName` from helpers. `WorkoutEditSheet` accepts the new `recentInSplit = []` prop and passes it straight to `<ExercisePicker>`. For BamBam's Blueprint editing Push, the Recent tab surfaces ~15 entries from Quads / Pull / Shoulders & Arms / Hams — verified live.
+
+255. **`WorkoutEditSheet.jsx` rewired to use the extracted picker.** Dropped the inlined `ExercisePicker` function (~220 lines) plus its now-unused imports (`useMemo`, `findSimilarExercises`, `EXERCISE_LIBRARY`, `MUSCLE_GROUPS`, `CreateExerciseModal`) — the shared component handles all of those internally. File shrank from 602 to ~447 lines. Public API adds `recentInSplit = []`; everything else unchanged.
+
+256. **`predictExerciseMeta(name)` in `helpers.js` (Step 11).** Keyword-based best-effort guess that scans a 60-entry `EXERCISE_KEYWORD_MAP` in order and returns `{ primaryMuscles, equipment }` on the first match, or `null` otherwise. Map is ordered specific-first (e.g. "leg press" before bare "press", "lat pulldown" before bare "row"), so compound terms bind before the generic fallback rules. Covers chest / back / legs / shoulders / arms / core / glutes / calves / traps with common variants (RDL, pushup, pull-up, face pull, skull crusher, Russian twist, etc.). Sanity-checked against 15 representative inputs (12 positives + 3 negatives) — all pass.
+
+257. **`CreateExerciseModal.jsx` — 300ms debounced auto-predict + Skip-for-now button.** New `useEffect([name, open, primaryMuscles.length, equipment])` runs `predictExerciseMeta` after a 300ms pause and fills the primaryMuscles + equipment chips if they're still empty. Two refs (`musclesTouched`, `equipmentTouched`) latch to true the first time the user taps any chip in that category — from that point on, auto-fill stops overriding. Refs reset when the modal reopens with a fresh name. New `onSkip` prop is optional: when provided, a subtle "Skip for now — tag later" button appears under the primary Save button and fires `onSkip({ name })`. Verified live: typing "Cable Face Pull" after the debounce auto-selects `Shoulders` + `Cable`.
+
+258. **`ExercisePicker`'s `handleCreateSkip` path (Step 11).** When the user taps Skip in the modal, the picker calls `addExerciseToLibrary({ name, primaryMuscles: [], equipment: 'Other', defaultUnilateral: false, needsTagging: true })`, closes the modal, and calls `onAdd(name)` so the exercise appears in the workout immediately. The entry shows up in `/backfill` and the `Untagged` filter on `/exercises` for later tagging.
+
+259. **`addExerciseToLibrary` validation relaxed for `needsTagging: true` (`useStore.js`).** Previously rejected empty `primaryMuscles` + missing `equipment` unconditionally per spec §3.2.1. Now accepts those shapes when `needsTagging === true`, producing the same `{primaryMuscles: [], equipment: 'Other', needsTagging: true}` shape the v3 migration writes for legacy sessions. Fully-tagged creates still go through the strict path — Skip is the only bypass.
+
+260. **Step 12 — `src/pages/SplitBuilder.jsx` deleted.** The legacy 4-step wizard is retired. `App.jsx` drops the `import SplitBuilder from './pages/SplitBuilder'` line and rewrites the route comment to describe the post-retirement world. A handful of historical comment references to the word "SplitBuilder" in SplitCanvas / ChooseStartingPoint / WorkoutEditSheet / useStore are rewritten to point at SplitCanvas or "the legacy wizard" so `grep -R "SplitBuilder" src/` returns no hits — the strict Step 12 gate.
+
+261. **Build + live verification.** `npx vite build --outDir /tmp/test-build` passes (722.97 KB bundle, +5 KB gzipped vs 17h — accounted for by ExercisePicker extraction + predictExerciseMeta map + Skip path). Preview pass on mobile 375×812 covered: (a) `/splits/edit/split_bam` → open Push workout → add exercise → Recent tab front-loaded with 15 sibling-workout entries; (b) All tab with search "leg" returns 10 hits across muscle groups; (c) flipping "Search all muscles" OFF on the Chest tab with "leg" search returns 0 as expected; (d) typing "Cable Face Pull" in the modal auto-selects Shoulders + Cable after the debounce; (e) Skip-for-now creates a `needsTagging: true` library entry with `equipment: 'Other'` and empty muscles; (f) back-navigation through `/splits` and `/dashboard` produces zero console errors. `grep -R "SplitBuilder" src/` returns nothing.
 
 ---
 

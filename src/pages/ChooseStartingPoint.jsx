@@ -6,10 +6,10 @@ import { SPLIT_TEMPLATES } from '../data/splitTemplates'
 import RestDayChip from '../components/RestDayChip'
 
 // Batch 17f — ChooseStartingPoint (/splits/new/start). Replaces the
-// zero-state drop into SplitBuilder's blank wizard. 6 opinionated template
-// cards + a Blank slate + an Import entry point. Tapping a template seeds
+// zero-state drop into a blank wizard. 6 opinionated template cards
+// + a Blank slate + an Import entry point. Tapping a template seeds
 // `splitDraft` via the `loadTemplate` action and routes to `/splits/new`
-// where SplitBuilder picks up the seeded state via its resume-banner path.
+// where SplitCanvas picks up the seeded state via its resume-banner path.
 //
 // Decisions baked in here:
 //   D2 — all 6 templates ship now (no A/B gating)
@@ -31,8 +31,8 @@ export default function ChooseStartingPoint() {
   const handlePickTemplate = (templateId) => {
     const ok = loadTemplate(templateId)
     if (!ok) return
-    // Navigate INTO the builder — the template has already been staged in
-    // `splitDraft`. SplitBuilder's mount-effect surfaces the resume banner;
+    // Navigate INTO the canvas — the template has already been staged in
+    // `splitDraft`. SplitCanvas's mount-effect surfaces the resume banner;
     // tapping Resume populates the local state. Alternatively the user can
     // Discard to start from scratch anyway.
     navigate('/splits/new')

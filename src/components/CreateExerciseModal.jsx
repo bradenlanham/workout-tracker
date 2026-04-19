@@ -1,17 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from '../data/exerciseLibrary'
+import { predictExerciseMeta } from '../utils/helpers'
 
 // Shared modal for creating a new library entry from either picker.
-// Requires primaryMuscles (≥1) and equipment per §3.2.1 so the recommender
-// and muscle-group-aware features have what they need from day one — no
-// more deferred tagging via the backfill UI for newly-created exercises.
+// Requires primaryMuscles (≥1) and equipment per §3.2.1 when the user
+// saves a "real" entry. Batch 17j adds two Step 11 affordances:
+//
+//   1. Auto-predict muscle + equipment from the name (300ms debounce).
+//      `predictExerciseMeta` does keyword-based lookup. The auto-fill
+//      stops overriding as soon as the user taps any muscle or equipment
+//      chip — we respect the manual choice after that.
+//
+//   2. "Skip for now" button — calls `onSkip({name})` so the picker can
+//      create a needsTagging:true entry and move on. The user can
+//      finish tagging later in Backfill / My Exercises.
 //
 // Props:
-//   open: boolean — show/hide
-//   initialName: string — pre-filled from what the user typed in the picker
+//   open: boolean
+//   initialName: string
 //   onSave: ({ name, primaryMuscles, equipment, defaultUnilateral }) => void
+//   onSkip: ({ name }) => void           — optional, shows the Skip button
 //   onCancel: () => void
-//   theme: getTheme(...) — for accent colors
+//   theme: getTheme(...)
 
 function Pill({ selected, onClick, children, theme }) {
   return (
@@ -28,21 +38,45 @@ function Pill({ selected, onClick, children, theme }) {
   )
 }
 
-export default function CreateExerciseModal({ open, initialName = '', onSave, onCancel, theme }) {
+export default function CreateExerciseModal({ open, initialName = '', onSave, onSkip, onCancel, theme }) {
   const [name, setName] = useState(initialName)
   const [primaryMuscles, setPrimaryMuscles] = useState([])
   const [equipment, setEquipment] = useState('')
   const [defaultUnilateral, setDefaultUnilateral] = useState(false)
 
-  // Reset state every time the modal reopens with a fresh name
+  // Once the user taps a muscle or equipment chip we stop auto-filling.
+  // Reset whenever the modal reopens with a fresh name.
+  const musclesTouched   = useRef(false)
+  const equipmentTouched = useRef(false)
+
   useEffect(() => {
     if (open) {
       setName(initialName)
       setPrimaryMuscles([])
       setEquipment('')
       setDefaultUnilateral(false)
+      musclesTouched.current   = false
+      equipmentTouched.current = false
     }
   }, [open, initialName])
+
+  // 300ms debounced auto-predict on the name. Only fills fields the user
+  // hasn't touched yet. No-op once both are touched or if no keyword matches.
+  useEffect(() => {
+    if (!open) return
+    if (musclesTouched.current && equipmentTouched.current) return
+    const t = setTimeout(() => {
+      const pred = predictExerciseMeta(name)
+      if (!pred) return
+      if (!musclesTouched.current && primaryMuscles.length === 0) {
+        setPrimaryMuscles(pred.primaryMuscles)
+      }
+      if (!equipmentTouched.current && !equipment) {
+        setEquipment(pred.equipment)
+      }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [name, open, primaryMuscles.length, equipment])
 
   if (!open) return null
 
@@ -51,10 +85,18 @@ export default function CreateExerciseModal({ open, initialName = '', onSave, on
     && primaryMuscles.length > 0
     && equipment
 
+  const canSkip = name.trim().length > 0
+
   const toggleMuscle = (m) => {
+    musclesTouched.current = true
     setPrimaryMuscles(prev =>
       prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
     )
+  }
+
+  const pickEquipment = (eq) => {
+    equipmentTouched.current = true
+    setEquipment(eq)
   }
 
   return (
@@ -95,7 +137,7 @@ export default function CreateExerciseModal({ open, initialName = '', onSave, on
         <p className="text-xs text-c-dim font-medium mb-1.5">Equipment</p>
         <div className="flex flex-wrap gap-1.5 mb-4">
           {EQUIPMENT_TYPES.map(eq => (
-            <Pill key={eq} selected={equipment === eq} onClick={() => setEquipment(eq)} theme={theme}>
+            <Pill key={eq} selected={equipment === eq} onClick={() => pickEquipment(eq)} theme={theme}>
               {eq}
             </Pill>
           ))}
@@ -124,6 +166,17 @@ export default function CreateExerciseModal({ open, initialName = '', onSave, on
         >
           Save
         </button>
+
+        {typeof onSkip === 'function' && (
+          <button
+            type="button"
+            onClick={() => canSkip && onSkip({ name: name.trim() })}
+            disabled={!canSkip}
+            className="w-full mt-2 py-2.5 rounded-xl text-xs text-c-muted disabled:opacity-40 active:text-c-secondary"
+          >
+            Skip for now — tag later
+          </button>
+        )}
       </div>
     </div>
   )

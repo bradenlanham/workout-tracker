@@ -119,7 +119,7 @@ const useStore = create(
       // accidental tab brush or OS kill. One draft at a time; starting a new
       // create overwrites any prior create-draft, and starting an edit
       // overwrites any prior edit-draft for that same split id. Stale drafts
-      // (>7 days old) are auto-cleared on SplitBuilder mount.
+      // (>7 days old) are auto-cleared on SplitCanvas mount.
       // Shape: { originalId: string | null, draft: PartialSplit, updatedAt: number } | null
       splitDraft: null,
       // Canonical exercise library. Seeded from data/exerciseLibrary.js on
@@ -165,29 +165,35 @@ const useStore = create(
       },
 
       addExerciseToLibrary: (exercise) => {
-        // Required-field validation — enforces the §3.2.1 constraint that every
-        // Exercise carries at least one primaryMuscles value and one equipment.
+        // §3.2.1 requires primaryMuscles ≥ 1 and an equipment value for a fully
+        // tagged entry. Batch 17j (Step 11) introduces the Skip-for-now path:
+        // when the caller passes `needsTagging: true` we accept empty muscles
+        // and the 'Other' equipment sentinel, producing the same shape the v3
+        // migration flags for the Backfill UI to finish later.
         if (!exercise?.name?.trim()) {
           throw new Error('addExerciseToLibrary: name required')
         }
-        if (!Array.isArray(exercise.primaryMuscles) || exercise.primaryMuscles.length === 0) {
-          throw new Error('addExerciseToLibrary: at least one primaryMuscles value required')
-        }
-        if (!exercise.equipment) {
-          throw new Error('addExerciseToLibrary: equipment required')
+        const skipTagging = exercise.needsTagging === true
+        if (!skipTagging) {
+          if (!Array.isArray(exercise.primaryMuscles) || exercise.primaryMuscles.length === 0) {
+            throw new Error('addExerciseToLibrary: at least one primaryMuscles value required')
+          }
+          if (!exercise.equipment) {
+            throw new Error('addExerciseToLibrary: equipment required')
+          }
         }
         const newEx = {
           id:                `ex_${generateId()}`,
           name:              exercise.name.trim(),
           aliases:           exercise.aliases || [],
-          primaryMuscles:    exercise.primaryMuscles,
-          equipment:         exercise.equipment,
+          primaryMuscles:    Array.isArray(exercise.primaryMuscles) ? exercise.primaryMuscles : [],
+          equipment:         exercise.equipment || 'Other',
           isBuiltIn:         false,
           defaultUnilateral: !!exercise.defaultUnilateral,
           loadIncrement:     exercise.loadIncrement    || 5,
           defaultRepRange:   exercise.defaultRepRange  || [8, 12],
           progressionClass:  exercise.progressionClass || 'isolation',
-          needsTagging:      false,
+          needsTagging:      skipTagging,
           createdAt:         new Date().toISOString(),
           ...(exercise.sessionGymTags ? { sessionGymTags: exercise.sessionGymTags } : {}),
         }

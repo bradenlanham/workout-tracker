@@ -1210,6 +1210,89 @@ export function detectAnomalies(history) {
   )
 }
 
+// ── Exercise metadata prediction (Step 11) ─────────────────────────────────
+
+// Keyword-to-meta map for the CreateExerciseModal auto-fill. Order matters:
+// the first rule whose keyword is found in the normalized name wins. Short
+// generic keywords ("row", "press", "curl") go last so the more specific
+// compound terms ("leg press", "bench press") fire first. Callers should
+// treat the result as a suggestion: tapping any muscle/equipment chip should
+// override the prediction and stop future auto-fills on the same edit.
+const EXERCISE_KEYWORD_MAP = [
+  // ── Specific compound terms first ──
+  { kw: 'leg press',          muscles: ['Quads'],       equipment: 'Machine' },
+  { kw: 'hack squat',         muscles: ['Quads'],       equipment: 'Machine' },
+  { kw: 'leg extension',      muscles: ['Quads'],       equipment: 'Machine' },
+  { kw: 'leg curl',           muscles: ['Hamstrings'],  equipment: 'Machine' },
+  { kw: 'romanian deadlift',  muscles: ['Hamstrings'],  equipment: 'Barbell' },
+  { kw: 'rdl',                muscles: ['Hamstrings'],  equipment: 'Barbell' },
+  { kw: 'deadlift',           muscles: ['Back'],        equipment: 'Barbell' },
+  { kw: 'good morning',       muscles: ['Hamstrings'],  equipment: 'Barbell' },
+  { kw: 'calf raise',         muscles: ['Calves'],      equipment: 'Machine' },
+  { kw: 'hip thrust',         muscles: ['Glutes'],      equipment: 'Barbell' },
+  { kw: 'glute bridge',       muscles: ['Glutes'],      equipment: 'Bodyweight' },
+  { kw: 'bench press',        muscles: ['Chest'],       equipment: 'Barbell' },
+  { kw: 'chest press',        muscles: ['Chest'],       equipment: 'Machine' },
+  { kw: 'chest fly',          muscles: ['Chest'],       equipment: 'Cable' },
+  { kw: 'pec dec',            muscles: ['Chest'],       equipment: 'Machine' },
+  { kw: 'pec deck',           muscles: ['Chest'],       equipment: 'Machine' },
+  { kw: 'dips',               muscles: ['Chest'],       equipment: 'Bodyweight' },
+  { kw: 'push-up',            muscles: ['Chest'],       equipment: 'Bodyweight' },
+  { kw: 'pushup',             muscles: ['Chest'],       equipment: 'Bodyweight' },
+  { kw: 'push up',            muscles: ['Chest'],       equipment: 'Bodyweight' },
+  { kw: 'lat pulldown',       muscles: ['Back'],        equipment: 'Cable' },
+  { kw: 'pulldown',           muscles: ['Back'],        equipment: 'Cable' },
+  { kw: 'pull-up',            muscles: ['Back'],        equipment: 'Bodyweight' },
+  { kw: 'pullup',             muscles: ['Back'],        equipment: 'Bodyweight' },
+  { kw: 'pull up',            muscles: ['Back'],        equipment: 'Bodyweight' },
+  { kw: 'chin-up',            muscles: ['Back'],        equipment: 'Bodyweight' },
+  { kw: 'chinup',             muscles: ['Back'],        equipment: 'Bodyweight' },
+  { kw: 'face pull',          muscles: ['Shoulders'],   equipment: 'Cable' },
+  { kw: 'lateral raise',      muscles: ['Shoulders'],   equipment: 'Dumbbell' },
+  { kw: 'front raise',        muscles: ['Shoulders'],   equipment: 'Dumbbell' },
+  { kw: 'rear delt',          muscles: ['Shoulders'],   equipment: 'Machine' },
+  { kw: 'overhead press',     muscles: ['Shoulders'],   equipment: 'Barbell' },
+  { kw: 'military press',     muscles: ['Shoulders'],   equipment: 'Barbell' },
+  { kw: 'shoulder press',     muscles: ['Shoulders'],   equipment: 'Dumbbell' },
+  { kw: 'shrug',              muscles: ['Traps'],       equipment: 'Dumbbell' },
+  { kw: 'bicep curl',         muscles: ['Biceps'],      equipment: 'Dumbbell' },
+  { kw: 'hammer curl',        muscles: ['Biceps'],      equipment: 'Dumbbell' },
+  { kw: 'preacher curl',      muscles: ['Biceps'],      equipment: 'Barbell' },
+  { kw: 'tricep pushdown',    muscles: ['Triceps'],     equipment: 'Cable' },
+  { kw: 'tricep extension',   muscles: ['Triceps'],     equipment: 'Dumbbell' },
+  { kw: 'skull crusher',      muscles: ['Triceps'],     equipment: 'Barbell' },
+  { kw: 'close grip bench',   muscles: ['Triceps'],     equipment: 'Barbell' },
+  { kw: 'plank',              muscles: ['Core'],        equipment: 'Bodyweight' },
+  { kw: 'crunch',             muscles: ['Core'],        equipment: 'Bodyweight' },
+  { kw: 'sit-up',             muscles: ['Core'],        equipment: 'Bodyweight' },
+  { kw: 'situp',              muscles: ['Core'],        equipment: 'Bodyweight' },
+  { kw: 'ab wheel',           muscles: ['Core'],        equipment: 'Other' },
+  { kw: 'leg raise',          muscles: ['Core'],        equipment: 'Bodyweight' },
+  { kw: 'russian twist',      muscles: ['Core'],        equipment: 'Bodyweight' },
+  // ── Generic compound fallbacks ──
+  { kw: 'squat',              muscles: ['Quads'],       equipment: 'Barbell' },
+  { kw: 'lunge',              muscles: ['Quads'],       equipment: 'Dumbbell' },
+  { kw: 'row',                muscles: ['Back'],        equipment: 'Cable' },
+  { kw: 'press',              muscles: ['Chest'],       equipment: 'Barbell' },
+  { kw: 'fly',                muscles: ['Chest'],       equipment: 'Cable' },
+  { kw: 'curl',               muscles: ['Biceps'],      equipment: 'Dumbbell' },
+]
+
+// Returns { primaryMuscles: string[], equipment: string } with a best-effort
+// guess. Returns null if no keyword matched so the caller can leave the
+// fields untouched and let the user pick themselves.
+export function predictExerciseMeta(name) {
+  if (typeof name !== 'string') return null
+  const n = name.toLowerCase().trim()
+  if (!n) return null
+  for (const rule of EXERCISE_KEYWORD_MAP) {
+    if (n.includes(rule.kw)) {
+      return { primaryMuscles: [...rule.muscles], equipment: rule.equipment }
+    }
+  }
+  return null
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {

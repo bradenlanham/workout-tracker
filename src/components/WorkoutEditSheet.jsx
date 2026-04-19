@@ -1,16 +1,14 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { findSimilarExercises } from '../utils/helpers'
-import { EXERCISE_LIBRARY, MUSCLE_GROUPS } from '../data/exerciseLibrary'
 import EmojiPicker from './EmojiPicker'
-import CreateExerciseModal from './CreateExerciseModal'
 import RecPill from './RecPill'
 import RecEditor from './RecEditor'
+import ExercisePicker from './ExercisePicker'
 
 // Batch 17g — WorkoutEditSheet (Step 8 of the Split Builder redesign).
-// Bottom-sheet editor for a single workout — swaps out SplitBuilder's
+// Bottom-sheet editor for a single workout — swaps out the legacy wizard's
 // WorkoutBuilder view-swap. Section labels are editable (fixes F8); sections
 // can be added, reordered (via move-up/down buttons — full drag lands later),
 // and deleted with confirm.
@@ -23,7 +21,7 @@ import RecEditor from './RecEditor'
 // REC editor is a simple string input for now — structured REC lands in
 // Step 9. The pill displays whatever shape is passed through.
 
-export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = false }) {
+export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = false, recentInSplit = [] }) {
   const settings = useStore(s => s.settings)
   const theme = getTheme(settings.accentColor)
 
@@ -252,6 +250,7 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
       {pickerSectionIdx !== null && (
         <ExercisePicker
           addedExercises={sections[pickerSectionIdx]?.exercises || []}
+          recentInSplit={recentInSplit}
           onAdd={(exName) => addExercise(pickerSectionIdx, exName)}
           onClose={() => setPickerSectionIdx(null)}
           theme={theme}
@@ -446,158 +445,3 @@ function DiscardConfirm({ onDiscard, onCancel }) {
   )
 }
 
-// ── Inline ExercisePicker (scoped to this sheet; Step 10 extracts + improves) ─
-
-function ExercisePicker({ addedExercises, onAdd, onClose, theme }) {
-  const storeLibrary       = useStore(s => s.exerciseLibrary)
-  const addExerciseToLibrary = useStore(s => s.addExerciseToLibrary)
-  const [search, setSearch] = useState('')
-  const [tab, setTab]       = useState('All')
-  const [customInput, setCustomInput] = useState('')
-  const [createOpen, setCreateOpen]   = useState(false)
-  const [pendingName, setPendingName] = useState('')
-
-  const tabs = ['All', ...MUSCLE_GROUPS]
-
-  const library = useMemo(() => {
-    const source = storeLibrary && storeLibrary.length > 0 ? storeLibrary : EXERCISE_LIBRARY
-    return source.map(e => ({
-      ...e,
-      muscleGroup: e.muscleGroup || (e.primaryMuscles && e.primaryMuscles[0]) || 'Other',
-    }))
-  }, [storeLibrary])
-
-  const filtered = library.filter(ex => {
-    const matchTab = tab === 'All' || ex.muscleGroup === tab
-    const matchSearch = !search || ex.name.toLowerCase().includes(search.toLowerCase())
-    return matchTab && matchSearch
-  })
-
-  const isAdded = (nm) => addedExercises.some(ex => (typeof ex === 'string' ? ex : ex.name) === nm)
-
-  const handleAddCustom = () => {
-    const nm = customInput.trim()
-    if (!nm) return
-    const topMatch = findSimilarExercises(nm, library, { suggestThreshold: 0.85, max: 1 })[0]
-    if (topMatch) {
-      onAdd(topMatch.exercise.name)
-      setCustomInput('')
-      return
-    }
-    setPendingName(nm)
-    setCreateOpen(true)
-  }
-
-  const handleCreateSave = (payload) => {
-    try {
-      const newEntry = addExerciseToLibrary(payload)
-      setCreateOpen(false)
-      onAdd(newEntry.name)
-      setCustomInput('')
-    } catch (err) {
-      console.warn('Exercise creation failed:', err.message)
-    }
-  }
-
-  return createPortal(
-    <div
-      className="fixed inset-0 flex flex-col bg-base max-w-lg mx-auto"
-      style={{ zIndex: 275 }}
-    >
-      <div className="px-4 pb-3 shrink-0" style={{ paddingTop: 'max(3rem, env(safe-area-inset-top, 3rem))' }}>
-        <div className="flex items-center gap-3 mb-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-9 h-9 flex items-center justify-center rounded-xl bg-card text-c-dim shrink-0"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          <h2 className="text-xl font-bold">Add Exercise</h2>
-        </div>
-        <input
-          type="text"
-          placeholder="Search exercises…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full bg-card rounded-xl px-4 py-3 text-sm outline-none placeholder:text-c-muted"
-        />
-      </div>
-
-      <div className="flex gap-2 px-4 pb-3 overflow-x-auto shrink-0" style={{ scrollbarWidth: 'none' }}>
-        {tabs.map(t => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              tab === t ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
-            }`}
-            style={tab === t ? { color: theme.contrastText } : undefined}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1.5">
-        {filtered.map(ex => {
-          const added = isAdded(ex.name)
-          return (
-            <button
-              key={ex.id || ex.name}
-              type="button"
-              onClick={() => !added && onAdd(ex.name)}
-              disabled={added}
-              className={`w-full text-left bg-card rounded-xl px-3 py-2.5 flex items-center gap-2 ${
-                added ? 'opacity-50' : 'hover:bg-item'
-              }`}
-            >
-              <span className="flex-1 text-sm">{ex.name}</span>
-              {added && <span className="text-xs text-c-muted shrink-0">Added</span>}
-            </button>
-          )
-        })}
-        {filtered.length === 0 && (
-          <p className="text-center text-c-muted text-sm pt-8">No exercises match.</p>
-        )}
-      </div>
-
-      <div className="shrink-0 border-t border-subtle p-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
-        <label className="text-xs text-c-muted font-semibold uppercase tracking-wide block mb-2">
-          Or add your own
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Exercise name"
-            value={customInput}
-            onChange={e => setCustomInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAddCustom()}
-            className="flex-1 bg-card rounded-xl px-3 py-2.5 text-sm outline-none"
-          />
-          <button
-            type="button"
-            onClick={handleAddCustom}
-            disabled={!customInput.trim()}
-            className={`px-4 py-2.5 rounded-xl font-semibold text-sm text-white disabled:opacity-40 ${theme.bg}`}
-            style={{ color: theme.contrastText }}
-          >
-            Add
-          </button>
-        </div>
-      </div>
-
-      <CreateExerciseModal
-        open={createOpen}
-        initialName={pendingName}
-        onSave={handleCreateSave}
-        onCancel={() => setCreateOpen(false)}
-        theme={theme}
-      />
-    </div>,
-    document.body
-  )
-}

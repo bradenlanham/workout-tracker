@@ -3,14 +3,14 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { generateId, formatTimeAgo } from '../utils/helpers'
+import { generateId, formatTimeAgo, normalizeExerciseName } from '../utils/helpers'
 import WorkoutEditSheet from '../components/WorkoutEditSheet'
 import EmojiPicker from '../components/EmojiPicker'
 import RestDayChip from '../components/RestDayChip'
 import { showToast } from '../components/Toast'
 
 // Batch 17g — SplitCanvas (Step 7 of the Split Builder redesign).
-// Single-canvas editor that replaces SplitBuilder's 4-step linear wizard for
+// Single-canvas editor that replaces the legacy 4-step linear wizard for
 // both /splits/new and /splits/edit/:id. The whole split (name, emoji,
 // workouts, rotation) is always visible and always editable; Save is always
 // one tap away via the sticky footer.
@@ -43,12 +43,13 @@ export default function SplitCanvas() {
   const splitDraft      = useStore(s => s.splitDraft)
   const setSplitDraft   = useStore(s => s.setSplitDraft)
   const clearSplitDraft = useStore(s => s.clearSplitDraft)
+  const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const settings        = useStore(s => s.settings)
   const theme           = getTheme(settings.accentColor)
 
   const existingSplit = isEditing ? splits.find(s => s.id === id) : null
 
-  // Normalize sections the same way SplitBuilder does so we don't regress
+  // Normalize sections the way the legacy wizard did so we don't regress
   // Batch 13's rec-preservation when loading an existing split.
   const normalizeWorkouts = (ws) => (ws || []).map(w => ({
     ...w,
@@ -88,7 +89,7 @@ export default function SplitCanvas() {
   const [isDirty, setIsDirty]             = useState(false)
 
   // Mount effect — draft detection + pre-load + banner. Auto-clear stale or
-  // orphaned drafts, same logic as SplitBuilder (Batch 17a).
+  // orphaned drafts, same logic as the legacy wizard (Batch 17a).
   useEffect(() => {
     if (!splitDraft) return
     const ageMs = Date.now() - (splitDraft.updatedAt || 0)
@@ -340,6 +341,41 @@ export default function SplitCanvas() {
     navigate('/splits')
   }
 
+  // ── Recent in this split (Step 10) ───────────────────────────────────────
+  // Library entries that already appear in a SIBLING workout of the currently-
+  // editing one. Resolution is name-based against canonical name + aliases so
+  // renamed user-created entries still match. Passed to WorkoutEditSheet →
+  // ExercisePicker so users can re-add common picks with one tap.
+  const recentInSplit = useMemo(() => {
+    if (!editingWorkoutId) return []
+    const nameToEntry = new Map()
+    for (const entry of exerciseLibrary || []) {
+      const canonical = normalizeExerciseName(entry.name)
+      if (canonical) nameToEntry.set(canonical, entry)
+      for (const alias of entry.aliases || []) {
+        const a = normalizeExerciseName(alias)
+        if (a && !nameToEntry.has(a)) nameToEntry.set(a, entry)
+      }
+    }
+    const seen = new Set()
+    const out = []
+    for (const w of workouts) {
+      if (w.id === editingWorkoutId) continue
+      for (const section of w.sections || []) {
+        for (const ex of section.exercises || []) {
+          const rawName = typeof ex === 'string' ? ex : ex?.name
+          const key = normalizeExerciseName(rawName)
+          if (!key) continue
+          const entry = nameToEntry.get(key)
+          if (!entry || seen.has(entry.id)) continue
+          seen.add(entry.id)
+          out.push(entry)
+        }
+      }
+    }
+    return out
+  }, [editingWorkoutId, workouts, exerciseLibrary])
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen pb-40">
@@ -564,6 +600,7 @@ export default function SplitCanvas() {
           isNew={isNewSheet}
           onSave={handleSaveWorkoutFromSheet}
           onClose={handleCancelWorkoutSheet}
+          recentInSplit={recentInSplit}
         />
       )}
 
