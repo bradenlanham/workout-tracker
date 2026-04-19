@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 18c — SplitCanvas redesign)
+> Last updated: April 19, 2026 (Batch 18d — WorkoutEditSheet redesign)
 
 ## Rules for Claude
 
@@ -1067,6 +1067,36 @@ Step 3 of the Split Builder polish pass (see `split-builder-polish-handoff.md` B
 287. **Live preview verification** (mobile 375×812, debug-backup.json). Edit BamBam's Blueprint: compact hero renders with pencil glyph, 5 WorkoutCards show drag handle + 10×10 emoji tile + "N exercises" count + ⋯ (first card = `Edit/Duplicate/Move down/Delete`, middle = `Edit/Duplicate/Move up/Move down/Delete`, last = `Edit/Duplicate/Move up/Delete`). YOUR WEEK section header has no inline toggle; toggle renders on own right-aligned row. ADD TO ROTATION labeled block with pills. Red accent → Save button `bg-emerald-500` (`rgb(16,185,129)`). Create mode: Activate on save toggle + Save & Activate button share one chrome card. No console errors.
 
 288. **Build.** `npx vite build --outDir /tmp/test-build` → 728.35 KB bundle (+1 KB vs 18b). Gzipped 196.59 KB.
+
+### Batch 18d (April 19, 2026) — WorkoutEditSheet redesign
+
+Step 4 of the Split Builder polish pass (see `split-builder-polish-handoff.md` Batch 18d). Halves the control count per row, folds reorder + delete into row-level ⋯ menus, and collapses each section card to a single visual surface. Keeps the full editability (section labels, emoji, rec editor, ExercisePicker) and existing z-stack unchanged.
+
+289. **Compact SectionBlock header (`WorkoutEditSheet.jsx`).** Was five controls + input: `↑ / ↓ / label / ⌄ / ×`. Now: `DragHandle / label input / collapse chevron / ⋯`. The ⋯ opens a popover (`RowOverflowMenu` below) with Move up / Move down / Delete — Move items filter out at list boundaries via null `onSelect`. Inline × delete is gone.
+
+290. **Compact exercise row.** Was `↑ / ↓ / name / RecPill / ×`. Now: `DragHandle / name-button / RecPill / ⋯`. Tapping the name button opens RecEditor (same target as tapping the RecPill itself), so the tap target is generous. ⋯ menu has Move up / Move down / Remove with boundary filtering. Row padding bumped from `py-1.5` to `py-2` for a roomier touch target now that the chevron column is gone.
+
+291. **`RowOverflowMenu` inline component (`WorkoutEditSheet.jsx`).** Generic ⋯ popover used by both section headers and exercise rows. Outside-click + Escape dismiss, viewport-aware via `getBoundingClientRect`-less absolute positioning (fits within its parent row's flex layout), z-20 local. `items` prop filters out `{ onSelect: null }` so boundary Move items don't render at all. 18e promotes this to a shared `src/components/RowOverflowMenu.jsx` with the same API — no rename planned.
+
+292. **One border per section card.** Outer `border border-subtle` + header's `border-b border-subtle` both removed. Section card is now `bg-card rounded-xl overflow-hidden`; the header's `bg-item` tint provides visual division between the header row and the body. The scrollable middle region gains a `bg-base` tint so each card reads against a subtly different background — stack reads clean without tripled border surfaces.
+
+293. **"+ Add exercise" matches dashed-border CTA style.** Was `px-2 py-2 text-left` hover-only. Now a full-width dashed-border button matching "+ Add section" and "+ Add workout" across the app.
+
+294. **Save button red-fallback (`WorkoutEditSheet.jsx`).** Same pattern as Batch 18c's SplitCanvas: `saveTheme = getTheme(accentColor === 'red' ? 'emerald' : accentColor)`. 18e extracts this to `getSaveTheme()` in `theme.js`.
+
+295. **DragHandle reuse.** The shared `src/components/DragHandle.jsx` from 18c is imported here and used in section headers + exercise rows. Decorative only — the real drag-drop plumbing lands in a future batch.
+
+296. **Live preview verification** (mobile 375×812, debug-backup.json). Edit BamBam's Blueprint → Push → the sheet renders:
+    - Each section card shows `DragHandle / label / ⌄ / ⋯` only.
+    - Each exercise row shows `DragHandle / name / Rec / ⋯`.
+    - Pec Dec's ⋯ (first exercise, first section) → `Move down / Remove` (no Move up, no Delete at exercise level).
+    - Choose 1's ⋯ (middle section) → `Move up / Move down / Delete`.
+    - Tapping `Pec Dec` name opens RecEditor at z-275 (heading `Coach's prescription`).
+    - "+ Add exercise" renders with dashed border matching "+ Add section".
+    - Red accent → `Save workout` button `bg-emerald-500` (`rgb(16,185,129)`).
+    - Console clean.
+
+297. **Build.** `npx vite build --outDir /tmp/test-build` → 728.65 KB bundle (+0.3 KB vs 18c). Gzipped 196.77 KB.
 
 ---
 

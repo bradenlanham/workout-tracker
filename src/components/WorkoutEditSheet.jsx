@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
@@ -7,6 +7,7 @@ import EmojiPicker from './EmojiPicker'
 import RecPill from './RecPill'
 import RecEditor from './RecEditor'
 import ExercisePicker from './ExercisePicker'
+import DragHandle from './DragHandle'
 
 // Batch 17g — WorkoutEditSheet (Step 8 of the Split Builder redesign).
 // Bottom-sheet editor for a single workout — swaps out the legacy wizard's
@@ -25,6 +26,10 @@ import ExercisePicker from './ExercisePicker'
 export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = false, recentInSplit = [] }) {
   const settings = useStore(s => s.settings)
   const theme = getTheme(settings.accentColor)
+  // Batch 18d — Save button follows the same red→emerald fallback as Canvas
+  // (Batch 18c) so the commit action never reads as destructive. 18e extracts
+  // this into getSaveTheme() in theme.js.
+  const saveTheme = getTheme(settings.accentColor === 'red' ? 'emerald' : settings.accentColor)
 
   // Normalize incoming sections so string/object exercises both work. We
   // preserve the original shape on save — strings stay strings unless the
@@ -198,9 +203,10 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
           />
         </div>
 
-        {/* Scrollable sections */}
+        {/* Scrollable sections. Batch 18d — bg-base tint contrasts against
+            each SectionBlock's bg-card so cards read without outer borders. */}
         <div
-          className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3"
+          className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3 bg-base"
           style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
         >
           {sections.map((sec, sIdx) => (
@@ -235,8 +241,8 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className={`w-full py-3 rounded-xl font-bold text-base text-white transition-all disabled:opacity-40 ${theme.bg}`}
-            style={{ color: theme.contrastText }}
+            className={`w-full py-3 rounded-xl font-bold text-base transition-all disabled:opacity-40 ${saveTheme.bg}`}
+            style={{ color: saveTheme.contrastText }}
           >
             Save workout
           </button>
@@ -289,6 +295,14 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
 
 // ── SectionBlock ────────────────────────────────────────────────────────────
 
+// Batch 18d — compact SectionBlock. Header was FIVE controls (up / down /
+// label input / collapse / delete); now: drag-handle + label input +
+// collapse chevron + ⋯ overflow (Move up / Move down / Delete). Each
+// exercise row was FIVE (up / down / name / rec / ×); now THREE:
+// drag-handle + name (tap to edit rec) + rec pill + ⋯ (Move up / Move
+// down / Remove). One border per card: bg-card rounded-xl overflow-hidden,
+// header tinted via bg-item (no border-bottom), outer border removed —
+// the scroll region's bg-base tint gives cards contrast without chrome.
 function SectionBlock({
   section, idx, isFirst, isLast,
   onLabelChange, onDelete, onMoveUp, onMoveDown,
@@ -299,59 +313,42 @@ function SectionBlock({
   useEffect(() => { setLabel(section.label) }, [section.label])
 
   return (
-    <div className="bg-base rounded-xl border border-subtle overflow-hidden">
-      <div className="px-3 py-2 flex items-center gap-1 border-b border-subtle bg-item">
-        <button
-          type="button"
-          onClick={onMoveUp}
-          disabled={isFirst}
-          aria-label="Move section up"
-          className="p-1.5 text-c-muted disabled:opacity-20"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
-        </button>
-        <button
-          type="button"
-          onClick={onMoveDown}
-          disabled={isLast}
-          aria-label="Move section down"
-          className="p-1.5 text-c-muted disabled:opacity-20"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-        </button>
+    <div className="bg-card rounded-xl overflow-hidden">
+      <div className="px-3 py-2.5 flex items-center gap-2 bg-item">
+        <DragHandle />
         <input
           type="text"
           value={label}
           onChange={e => setLabel(e.target.value)}
           onBlur={() => { if (label !== section.label) onLabelChange(label) }}
           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
-          className="flex-1 bg-transparent outline-none text-sm font-semibold text-c-primary min-w-0"
+          className="flex-1 bg-transparent outline-none text-sm font-semibold text-c-primary min-w-0 placeholder:text-c-muted"
           aria-label="Section label"
+          placeholder="Section name"
         />
         <button
           type="button"
           onClick={() => setCollapsed(v => !v)}
           aria-label={collapsed ? 'Expand section' : 'Collapse section'}
-          className="p-1.5 text-c-muted"
+          className="w-8 h-8 flex items-center justify-center text-c-muted hover:bg-card rounded-lg"
         >
           <svg className={`w-4 h-4 transition-transform ${collapsed ? '-rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label="Delete section"
-          className="p-1.5 text-red-400/70 hover:text-red-400"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <RowOverflowMenu
+          label="Section actions"
+          anchorClass="hover:bg-card"
+          items={[
+            ...(isFirst ? [] : [{ label: 'Move up',   onSelect: onMoveUp   }]),
+            ...(isLast  ? [] : [{ label: 'Move down', onSelect: onMoveDown }]),
+            { label: 'Delete', destructive: true, onSelect: onDelete },
+          ]}
+        />
       </div>
 
       {!collapsed && (
-        <div className="p-2 flex flex-col gap-1">
+        <div className="p-2 flex flex-col gap-0.5">
           {section.exercises.length === 0 && (
             <div className="px-3 py-2 text-xs text-c-muted italic">No exercises yet.</div>
           )}
@@ -359,47 +356,118 @@ function SectionBlock({
             const nm = typeof ex === 'string' ? ex : ex.name
             const rec = typeof ex === 'string' ? null : ex.rec
             return (
-              <div key={exIdx} className="pl-2 pr-1 py-1.5 flex items-center gap-1 rounded-lg hover:bg-item">
+              <div
+                key={exIdx}
+                className="pl-2 pr-1 py-2 flex items-center gap-2 rounded-lg hover:bg-item"
+              >
+                <DragHandle />
                 <button
                   type="button"
-                  onClick={() => onMoveExercise(exIdx, -1)}
-                  disabled={exIdx === 0}
-                  aria-label={`Move ${nm} up`}
-                  className="p-1 text-c-muted disabled:opacity-20"
+                  onClick={() => onEditRec(exIdx)}
+                  className="flex-1 text-left text-sm text-c-primary truncate min-w-0 py-0.5"
+                  aria-label={`${nm}, edit rec`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
+                  {nm}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onMoveExercise(exIdx, 1)}
-                  disabled={exIdx === section.exercises.length - 1}
-                  aria-label={`Move ${nm} down`}
-                  className="p-1 text-c-muted disabled:opacity-20"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                </button>
-                <span className="flex-1 text-sm text-c-primary truncate min-w-0">{nm}</span>
                 <RecPill rec={rec} onTap={() => onEditRec(exIdx)} />
-                <button
-                  type="button"
-                  onClick={() => onRemoveExercise(exIdx)}
-                  aria-label={`Remove ${nm}`}
-                  className="p-1 text-c-muted hover:text-red-400"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <RowOverflowMenu
+                  label={`Actions for ${nm}`}
+                  anchorClass="hover:bg-card"
+                  items={[
+                    ...(exIdx === 0 ? [] : [{ label: 'Move up',   onSelect: () => onMoveExercise(exIdx, -1) }]),
+                    ...(exIdx === section.exercises.length - 1 ? [] : [{ label: 'Move down', onSelect: () => onMoveExercise(exIdx, 1) }]),
+                    { label: 'Remove', destructive: true, onSelect: () => onRemoveExercise(exIdx) },
+                  ]}
+                />
               </div>
             )
           })}
           <button
             type="button"
             onClick={onAddExercise}
-            className="mt-1 px-2 py-2 text-left text-sm text-c-secondary hover:text-c-primary rounded-lg hover:bg-item"
+            className="mt-2 w-full py-2.5 rounded-lg border border-dashed border-subtle text-c-secondary hover:text-c-primary transition-colors text-sm font-semibold"
           >
             + Add exercise
           </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── RowOverflowMenu ─────────────────────────────────────────────────────────
+//
+// Batch 18d — generic ⋯ row-action popover used by SectionBlock for section-
+// level actions AND each exercise row. Items with `onSelect: null` are
+// filtered out so Move up / Move down can be hidden at list boundaries.
+// 18e will promote this to a shared src/components/RowOverflowMenu.jsx
+// alongside SplitCanvas's WorkoutCardMenu — same API; no rename planned.
+
+function RowOverflowMenu({ label = 'More actions', items, anchorClass = 'hover:bg-item' }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const timer = setTimeout(() => {
+      const onDocDown = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+      }
+      document.addEventListener('mousedown', onDocDown)
+      document.addEventListener('touchstart', onDocDown)
+      ref.current._cleanup = () => {
+        document.removeEventListener('mousedown', onDocDown)
+        document.removeEventListener('touchstart', onDocDown)
+      }
+    }, 0)
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      clearTimeout(timer)
+      if (ref.current?._cleanup) ref.current._cleanup()
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const visible = (items || []).filter(it => typeof it.onSelect === 'function')
+  if (visible.length === 0) return null
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`w-8 h-8 flex items-center justify-center rounded-lg text-c-muted ${anchorClass}`}
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4" aria-hidden="true">
+          <circle cx="12" cy="5"  r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="12" cy="19" r="1.8" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-9 bg-card border border-subtle rounded-xl p-1 shadow-xl z-20 min-w-[140px]"
+        >
+          {visible.map((it, i) => (
+            <button
+              key={i}
+              role="menuitem"
+              type="button"
+              onClick={() => { it.onSelect(); setOpen(false) }}
+              className={`w-full px-3 py-2 text-sm text-left rounded-lg ${
+                it.destructive
+                  ? 'text-red-400 hover:bg-red-500/10'
+                  : 'text-c-primary hover:bg-item'
+              }`}
+            >
+              {it.label}
+            </button>
+          ))}
         </div>
       )}
     </div>
