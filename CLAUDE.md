@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 20c — picker gym filter, AI coaching step 8 substep 4)
+> Last updated: April 19, 2026 (Batch 20d — gym CRUD Settings UI, AI coaching step 8 complete, v1 RELEASED)
 
 ## Rules for Claude
 
@@ -1299,6 +1299,34 @@ Third visible UI surface for Step 8 per spec §9.7 (Option A) + §3.5.3. Adds an
 
 367. **Build.** `npx vite build --outDir /tmp/test-build` → 744.15 KB bundle / 200.73 KB gzipped (+0.97 KB vs 20b, all in the filter branch + label JSX).
 
+### Batch 20d (April 19, 2026) — Gym CRUD Settings UI + orphan cleanup (AI coaching step 8 complete, v1 DONE)
+
+Final Step 8 substep. Closes out v1 of the AI Coaching Recommender per `coaching-recommender-spec-v3.pdf`. A collapsible "My Gyms" section lives under Settings → Profile Settings in `HamburgerMenu.jsx`. Before this shipped, gyms could only be created inline from the readiness overlay or the Batch 20a SessionGymPill — there was no way to rename a typo, promote a different gym to default without a visit to the logger, or delete a gym that stopped being relevant. The section renders the gym list with live session and tag counts, an inline rename path, a Set-default shortcut, and a confirm-guarded delete that strips orphan references from the exercise library so nothing points at a removed gymId.
+
+368. **`renameGym(id, newLabel)` store action (`useStore.js`).** Case-insensitive dedupe against sibling gyms (case-preserving no-op when the label already matches — tapping Rename without changing anything doesn't spuriously reject). Returns `true` if the rename committed, `false` when rejected (missing id, empty label after trim, or collision). The `set(state => ...)` block reads the current list inside the updater, so back-to-back renames in the same render don't race against each other.
+
+369. **`removeGym(id)` amended for orphan cleanup (`useStore.js`).** The existing action already dropped the gym from `settings.gyms` + reassigned `defaultGymId` to the first remaining gym when the deleted one was default. Now also walks `exerciseLibrary` and strips the removed gymId from every entry's `sessionGymTags` AND `skipGymTagPrompt` arrays. When the resulting array is empty, the field is deleted entirely (keeps the serialized shape minimal for entries that had a single tag matching the deleted gym). Historical `session.gymId` values are intentionally left untouched — they're a record of past truth, and rewriting them would silently change what exercises count under which gym when reviewed in History. No store split — a second `removeGymWithCleanup` action would have risked a caller doing the first without the second, and the cleanup is non-optional for correctness.
+
+370. **HamburgerMenu "My Gyms" section (`HamburgerMenu.jsx`).** Collapsible heading under Profile Settings (starts collapsed — Batch 16r "less is more" pattern). Heading shows `My Gyms · N` with a chevron; tap toggles. When expanded:
+    - Per-gym card with inline label + `Default` badge (accent-tinted) for the active gym.
+    - Two compact info lines: `{sessionsHit} session{s}` left-aligned, `· {taggedHit} tagged` appended when nonzero.
+    - Actions row (right-aligned): `Set default` (when not already default), `Rename`, `Delete`. Buttons are small text links at `text-xs font-semibold` so they fit cleanly at 375px — an earlier single-row layout had the Delete button clip past the viewport on gyms with all three actions visible, so the actions sit on their own line below the counts.
+    - Inline `Rename` path: tapping swaps the label for an autofocused input; Enter/blur commits via `renameGym`, Escape reverts. Duplicate-label collision surfaces a native `alert()` so the user isn't left guessing why the rename silently didn't take.
+    - `Delete` action builds a detail-rich confirm message: `Delete "{label}"? {label} has {N} past sessions and {M} tagged exercises. History stays, but exercise tags will be cleared.` Parts drop gracefully when either count is zero (pure-never-used gyms show just `Delete "{label}"?`).
+    - `+ Add a gym…` form at the bottom — identical case-insensitive dedupe path as the Batch 16n readiness overlay + Batch 20a pill. 40-char cap on both Rename and Add inputs.
+
+371. **Verified live in preview** (mobile 375×812, fresh install seeded with VASA + TR + Home Gym, defaultGymId=gym_vasa, Pec Dec tagged both gyms, Tricep Pushdown tagged TR only, Cable Fly with skipGymTagPrompt=['gym_home'], 3 synthetic sessions at VASA + 2 at TR + 0 at Home). Six scenarios pass with zero console errors:
+    (a) My Gyms heading renders `My Gyms · 3` with chevron; tapping expands + chevron flips.
+    (b) VASA row shows `3 sessions · 1 tagged` + Default badge; TR shows `2 sessions · 2 tagged` + Set default/Rename/Delete row; Home Gym shows `0 sessions` + Set default/Rename/Delete row.
+    (c) Rename VASA → `VASA Orem` via inline input + Enter: store + UI both update to `VASA Orem`, editing mode exits.
+    (d) Rename TR → `VASA Orem` (duplicate attempt): `renameGym` returns false, alert fires `"Another gym already uses that name."`, store stays `{VASA Orem, TR, Home Gym}`.
+    (e) Tap Set default on TR: `defaultGymId` flips to gym_tr, Default badge moves to TR, VASA Orem row gains a Set-default button. Add new gym "Gold's Gym" via the inline form: store grows to 4 gyms, renderedLabels include `Gold's Gym`, header count bumps `My Gyms · 4`.
+    (f) Delete Home Gym (stubbed confirm → true): row disappears, `Cable Fly.skipGymTagPrompt` is undefined after cleanup (empty array deleted), gym count back to 3. Delete VASA Orem (now not default — 3 past sessions + 1 tagged exercise): confirm message reads `Delete "VASA Orem"? VASA Orem has 3 past sessions and 1 tagged exercise. History stays, but exercise tags will be cleared.` After accept, `Pec Dec.sessionGymTags` flips from `['gym_vasa','gym_tr']` → `['gym_tr']`, Tricep Pushdown tags unchanged, 3 sessions with `gymId: 'gym_vasa'` still in the sessions array (historical truth preserved), remaining gyms `[TR, Gold's Gym]`, defaultGymId still `gym_tr`.
+
+372. **Build.** `npx vite build --outDir /tmp/test-build` → 748.61 KB bundle / 202.11 KB gzipped (+4.46 KB vs 20c, all in the HamburgerMenu section + the renameGym action + the orphan-cleanup branch on removeGym).
+
+**v1 DONE.** Every spec item from `coaching-recommender-spec-v3.pdf` that was in-scope for v1 has shipped: §2 (Layer 1 e1RM / Layer 2 %1RM / Layer 3 nudge / auto-deload), §2.5 readiness check-in, §3.2 exercise identity via exerciseLibrary, §3.3 fuzzy dedup, §3.4 equipment instance scoping, §3.5 gym tagging (data layer + session pill + recommender gym-scoping + auto-tag prompt + picker filter + CRUD Settings), §3.7 RPE plumbing (engine-side, UI reverted per user's failure-always pattern), §3.8 warmup/working auto-classify, §4 fatigue multipliers (grade × cardio × rest × gap), §4.5 anomaly detectors (plateau / regression / swing), §9.1/§9.2/§9.3/§9.4/§9.6/§9.7 all UI surfaces. Out-of-scope per plan Part 4: back-off sets, RPE re-introduction, detector threshold tuning, §8.x growth tracks.
+
 ### Batch 20a (April 19, 2026) — Session gym pill in BbLogger header (AI coaching step 8 substep 2)
 
 First visible UI surface from Step 8. Makes the gym-driven AI inferences (Machine chip auto-fill from Batch 19, incoming recommender-history scoping in 20b) visible to the user per their UX principle: "make AI inferences visible — don't hide auto-behavior." Hard requirement surfaced in the Step 8 briefing.
@@ -1351,13 +1379,9 @@ Three targeted fixes in the workout editor sheet after live-feedback on Batch 18
 
 ## Where to Go From Here
 
-### What's remaining
+### v1 shipped — nothing remaining in scope
 
-Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped, step 7 equipment instance landed in Batch 19, and **Step 8 substep 1 (data layer)** landed in Batch 20. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, the coach surfaces plateau / regression / swing banners on the exercise card, per-machine trend-fit scoping ships with a smart fallback, and the gym-tagging data layer + §3.5 helpers are now wired up for the UI substeps to consume.
-
-**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer. Batch 20a added the session gym pill. Batch 20b wired gym-scoped recommender history + gym-preferring Machine chip seed + the auto-tag-on-use prompt. Batch 20c added the opt-in "Only available at {gym}" filter to the session Add Exercise panel. Remaining substep:
-
-- **20d — Settings UI for gym CRUD.** HamburgerMenu → Settings (Profile Settings section) → "My Gyms" — add/rename/delete gyms. Guard deletion with a session-count warning. Currently gyms can only be added inline from the readiness overlay or the 20a pill popover. Should also clean up orphan references: when a gym is deleted, strip it from every exercise's sessionGymTags / skipGymTagPrompt so no dangling IDs remain. (Sessions' historical gymId references are preserved — they're a record of past truth.)
+All 8 steps of the AI Coaching Recommender v1 plan plus §3.8 auto-classify plus step 9 anomaly UI landed across Batches 14–20d. Step 7 (equipment instance) shipped in Batch 19. Step 8 (gym tagging, §3.5 + §9.7) shipped across Batches 20 + 20a + 20b + 20c + 20d — data layer, session gym pill, recommender gym-scoping + auto-tag prompt, picker filter, and Settings CRUD respectively. The coach now has every §2/§3/§4 input wired end-to-end: e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap, equipment instance, and gym. Plateau / regression / swing detectors surface on the exercise card. Users can tag exercises per gym, manage the gym list from Settings, and the picker filter honors the tags — closing the loop the user described as "eliminating all the ones that aren't available there."
 
 ### Post-v1 roadmap (explicitly deferred per plan Part 4)
 

@@ -593,14 +593,60 @@ const useStore = create(
         return id
       },
 
+      // Batch 20d: removeGym now strips the deleted gymId from every
+      // Exercise.sessionGymTags / skipGymTagPrompt array so no dangling
+      // references remain. Sessions' historical gymId values are preserved
+      // — they're a record of past truth and shouldn't be rewritten.
       removeGym: (id) => {
+        if (!id) return
         set(state => {
           const gyms = (state.settings.gyms || []).filter(g => g.id !== id)
           const defaultGymId = state.settings.defaultGymId === id
             ? (gyms[0]?.id || null)
             : state.settings.defaultGymId
-          return { settings: { ...state.settings, gyms, defaultGymId } }
+          const exerciseLibrary = (state.exerciseLibrary || []).map(ex => {
+            const hasTag  = Array.isArray(ex.sessionGymTags)    && ex.sessionGymTags.includes(id)
+            const hasSkip = Array.isArray(ex.skipGymTagPrompt) && ex.skipGymTagPrompt.includes(id)
+            if (!hasTag && !hasSkip) return ex
+            const next = { ...ex }
+            if (hasTag) {
+              const filtered = ex.sessionGymTags.filter(g => g !== id)
+              if (filtered.length) next.sessionGymTags = filtered
+              else delete next.sessionGymTags
+            }
+            if (hasSkip) {
+              const filtered = ex.skipGymTagPrompt.filter(g => g !== id)
+              if (filtered.length) next.skipGymTagPrompt = filtered
+              else delete next.skipGymTagPrompt
+            }
+            return next
+          })
+          return {
+            settings: { ...state.settings, gyms, defaultGymId },
+            exerciseLibrary,
+          }
         })
+      },
+
+      // Batch 20d: case-insensitive dedupe against other gyms. Returns true
+      // if the rename committed, false if it was rejected (duplicate label,
+      // missing id, or empty label after trim).
+      renameGym: (id, newLabel) => {
+        const clean = (newLabel || '').trim()
+        if (!id || !clean) return false
+        let committed = false
+        set(state => {
+          const gyms = state.settings.gyms || []
+          const current = gyms.find(g => g.id === id)
+          if (!current) return {}
+          if (current.label === clean) { committed = true; return {} }
+          const conflict = gyms.find(g => g.id !== id && g.label.toLowerCase() === clean.toLowerCase())
+          if (conflict) return {}
+          const next = gyms.map(g => g.id === id ? { ...g, label: clean } : g)
+          committed = true
+          return { settings: { ...state.settings, gyms: next } }
+        })
+        return committed
       },
 
       setDefaultGymId: (id) => {

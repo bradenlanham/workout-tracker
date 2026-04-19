@@ -8,12 +8,22 @@ export default function HamburgerMenu({ open, setOpen }) {
   const loc       = useLocation()
   const navigate  = useNavigate()
   const { settings, updateSettings, exportData, importData } = useStore()
+  const sessions        = useStore(s => s.sessions)
+  const exerciseLibrary = useStore(s => s.exerciseLibrary)
+  const addGym          = useStore(s => s.addGym)
+  const removeGym       = useStore(s => s.removeGym)
+  const renameGym       = useStore(s => s.renameGym)
+  const setDefaultGymId = useStore(s => s.setDefaultGymId)
   const theme     = getTheme(settings.accentColor)
   const [subScreen, setSubScreen]       = useState(null) // null | 'settings' | 'info'
   const [showDataSection, setShowDataSection] = useState(false)
   const [showTrackingInfo, setShowTrackingInfo] = useState(false)
   const [showStreakInfo, setShowStreakInfo] = useState(false)
   const [showCoachingInfo, setShowCoachingInfo] = useState(false)
+  const [showGymsSection, setShowGymsSection] = useState(false)
+  const [editingGymId, setEditingGymId] = useState(null)
+  const [editingGymLabel, setEditingGymLabel] = useState('')
+  const [newGymLabel, setNewGymLabel] = useState('')
 
   // Batch 17b — mirror the BottomNav fullscreen-flow hide predicate. The
   // HamburgerMenu opens via the Settings tab on the BottomNav, but its
@@ -27,7 +37,7 @@ export default function HamburgerMenu({ open, setOpen }) {
     path.startsWith('/splits/edit')
   if (isFullscreenFlow) return null
 
-  const close = () => { setOpen(false); setSubScreen(null); setShowDataSection(false); setShowTrackingInfo(false); setShowStreakInfo(false); setShowCoachingInfo(false) }
+  const close = () => { setOpen(false); setSubScreen(null); setShowDataSection(false); setShowTrackingInfo(false); setShowStreakInfo(false); setShowCoachingInfo(false); setShowGymsSection(false); setEditingGymId(null); setEditingGymLabel(''); setNewGymLabel('') }
   const go = (path) => { navigate(path); close() }
 
   const handleImport = () => {
@@ -229,6 +239,150 @@ export default function HamburgerMenu({ open, setOpen }) {
                             />
                           ))}
                         </div>
+                      </div>
+
+                      {/* My Gyms (Batch 20d) — collapsible gym CRUD */}
+                      <div>
+                        <button
+                          onClick={() => setShowGymsSection(v => !v)}
+                          className="w-full flex items-center justify-between py-1 text-left"
+                          aria-expanded={showGymsSection}
+                        >
+                          <span className="text-sm font-semibold text-c-primary">
+                            My Gyms
+                            {(settings.gyms?.length > 0) && (
+                              <span className="ml-2 text-xs font-normal text-c-muted tabular-nums">
+                                {settings.gyms.length}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-c-muted text-xs">{showGymsSection ? '▴' : '▾'}</span>
+                        </button>
+                        {showGymsSection && (
+                          <div className="mt-2 space-y-2">
+                            {(settings.gyms || []).length === 0 && (
+                              <p className="text-xs text-c-muted">
+                                No gyms yet. Add one below, or set a gym from the pre-session check-in.
+                              </p>
+                            )}
+                            {(settings.gyms || []).map(g => {
+                              const isDefault   = settings.defaultGymId === g.id
+                              const isEditing   = editingGymId === g.id
+                              const sessionHits = sessions.filter(s => s.gymId === g.id).length
+                              const taggedHits  = (exerciseLibrary || []).filter(
+                                ex => Array.isArray(ex.sessionGymTags) && ex.sessionGymTags.includes(g.id)
+                              ).length
+                              const handleRenameCommit = () => {
+                                const clean = editingGymLabel.trim()
+                                if (!clean || clean === g.label) { setEditingGymId(null); return }
+                                const ok = renameGym(g.id, clean)
+                                if (!ok) {
+                                  alert('Another gym already uses that name.')
+                                  return
+                                }
+                                setEditingGymId(null)
+                              }
+                              const handleDelete = () => {
+                                const parts = []
+                                if (sessionHits) parts.push(`${sessionHits} past session${sessionHits === 1 ? '' : 's'}`)
+                                if (taggedHits)  parts.push(`${taggedHits} tagged exercise${taggedHits === 1 ? '' : 's'}`)
+                                const detail = parts.length ? `\n\n${g.label} has ${parts.join(' and ')}. History stays, but exercise tags will be cleared.` : ''
+                                if (!window.confirm(`Delete "${g.label}"?${detail}`)) return
+                                removeGym(g.id)
+                              }
+                              return (
+                                <div key={g.id} className="bg-item rounded-xl px-3 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    {isEditing ? (
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        value={editingGymLabel}
+                                        onChange={e => setEditingGymLabel(e.target.value.slice(0, 40))}
+                                        onBlur={handleRenameCommit}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') handleRenameCommit()
+                                          if (e.key === 'Escape') setEditingGymId(null)
+                                        }}
+                                        className="flex-1 bg-card text-c-primary rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+                                      />
+                                    ) : (
+                                      <span className="flex-1 text-sm font-semibold text-c-primary truncate">
+                                        {g.label}
+                                      </span>
+                                    )}
+                                    {isDefault && (
+                                      <span
+                                        className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                                        style={{ backgroundColor: `${theme.hex}22`, color: theme.hex }}
+                                      >
+                                        Default
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-2 flex items-center gap-3 text-[11px] text-c-muted tabular-nums">
+                                    <span>{sessionHits} session{sessionHits === 1 ? '' : 's'}</span>
+                                    {taggedHits > 0 && <span>· {taggedHits} tagged</span>}
+                                  </div>
+                                  <div className="mt-1.5 flex items-center justify-end gap-1 text-xs font-semibold">
+                                    {!isDefault && (
+                                      <button
+                                        onClick={() => setDefaultGymId(g.id)}
+                                        className="text-c-secondary hover:text-c-primary px-2 py-1"
+                                      >
+                                        Set default
+                                      </button>
+                                    )}
+                                    {!isEditing && (
+                                      <button
+                                        onClick={() => { setEditingGymId(g.id); setEditingGymLabel(g.label) }}
+                                        className="text-c-secondary hover:text-c-primary px-2 py-1"
+                                      >
+                                        Rename
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={handleDelete}
+                                      className="text-red-400 hover:text-red-300 px-2 py-1"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            <form
+                              onSubmit={e => {
+                                e.preventDefault()
+                                const clean = newGymLabel.trim()
+                                if (!clean) return
+                                const exists = (settings.gyms || []).some(g => g.label.toLowerCase() === clean.toLowerCase())
+                                if (exists) { alert('A gym with that name already exists.'); return }
+                                addGym(clean)
+                                setNewGymLabel('')
+                              }}
+                              className="flex items-center gap-2"
+                            >
+                              <input
+                                type="text"
+                                value={newGymLabel}
+                                onChange={e => setNewGymLabel(e.target.value.slice(0, 40))}
+                                placeholder="Add a gym…"
+                                className="flex-1 bg-item text-c-primary rounded-xl px-3 py-2 text-sm placeholder-gray-500 focus:outline-none"
+                              />
+                              <button
+                                type="submit"
+                                disabled={!newGymLabel.trim()}
+                                className={`px-3 py-2 rounded-xl text-sm font-semibold ${
+                                  newGymLabel.trim() ? `${theme.bg} text-white` : 'bg-item text-c-faint'
+                                }`}
+                                style={newGymLabel.trim() ? { color: theme.contrastText } : undefined}
+                              >
+                                Add
+                              </button>
+                            </form>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
