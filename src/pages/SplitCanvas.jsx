@@ -7,7 +7,6 @@ import { generateId, formatTimeAgo, normalizeExerciseName, normalizeExerciseEntr
 import WorkoutEditSheet from '../components/WorkoutEditSheet'
 import EmojiPicker from '../components/EmojiPicker'
 import RestDayChip from '../components/RestDayChip'
-import DragHandle from '../components/DragHandle'
 import RowOverflowMenu from '../components/RowOverflowMenu'
 import { showToast } from '../components/Toast'
 
@@ -684,10 +683,10 @@ function SectionHeader({ label, expanded, onToggle, extraRight = null }) {
 }
 
 // Batch 18c — compact WorkoutCard. The up/down chevron column is gone; reorder
-// folds into the ⋯ menu (Move Up / Move Down, disabled for first/last). A
-// decorative DragHandle glyph on the left signals the row is reorderable —
-// real drag-and-drop lands later. Preview text is now a calm "N exercises"
-// count instead of the first-3-names list that was interesting but noisy.
+// folds into the ⋯ menu (Move Up / Move Down, disabled for first/last).
+// Batch 18f — the decorative DragHandle glyph on the left was removed because
+// real drag-and-drop isn't wired yet; it suggested an interaction that didn't
+// exist. Reordering goes through the ⋯ menu.
 function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, onMoveUp, onMoveDown }) {
   const previewText = useMemo(() => {
     const all = (workout.sections || []).flatMap(s =>
@@ -702,7 +701,6 @@ function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, 
   // via null onSelect.
   return (
     <div className="bg-card rounded-2xl border border-subtle p-4 flex items-center gap-3">
-      <DragHandle />
       <button
         type="button"
         onClick={onEdit}

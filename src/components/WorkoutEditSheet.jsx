@@ -7,7 +7,6 @@ import EmojiPicker from './EmojiPicker'
 import RecPill from './RecPill'
 import RecEditor from './RecEditor'
 import ExercisePicker from './ExercisePicker'
-import DragHandle from './DragHandle'
 import RowOverflowMenu from './RowOverflowMenu'
 
 // Batch 17g — WorkoutEditSheet (Step 8 of the Split Builder redesign).
@@ -309,13 +308,19 @@ function SectionBlock({
   onAddExercise, onRemoveExercise, onMoveExercise, onEditRec,
 }) {
   const [label, setLabel] = useState(section.label)
-  const [collapsed, setCollapsed] = useState(false)
+  // Batch 18f — sections with existing exercises default to collapsed so the
+  // user can see the full workout's section list at a glance without burning
+  // screen real estate. Empty sections stay expanded so the "+ Add exercise"
+  // CTA is visible immediately. Tap the whole header (or the chevron) to
+  // toggle.
+  const [collapsed, setCollapsed] = useState(() => (section.exercises || []).length > 0)
   useEffect(() => { setLabel(section.label) }, [section.label])
+
+  const exCount = (section.exercises || []).length
 
   return (
     <div className="bg-card rounded-xl overflow-hidden">
       <div className="px-3 py-2.5 flex items-center gap-2 bg-item">
-        <DragHandle />
         <input
           type="text"
           value={label}
@@ -326,10 +331,22 @@ function SectionBlock({
           aria-label="Section label"
           placeholder="Section name"
         />
+        {/* Batch 18f — exercise-count badge, shown whenever the section has
+            any exercises. Reads "3" (no label) for tight horizontal fit;
+            `aria-label` on the collapse button spells it out for AT. */}
+        {exCount > 0 && (
+          <span className="shrink-0 text-[11px] font-semibold text-c-muted tabular-nums px-1.5 py-0.5 rounded-md bg-card">
+            {exCount}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setCollapsed(v => !v)}
-          aria-label={collapsed ? 'Expand section' : 'Collapse section'}
+          aria-label={
+            collapsed
+              ? `Expand section (${exCount} exercise${exCount === 1 ? '' : 's'})`
+              : 'Collapse section'
+          }
           className="w-8 h-8 flex items-center justify-center text-c-muted hover:bg-card rounded-lg"
         >
           <svg className={`w-4 h-4 transition-transform ${collapsed ? '-rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -358,9 +375,8 @@ function SectionBlock({
             return (
               <div
                 key={exIdx}
-                className="pl-2 pr-1 py-2 flex items-center gap-2 rounded-lg hover:bg-item"
+                className="pl-3 pr-1 py-2 flex items-center gap-2 rounded-lg hover:bg-item"
               >
-                <DragHandle />
                 <button
                   type="button"
                   onClick={() => onEditRec(exIdx)}

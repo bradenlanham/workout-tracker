@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 18e — Shared split-builder primitives)
+> Last updated: April 19, 2026 (Batch 18f — WorkoutEditSheet hotfixes)
 
 ## Rules for Claude
 
@@ -96,8 +96,8 @@ src/
 │   ├── ExercisePicker.jsx      # Batch 17i — shared exercise picker extracted from WorkoutEditSheet's inline version. Adds "Recent in this split" tab (union of exercises from sibling workouts) + "Search all muscles" checkbox (default on). Drives both the Canvas sheet and any future logger surface.
 │   ├── RecPill.jsx             # Batch 17h — shared rec-display pill; renders formatRec(rec) in any supported shape
 │   ├── RecEditor.jsx           # Batch 17h — structured rec editor sheet (sets / reps / note with live preview)
-│   ├── DragHandle.jsx          # Batch 18c — shared decorative drag-handle glyph (10x18 dot grid). Signals row is reorderable; actual drag lands later. Consumed by SplitCanvas.jsx's WorkoutCard; WorkoutEditSheet pickup in 18d.
-│   └── RowOverflowMenu.jsx     # Batch 18e — shared row-level ⋯ popover. Replaces three inline implementations (SplitCanvas's WorkoutCardMenu, WorkoutEditSheet's section + exercise menus). Accepts items: [{label, onSelect, destructive?, icon?}]; null onSelect filters the item out so boundary Move up/down vanish cleanly.
+│   ├── DragHandle.jsx          # Batch 18c — shared decorative drag-handle glyph. REMOVED from usage in Batch 18f (no real drag wired; it suggested an interaction that didn't exist). Kept on disk for when DnD ships.
+│   └── RowOverflowMenu.jsx     # Batch 18e — shared row-level ⋯ popover. Batch 18f portals the panel to document.body with position:fixed so it can't be clipped by an ancestor overflow-hidden. Accepts items: [{label, onSelect, destructive?, icon?}]; null onSelect filters the item out so boundary Move up/down vanish cleanly. Auto-flips above the anchor when it would overflow the viewport bottom.
 │
 │
 └── pages/
@@ -1126,6 +1126,22 @@ Step 5 (final) of the Split Builder polish pass (see `split-builder-polish-hando
     - `src/components/RowOverflowMenu.jsx` (18e) — row-level ⋯ popover with null-filtered items + standard dismiss behaviors.
     - `src/theme.js` → `getSaveTheme()` (18e) — red→emerald safe-color routing for commit buttons.
     Also in the supporting library: `src/components/RestDayChip.jsx` (17f), `src/components/EmojiPicker.jsx` (17g), `src/components/Toast.jsx` (17e), `src/components/RecPill.jsx` + `RecEditor.jsx` (17h), `src/components/ExercisePicker.jsx` (17i). Polish loop complete.
+
+### Batch 18f (April 19, 2026) — WorkoutEditSheet hotfixes (spacing + menu clipping + DragHandle removal)
+
+Three live-feedback hotfixes on the sheet. User feedback: "you still can't see all of the exercises inside of each section … the only way to do that is to collapse another section", "when you click the three dots you also cannot view the options — it hides them depending on where you're clicking", and "I don't understand what the six pin even represents — makes me think I can hold and drag".
+
+303. **`RowOverflowMenu` portals the panel to `document.body`** (`src/components/RowOverflowMenu.jsx`). Previously the panel was `absolute right-0 top-11` inside the row's `.relative.shrink-0` wrapper — which got clipped by each section card's `overflow-hidden` (needed for the rounded corners). Rewritten to `createPortal(panel, document.body)` with `position: fixed` + computed `top / left` from the button's `getBoundingClientRect()` at open. Viewport-edge clamp at 8px horizontally. **Auto-flip above the anchor** when the menu would overflow the viewport bottom (long menus near the bottom of the sheet stay on screen). z-index 285 — above WorkoutEditSheet (270) and RecEditor (275), below discard modal (280) and toast (290). Trigger button stays in the row layout so the row's flex alignment is preserved.
+
+304. **Sections default to collapsed when they have ≥1 exercise** (`WorkoutEditSheet.jsx` `SectionBlock`). Previously all sections rendered expanded, which meant a workout with three full sections pushed "+ Add exercise" / rare exercises below the fold — and the only way to reach them was to manually collapse sibling sections first. Now `useState(() => (section.exercises || []).length > 0)`: pre-populated sections collapse on mount, empty sections stay expanded so the "+ Add exercise" CTA is immediately reachable in the new-workout flow. Tap the chevron (or the whole header visually) to expand.
+
+305. **Exercise-count badge in section header** (`WorkoutEditSheet.jsx`). A small `11px text-c-muted tabular-nums` badge (`bg-card`, rounded 6px) renders between the label input and the collapse chevron whenever `exercises.length > 0`. Users see the section contents at a glance without expanding — covers the "how much is hidden?" question collapse introduces. The collapse-button `aria-label` is now dynamic: `"Expand section (3 exercises)"` when collapsed (singular `"1 exercise"` for count=1), plain `"Collapse section"` when open — screen-reader-friendly.
+
+306. **DragHandle removed from WorkoutEditSheet + SplitCanvas WorkoutCard.** User: "I don't understand what the 6-pin represents … makes me think I can hold and drag." They're right — the component was decorative pre-reveal for drag-drop that wasn't wired. Reordering was always through the ⋯ menu's Move up / Move down. Since the handle suggested an interaction that didn't exist, it's removed from both surfaces. `src/components/DragHandle.jsx` stays on disk for when real DnD lands. Exercise row left-padding bumped `pl-2 → pl-3` to compensate for the handle's former visual indent.
+
+307. **Live preview verification** (mobile 375×812, debug-backup.json). Open Push workout: all three sections collapse with badges `3 / 3 / 7` and aria-labels spelling out counts. No drag handles in sheet (0/0 SVG matches for the `10×18` glyph), none in Canvas WorkoutCards either. Tap Pec Dec's ⋯ → portal menu renders at `z:285`, top=353, bottom=443 (viewport 812) — fully visible, not clipped, items `Move down / Remove`. No console errors.
+
+308. **Build.** `npx vite build --outDir /tmp/test-build` → 727.32 KB bundle (+0.2 KB vs 18e, accounted for by the portal + flip logic). Gzipped 196.74 KB.
 
 ---
 
