@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 18a — polish hotfix: exercise data loss + sheet scroll containment)
+> Last updated: April 19, 2026 (Batch 18b — SplitManager redesign)
 
 ## Rules for Claude
 
@@ -74,6 +74,11 @@ src/
 │                              #   normalizer used by SplitCanvas + WorkoutEditSheet. Accepts
 │                              #   string / {name} / {name, rec} / {exercise} and returns the
 │                              #   smallest renderable shape or null for truly nameless entries.
+│                              # getSplitSessionCount, getSplitLastUsedDate: Batch 18b — split
+│                              #   usage stats for the SplitManager card. Pure, session-slice input.
+│                              # formatRelativeDate(iso), formatStartDate(isoOrDateStr): Batch 18b —
+│                              #   SplitCard date formatters. formatStartDate local-parses
+│                              #   date-only strings to avoid the Batch 16k timezone drift.
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -1007,6 +1012,34 @@ Step 1 of the Split Builder polish pass (see `split-builder-polish-handoff.md` P
 266. **Live preview verification.** Seeded BamBam's Blueprint → Push → Primary with 4 entries including a `{exercise: 'Legacy Decline Row'}` malformed shape that 17g would have dropped. All 4 entries render in the sheet (DOM positions captured at 290 / 328 / 366 / 404 px). Dev-mode `console.warn` is silent on clean data; fires correctly on synthetic nameless entries (`{rec: '3x10'}` and `{name: '', rec: '3x10'}` tests). Real-data backup shows 0 recovered entries (no malformation in the test dataset) and 0 regressions. Restored Primary to its canonical 3-entry state before commit.
 
 267. **Build.** `npx vite build --outDir /tmp/test-build` → 723.17 KB bundle (+0.2 KB vs 17k, all in the helper). Gzipped size unchanged at 194.88 KB.
+
+### Batch 18b (April 19, 2026) — SplitManager redesign
+
+Step 2 of the Split Builder polish pass (see `split-manager-handoff.md` — authoritative; supersedes the 18b section of `split-builder-polish-handoff.md`). Redesigns `/splits` against the approved preview at `split-builder-polish-preview.html`. No store changes, no persist bump, no route changes — pure UI rewrite + 4 new pure helpers.
+
+268. **`SplitCard` rewrite (`SplitManager.jsx`).** Single 38×38 brand emoji tile (was 3 emojis — tile + rotation preview row + per-workout pills). Removed the workout-name list on each card (was wrapping mid-phrase on typical names like "Push 2"). Title is 18px/700/-0.02em with `white-space: nowrap; text-overflow: ellipsis` so it truncates instead of wrapping. Meta line at 12.5px pluralizes ("1 session" / "N sessions") and uses tabular-nums. Card geometry pinned per the preview: `border-radius: 18px`, `padding: 16px 18px 14px 18px`, `margin-bottom: 10px`.
+
+269. **Two-row status/lifespan block.** Row 1 — usage stat (left, always: `47 sessions · last today` / `Not yet used`) + status/CTA (right, always: `● Active` pill for the active card, `Set active ›` for all others). Row 2 — provenance (`Started March 22, 2026` when the split has sessions, `Created April 12, 2026` for never-used splits). Column scan works cleanly down the list: usage-always-left, status-or-CTA-always-right.
+
+270. **Subtle active treatment.** Accent-gradient background wash (`linear-gradient(135deg, {accent}14 0%, {accent}00 55%)`) + 3px left accent bar (positioned `absolute top-3 bottom-3`, via rendered `<div>` since Tailwind can't render `::before` with a CSS variable color) + accent-rimmed 38×38 tile (`{accent}2e → {accent}0a` gradient, border `{accent}5c`) + accent-tinted border-top separator (`{accent}26`) + outer ring (`0 0 0 1px {accent}2e`). `ActivePill` uses Tailwind `animate-ping` for the dot's ring-expansion pulse (NOT `animate-pulse` — that's an opacity fade). Replaces Batch 17c's filled-accent card which shouted too loudly.
+
+271. **Helpers added (`helpers.js`).** Four pure functions, no store coupling:
+    - `getSplitSessionCount(sessions, split)` → bb-mode session count where `session.type` matches any `split.workouts[].id`.
+    - `getSplitLastUsedDate(sessions, split)` → most-recent such session's ISO date, or null.
+    - `formatRelativeDate(iso)` → `last today` / `yesterday` / `N days ago` / `last week` / `N weeks ago` / `N months ago` / `over a year ago`. Uses local-timezone day boundaries (Batch 16k pattern).
+    - `formatStartDate(isoOrDateStr)` → `"March 22, 2026"`. Accepts both ISO timestamps and date-only strings (`'2026-03-22'`), parsing date-only as local midnight (`'…T00:00:00'`) to avoid rendering "March 21" in negative timezones.
+
+272. **Topbar `+` promoted to filled accent button.** Was a transparent icon from Batch 17c; now a `bg-item` + `border-subtle` button with the glyph itself rendered in `theme.hex`. Now the sole split-creation entry point — the dashed `+ New split` bottom CTA is deleted.
+
+273. **Redundant heading removed.** Dropped the large `<h2>My Splits</h2>` under the topbar (topbar already renders the title at 16px/600). The subtitle shrinks to `text-[11.5px]` + `whitespace-nowrap` so the whole message `"Your active split drives the rotation on the dashboard."` fits on one line at a 380px viewport. Persistent "built-in split tip" card from 17c also removed — list stays clean.
+
+274. **Card tap → edit (was → activate).** Per the new spec (handoff section 6), tapping anywhere on the card body navigates to `/splits/edit/:id` (SplitCanvas). Activation now has its own explicit affordance — the right-side `Set active ›` button on inactive cards. Matches user intent: when you tap a split with its own CTA, you're more likely intending to dig in than to swap the active-split context.
+
+275. **Overflow menu preserved.** Same `OverflowMenu` portal pattern from 17c (z-60, outside-click + Escape dismiss, viewport-edge clamp) + same 5 items (Set Active / Edit / Duplicate / Export / Delete) conditional on active-state + built-in-state. The ⋯ button itself is repositioned inside the new card's top-right but the menu behavior is unchanged. Duplicate still fires `showToast` with 5s undo via Batch 17e.
+
+276. **Live preview verification** (mobile 375×812, debug-backup.json). Seven split cards render with correct brand tiles, titles, meta lines, usage stats, provenance dates. BamBam's Blueprint renders with `23 sessions · 4 days ago` + `Started March 22, 2026`. Brazil Body Plan (never used) renders `Not yet used` + `Created March 22, 2026`. Title truncation confirmed on `BamBam's Blueprint (C…)`. Scenarios pass: (a) tap inactive card → `/splits/edit/{id}`; (b) tap `Set active ›` → activates without navigating; (c) ⋯ on active built-in → `Edit / Duplicate / Export` (3 items); (d) ⋯ on inactive non-built-in → all 5 items; (e) topbar `+` → `/splits/new/start`; (f) accent swap to red → active pill + left bar + topbar `+` all turn red. No console errors.
+
+277. **Build.** `npx vite build --outDir /tmp/test-build` → 727.36 KB bundle (+4.2 KB vs 18a, accounted for by the 4 helpers + the inline-styled active-card treatment). Gzipped 196.18 KB.
 
 ---
 

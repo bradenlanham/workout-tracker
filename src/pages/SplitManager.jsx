@@ -1,9 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
+import {
+  getSplitSessionCount,
+  getSplitLastUsedDate,
+  formatRelativeDate,
+  formatStartDate,
+} from '../utils/helpers'
 import { showToast } from '../components/Toast'
+
+// Batch 18b — SplitManager redesign. Single brand emoji tile, typographically-led
+// card, subtle active treatment with 3px left bar + accent wash + animate-ping dot.
+// Topbar "+" is the sole creation entry; dashed bottom CTA removed. See
+// split-manager-handoff.md for the authoritative spec.
 
 // ── Export helper ──────────────────────────────────────────────────────────────
 
@@ -66,19 +77,14 @@ function ImportError({ message, onDismiss }) {
 }
 
 // ── Overflow menu ─────────────────────────────────────────────────────────────
-//
-// Batch 17c — portal-anchored popover below the ⋯ button. Items are conditional
-// on split type (Set Active hidden when already active; Delete hidden for
-// built-in splits). Dismiss on outside click or Esc. Same pattern the app
-// already uses for PlateConfigPopover — z-60 sits above the page but below
-// toast (Step 5 will claim z-290) and below every established sheet/modal.
+// Portal-anchored popover below the ⋯ button. Items are conditional on split
+// type (Set Active hidden when already active; Delete hidden for built-ins).
+// Dismiss on outside click or Esc. z-60 sits above page content, below toast.
 
 function OverflowMenu({ anchorRect, items, onClose }) {
   const menuRef = useRef(null)
 
   useEffect(() => {
-    // Close on outside mousedown / touchstart. Deferred to the next tick so
-    // the opening click itself doesn't immediately dismiss.
     const timer = setTimeout(() => {
       const onDocDown = (e) => {
         if (menuRef.current && !menuRef.current.contains(e.target)) onClose()
@@ -101,8 +107,6 @@ function OverflowMenu({ anchorRect, items, onClose }) {
 
   if (!anchorRect) return null
 
-  // Position: right-edge aligned to the anchor, below it, 6px gap. If it would
-  // overflow the viewport right edge, pin to the right with an 8px margin.
   const MENU_W = 176
   const GAP    = 6
   let top  = anchorRect.bottom + GAP
@@ -140,7 +144,7 @@ function OverflowMenu({ anchorRect, items, onClose }) {
   )
 }
 
-// Tiny inline SVG icon set — no icon library needed for five items.
+// Tiny inline SVG icon set.
 const IconStar = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" strokeLinejoin="round" />
@@ -169,138 +173,162 @@ const IconTrash = (
   </svg>
 )
 
-// ── Split card ─────────────────────────────────────────────────────────────────
-//
-// Batch 17c — tap-anywhere-on-card activates the split (decision D4). The
-// previous inline "Set Active" / "Edit" / Export / Delete buttons are folded
-// into a single ⋯ overflow menu. Card root is a div+role="button" so the
-// nested ⋯ trigger remains valid HTML.
+// ── ActivePill ────────────────────────────────────────────────────────────────
+// Tailwind animate-ping gives us the ring-expansion pulse without a custom
+// keyframe. Not animate-pulse (that's an opacity fade — wrong effect).
 
-function SplitCard({ split, isActive, onActivate, onEdit, onDuplicate, onDelete, onExport, theme }) {
-  const workoutCount = split.workouts?.length || 0
-  const rotationLength = split.rotation?.length || 0
+function ActivePill({ theme }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 py-[3px] px-2 rounded-full border text-[10px] font-bold tracking-[0.12em] uppercase shrink-0"
+      style={{
+        background: `${theme.hex}24`,
+        borderColor: `${theme.hex}5c`,
+        color: theme.hex,
+      }}
+    >
+      <span className="relative inline-block w-[6px] h-[6px] shrink-0">
+        <span
+          className="absolute inset-0 rounded-full animate-ping"
+          style={{ background: theme.hex, opacity: 0.6 }}
+        />
+        <span
+          className="relative block w-full h-full rounded-full"
+          style={{ background: theme.hex }}
+        />
+      </span>
+      Active
+    </span>
+  )
+}
 
-  const [menuAnchor, setMenuAnchor] = useState(null)
+// ── SplitCard ─────────────────────────────────────────────────────────────────
+// Inline-styled where theme.hex-derived alpha is needed; everything else
+// Tailwind. Card tap → edit (SplitCanvas). Overflow ⋯ + "Set active ›" both
+// stopPropagation.
+
+function SplitCard({
+  split, isActive, theme,
+  sessionCount, lastUsedIso,
+  onOpen, onSetActive, onOverflow,
+}) {
   const overflowBtnRef = useRef(null)
 
-  const rotationPreview = split.rotation
-    ? (() => {
-        const preview = split.rotation.slice(0, 5).map(id => {
-          if (id === 'rest') return '😴'
-          const w = split.workouts?.find(w => w.id === id)
-          return w?.emoji || '🏋️'
-        })
-        if (split.rotation.length > 5) preview.push('…')
-        return preview
-      })()
-    : []
+  const meta = `${split.workouts.length} workout${split.workouts.length === 1 ? '' : 's'} · ${split.rotation.length}-day rotation`
+  const usage = sessionCount === 0
+    ? 'Not yet used'
+    : `${sessionCount} ${sessionCount === 1 ? 'session' : 'sessions'} · ${formatRelativeDate(lastUsedIso)}`
+  const provenanceLabel = sessionCount === 0 ? 'Created' : 'Started'
+  const provenanceDate = formatStartDate(split.createdAt)
+  const provenance = provenanceDate ? `${provenanceLabel} ${provenanceDate}` : ''
+
+  const activeCardStyle = isActive ? {
+    background: `linear-gradient(135deg, ${theme.hex}14 0%, ${theme.hex}00 55%), var(--bg-card, #141417)`,
+    borderColor: `${theme.hex}40`,
+    boxShadow: `0 1px 0 rgba(255,255,255,0.02) inset, 0 10px 30px rgba(0,0,0,0.45), 0 0 0 1px ${theme.hex}2e`,
+  } : {}
+
+  const activeTileStyle = isActive ? {
+    background: `linear-gradient(145deg, ${theme.hex}2e, ${theme.hex}0a)`,
+    borderColor: `${theme.hex}5c`,
+  } : {}
+
+  const activeBorderTopStyle = isActive ? { borderTopColor: `${theme.hex}26` } : {}
 
   const openMenu = (e) => {
     e.stopPropagation()
     const rect = overflowBtnRef.current?.getBoundingClientRect()
-    if (rect) setMenuAnchor({ top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right })
+    if (rect) onOverflow(split.id, rect)
   }
 
-  const handleCardActivate = () => { if (!isActive) onActivate() }
   const handleKey = (e) => {
-    if (isActive) return
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate() }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(split.id) }
   }
-
-  const menuItems = [
-    ...(isActive ? [] : [{ label: 'Set Active', icon: IconStar,   onSelect: onActivate }]),
-    { label: 'Edit',       icon: IconPencil, onSelect: onEdit       },
-    { label: 'Duplicate',  icon: IconCopy,   onSelect: onDuplicate  },
-    { label: 'Export',     icon: IconExport, onSelect: onExport     },
-    ...(split.isBuiltIn ? [] : [{ label: 'Delete', icon: IconTrash, destructive: true, onSelect: onDelete }]),
-  ]
 
   return (
-    <>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handleCardActivate}
-        onKeyDown={handleKey}
-        aria-pressed={isActive}
-        aria-label={isActive ? `${split.name}, currently active` : `Activate ${split.name}`}
-        className={`bg-card rounded-2xl p-4 transition-all overflow-hidden cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 ${theme.ring} ${
-          isActive ? '' : 'active:bg-hover'
-        }`}
-        style={isActive ? { borderLeft: `4px solid ${theme.hex}` } : { borderLeft: '4px solid transparent' }}
-      >
-        {/* Header row with ⋯ overflow trigger */}
-        <div className="flex items-start gap-3 mb-3">
-          <span className="text-3xl leading-none mt-0.5">{split.emoji}</span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-bold text-base leading-tight">{split.name}</p>
-              {isActive && (
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${theme.bgSubtle} ${theme.text}`}>
-                  Active
-                </span>
-              )}
-              {split.isBuiltIn && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-item text-c-dim">
-                  Built-in
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-c-muted mt-1">
-              {workoutCount} workout{workoutCount !== 1 ? 's' : ''} · {rotationLength}-day rotation
-            </p>
-          </div>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(split.id)}
+      onKeyDown={handleKey}
+      aria-label={isActive ? `${split.name}, currently active. Tap to edit.` : `Edit ${split.name}`}
+      className="relative bg-card border border-subtle rounded-[18px] px-[18px] pt-[16px] pb-[14px] mb-[10px] cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2"
+      style={{ ...activeCardStyle, ...(isActive ? {} : { boxShadow: 'var(--shadow-card, 0 1px 2px rgba(0,0,0,0.1))' }) }}
+    >
+      {/* Left accent bar — active only */}
+      {isActive && (
+        <div
+          aria-hidden="true"
+          className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r"
+          style={{ background: theme.hex }}
+        />
+      )}
 
-          {/* Overflow trigger — stopPropagation so card tap doesn't fire */}
-          <button
-            ref={overflowBtnRef}
-            type="button"
-            onClick={openMenu}
-            aria-label={`More actions for ${split.name}`}
-            aria-haspopup="menu"
-            aria-expanded={!!menuAnchor}
-            className="shrink-0 w-9 h-9 -mt-1 -mr-1 flex items-center justify-center rounded-xl text-c-muted hover:bg-item transition-colors"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-              <circle cx="12" cy="5" r="1.8" />
-              <circle cx="12" cy="12" r="1.8" />
-              <circle cx="12" cy="19" r="1.8" />
-            </svg>
-          </button>
+      {/* Top row: tile + identity + overflow */}
+      <div className="flex items-start gap-3">
+        <div
+          className="w-[38px] h-[38px] rounded-[10px] bg-item border border-subtle flex items-center justify-center text-[19px] shrink-0"
+          style={activeTileStyle}
+          aria-hidden="true"
+        >
+          {split.emoji}
         </div>
 
-        {/* Rotation preview as emoji chips */}
-        {rotationPreview.length > 0 && (
-          <div className="flex items-center gap-1 mb-3">
-            {rotationPreview.map((em, i) => (
-              <span key={i} className="text-base leading-none">{em}</span>
-            ))}
-            {rotationPreview.length > 1 && (
-              <span className="text-xs text-c-faint ml-0.5">rotation</span>
-            )}
+        <div className="flex-1 min-w-0 pt-0.5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-[18px] font-bold tracking-[-0.02em] text-c-primary leading-[1.15] truncate">
+                {split.name}
+              </div>
+              <div className="text-[12.5px] text-c-dim mt-0.5 tabular-nums leading-[1.2]">
+                {meta}
+              </div>
+            </div>
+            <button
+              ref={overflowBtnRef}
+              type="button"
+              onClick={openMenu}
+              aria-label={`More actions for ${split.name}`}
+              aria-haspopup="menu"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-c-muted text-base -mt-0.5 shrink-0 hover:bg-item transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4" aria-hidden="true">
+                <circle cx="5"  cy="12" r="1.8" />
+                <circle cx="12" cy="12" r="1.8" />
+                <circle cx="19" cy="12" r="1.8" />
+              </svg>
+            </button>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* Workout chips */}
-        {split.workouts && split.workouts.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {split.workouts.map(w => (
-              <span key={w.id} className="text-xs bg-item text-c-secondary px-2 py-1 rounded-lg">
-                {w.emoji} {w.name}
-              </span>
-            ))}
+      {/* Bottom block */}
+      <div
+        className="mt-[10px] pt-[9px] border-t border-subtle flex flex-col"
+        style={activeBorderTopStyle}
+      >
+        <div className="flex items-center justify-between gap-2.5 leading-[1.2]">
+          <span className="text-[12px] text-c-dim tabular-nums truncate">{usage}</span>
+          {isActive
+            ? <ActivePill theme={theme} />
+            : (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onSetActive(split.id) }}
+                className="text-[12px] text-c-muted font-medium shrink-0 hover:text-c-secondary transition-colors"
+              >
+                Set active ›
+              </button>
+            )
+          }
+        </div>
+        {provenance && (
+          <div className="text-[11px] text-c-muted tabular-nums leading-[1.2] mt-px">
+            {provenance}
           </div>
         )}
       </div>
-
-      {menuAnchor && (
-        <OverflowMenu
-          anchorRect={menuAnchor}
-          items={menuItems}
-          onClose={() => setMenuAnchor(null)}
-        />
-      )}
-    </>
+    </div>
   )
 }
 
@@ -308,24 +336,37 @@ function SplitCard({ split, isActive, onActivate, onEdit, onDuplicate, onDelete,
 
 export default function SplitManager() {
   const navigate = useNavigate()
-  const {
-    splits, activeSplitId,
-    setActiveSplit, duplicateSplit, removeSplitById, deleteSplit, addSplit, settings,
-  } = useStore()
-  const theme = getTheme(settings.accentColor)
+  const splits           = useStore(s => s.splits)
+  const sessions         = useStore(s => s.sessions)
+  const activeSplitId    = useStore(s => s.activeSplitId)
+  const setActiveSplit   = useStore(s => s.setActiveSplit)
+  const duplicateSplit   = useStore(s => s.duplicateSplit)
+  const removeSplitById  = useStore(s => s.removeSplitById)
+  const deleteSplit      = useStore(s => s.deleteSplit)
+  const addSplit         = useStore(s => s.addSplit)
+  const settings         = useStore(s => s.settings)
+  const theme            = getTheme(settings.accentColor)
 
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [importError, setImportError] = useState(null)
+  const [importError, setImportError]     = useState(null)
+  const [menuFor, setMenuFor]             = useState(null) // { splitId, rect }
   const importRef = useRef(null)
 
-  const handleEdit = (split) => {
-    navigate(`/splits/edit/${split.id}`)
-  }
+  // Precompute usage per split once per render.
+  const usageBySplitId = useMemo(() => {
+    const map = {}
+    for (const split of splits) {
+      map[split.id] = {
+        sessionCount: getSplitSessionCount(sessions, split),
+        lastUsedIso:  getSplitLastUsedDate(sessions, split),
+      }
+    }
+    return map
+  }, [splits, sessions])
 
-  // Duplicate stays on the list view — users see the new "(Copy)" entry
-  // appear in place rather than being yanked into the builder. Toast offers
-  // a 5s undo window (Batch 17e). If they want to edit the duplicate, that's
-  // a tap away via its own overflow menu.
+  const handleOpen       = (id) => navigate(`/splits/edit/${id}`)
+  const handleSetActive  = (id) => setActiveSplit(id)
+
   const handleDuplicate = (split) => {
     const dup = duplicateSplit(split.id)
     if (dup) {
@@ -364,35 +405,57 @@ export default function SplitManager() {
     e.target.value = ''
   }
 
+  const openMenu = (splitId, rect) => setMenuFor({ splitId, rect })
+  const closeMenu = () => setMenuFor(null)
+
+  const menuSplit = menuFor ? splits.find(s => s.id === menuFor.splitId) : null
+  const menuItems = menuSplit ? [
+    ...(menuSplit.id === activeSplitId ? [] : [{ label: 'Set Active', icon: IconStar, onSelect: () => setActiveSplit(menuSplit.id) }]),
+    { label: 'Edit',      icon: IconPencil, onSelect: () => navigate(`/splits/edit/${menuSplit.id}`) },
+    { label: 'Duplicate', icon: IconCopy,   onSelect: () => handleDuplicate(menuSplit) },
+    { label: 'Export',    icon: IconExport, onSelect: () => exportSplit(menuSplit) },
+    ...(menuSplit.isBuiltIn ? [] : [{ label: 'Delete', icon: IconTrash, destructive: true, onSelect: () => setConfirmDelete(menuSplit) }]),
+  ] : []
+
   return (
     <div className="min-h-screen pb-36">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div
-        className="sticky top-0 bg-base z-30 px-4 pb-4"
-        style={{ paddingTop: 'max(3rem, env(safe-area-inset-top, 3rem))' }}
+        className="sticky top-0 bg-base z-30 px-5 pb-2"
+        style={{ paddingTop: 'max(3.5rem, env(safe-area-inset-top, 3.5rem))' }}
       >
-        <div className="flex items-center gap-3 mb-1" style={{ paddingRight: '3.5rem' }}>
+        <div className="flex items-center justify-between gap-3 pb-2.5">
           <button
             onClick={() => navigate(-1)}
-            className="w-9 h-9 flex items-center justify-center rounded-xl bg-card text-c-dim shrink-0"
+            aria-label="Back"
+            className="w-9 h-9 flex items-center justify-center rounded-[10px] bg-item border border-subtle text-c-secondary text-lg"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className="text-2xl font-bold">My Splits</h1>
+          <h1 className="text-base font-semibold tracking-[-0.01em]">My Splits</h1>
 
-          <button
-            onClick={() => importRef.current?.click()}
-            className="ml-auto flex items-center gap-1.5 bg-item text-c-secondary text-sm font-semibold px-3 py-2 rounded-xl hover:bg-hover transition-colors"
-            title="Import a split from file"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            Import
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => importRef.current?.click()}
+              aria-label="Import a split from file"
+              className="w-9 h-9 rounded-[10px] bg-item border border-subtle flex items-center justify-center text-c-secondary"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </button>
+            <Link
+              to="/splits/new/start"
+              aria-label="New split"
+              className="w-9 h-9 rounded-[10px] bg-item border border-subtle flex items-center justify-center text-[20px] font-medium"
+              style={{ color: theme.hex }}
+            >
+              +
+            </Link>
+          </div>
           <input
             ref={importRef}
             type="file"
@@ -401,14 +464,17 @@ export default function SplitManager() {
             onChange={handleImport}
           />
         </div>
-        {/* Batch 17c — copy updated to match the tap-activates / overflow-edits model. */}
-        <p className="text-sm text-c-muted ml-12">
-          Tap a split to activate it. Use <span className="font-semibold text-c-secondary">⋯</span> for more actions.
+      </div>
+
+      {/* ── Subtitle ─────────────────────────────────────────────────────── */}
+      <div className="pt-1 px-5 pb-3">
+        <p className="text-[11.5px] text-c-dim leading-[1.5] whitespace-nowrap">
+          Your active split drives the rotation on the dashboard.
         </p>
       </div>
 
       {/* ── Split list ──────────────────────────────────────────────────────── */}
-      <div className="px-4 space-y-3">
+      <div className="px-5">
         {splits.length === 0 && (
           <div className="text-center py-16">
             <p className="text-4xl mb-3">🏋️</p>
@@ -416,38 +482,32 @@ export default function SplitManager() {
           </div>
         )}
 
-        {splits.length === 1 && splits[0]?.isBuiltIn && (
-          <div className="bg-card rounded-2xl px-4 py-4 text-sm text-c-muted flex items-start gap-3">
-            <span className="text-xl leading-none mt-0.5">💡</span>
-            <p>You're using BamBam's Blueprint. Create your own split or import one from a coach or friend!</p>
-          </div>
-        )}
-
-        {splits.map(split => (
-          <SplitCard
-            key={split.id}
-            split={split}
-            isActive={split.id === activeSplitId}
-            theme={theme}
-            onActivate={() => setActiveSplit(split.id)}
-            onEdit={() => handleEdit(split)}
-            onDuplicate={() => handleDuplicate(split)}
-            onDelete={() => setConfirmDelete(split)}
-            onExport={() => exportSplit(split)}
-          />
-        ))}
+        {splits.map(split => {
+          const usage = usageBySplitId[split.id] || { sessionCount: 0, lastUsedIso: null }
+          return (
+            <SplitCard
+              key={split.id}
+              split={split}
+              isActive={split.id === activeSplitId}
+              theme={theme}
+              sessionCount={usage.sessionCount}
+              lastUsedIso={usage.lastUsedIso}
+              onOpen={handleOpen}
+              onSetActive={handleSetActive}
+              onOverflow={openMenu}
+            />
+          )
+        })}
       </div>
 
-      {/* ── Create new split ────────────────────────────────────────────────── */}
-      <div className="px-4 mt-4">
-        <button
-          onClick={() => navigate('/splits/new/start')}
-          className={`w-full py-4 rounded-2xl border-2 border-dashed font-semibold flex items-center justify-center gap-2 transition-colors ${theme.border} ${theme.text} hover:${theme.bgSubtle}`}
-        >
-          <span className="text-xl leading-none">+</span>
-          Create New Split
-        </button>
-      </div>
+      {/* ── Overflow menu ────────────────────────────────────────────────────── */}
+      {menuFor && (
+        <OverflowMenu
+          anchorRect={menuFor.rect}
+          items={menuItems}
+          onClose={closeMenu}
+        />
+      )}
 
       {/* ── Confirm delete modal ────────────────────────────────────────────── */}
       {confirmDelete && (

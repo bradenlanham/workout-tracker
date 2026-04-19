@@ -57,6 +57,69 @@ export function formatTimeAgo(tsOrIso) {
   return formatDate(new Date(ts).toISOString())
 }
 
+// Batch 18b — split-card date helpers.
+//
+// `formatRelativeDate` powers the SplitManager card's usage line
+// ("47 sessions · last today" / "…last 3 weeks ago"). Uses local-timezone
+// day boundaries, not UTC — Batch 16k learned this the hard way.
+export function formatRelativeDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const dayOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.floor((dayOf(now) - dayOf(d)) / 86_400_000)
+  if (days <= 0) return 'last today'
+  if (days === 1) return 'yesterday'
+  if (days < 7)   return `${days} days ago`
+  if (days < 14)  return 'last week'
+  if (days < 30)  return `${Math.floor(days / 7)} weeks ago`
+  if (days < 365) return `${Math.floor(days / 30)} months ago`
+  return 'over a year ago'
+}
+
+// Batch 18b — formats a date for the SplitCard provenance line
+// ("March 22, 2026"). Accepts either an ISO timestamp or a date-only
+// string (`'2026-03-22'`). Date-only strings are parsed as local midnight
+// (not UTC) so a US user doesn't see "March 21" the day after they
+// created the split.
+export function formatStartDate(isoOrDateStr) {
+  if (!isoOrDateStr) return ''
+  const s = String(isoOrDateStr)
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s)
+    ? new Date(s + 'T00:00:00')
+    : new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+}
+
+// Batch 18b — split usage helpers used by the SplitManager card.
+// Pure, no store coupling; caller passes the store slice directly.
+//
+// `getSplitSessionCount` counts bb-mode sessions whose `type` matches any
+// workout id belonging to the split. `getSplitLastUsedDate` returns the
+// most recent such session's ISO date or null if never used.
+export function getSplitSessionCount(sessions, split) {
+  if (!Array.isArray(sessions) || !split?.workouts) return 0
+  const workoutIds = new Set(split.workouts.map(w => w.id))
+  let n = 0
+  for (const s of sessions) {
+    if (s?.mode === 'bb' && workoutIds.has(s.type)) n++
+  }
+  return n
+}
+
+export function getSplitLastUsedDate(sessions, split) {
+  if (!Array.isArray(sessions) || !split?.workouts) return null
+  const workoutIds = new Set(split.workouts.map(w => w.id))
+  let latest = null
+  for (const s of sessions) {
+    if (s?.mode !== 'bb' || !workoutIds.has(s.type)) continue
+    if (!latest || s.date > latest) latest = s.date
+  }
+  return latest
+}
+
 // Batch 17h — Rec (coach's prescription) formatting per Step 9.
 // Exercise.rec can be any of:
 //   - null / undefined
