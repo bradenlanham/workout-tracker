@@ -113,6 +113,14 @@ const useStore = create(
       // ── Splits ─────────────────────────────────────────────────────────────
       splits: [],
       activeSplitId: null,
+      // Batch 17a — in-progress split draft (wizard / future Canvas). Persists
+      // across reload + backgrounding so a mid-build split survives an
+      // accidental tab brush or OS kill. One draft at a time; starting a new
+      // create overwrites any prior create-draft, and starting an edit
+      // overwrites any prior edit-draft for that same split id. Stale drafts
+      // (>7 days old) are auto-cleared on SplitBuilder mount.
+      // Shape: { originalId: string | null, draft: PartialSplit, updatedAt: number } | null
+      splitDraft: null,
       // Canonical exercise library. Seeded from data/exerciseLibrary.js on
       // first app mount via initLibrary() (and extended by the v2→v3 persist
       // migration with any user-created names found in session history).
@@ -290,6 +298,17 @@ const useStore = create(
         set(prev => ({ splits: [...prev.splits, clone] }))
         return clone
       },
+
+      // ── Split draft (Batch 17a) ───────────────────────────────────────────
+      // Auto-save plumbing for the wizard / Canvas. The UI is responsible for
+      // debouncing writes (500ms is plenty); the store just holds the latest
+      // snapshot. Contains whatever the user has entered so far — partial is
+      // fine. `originalId` is null for create, a split id for edit.
+
+      setSplitDraft: (payload) =>
+        set({ splitDraft: { ...payload, updatedAt: Date.now() } }),
+
+      clearSplitDraft: () => set({ splitDraft: null }),
 
       // ── Cardio actions ────────────────────────────────────────────────────────────────
 
@@ -532,7 +551,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 3,
+      version: 4,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -541,6 +560,9 @@ const useStore = create(
       //   exerciseId + canonical name to every LoggedExercise, flag
       //   unresolved session names as needsTagging, and re-run the PR
       //   recompute keyed by exerciseId so dedup'd names share history.
+      //   V3→V4 (Batch 17a): additive — ensure the splitDraft slot exists
+      //   (null is a valid value). Pre-v4 users simply don't have a draft,
+      //   which is the correct initial state.
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -557,6 +579,9 @@ const useStore = create(
           })
           persistedState.exerciseLibrary = result.library
           persistedState.sessions        = result.sessions
+        }
+        if (version < 4) {
+          persistedState.splitDraft = persistedState.splitDraft ?? null
         }
         return persistedState
       },
@@ -576,6 +601,7 @@ const useStore = create(
               ?? (hasExistingSessions ? true : false),
           },
           splits: persisted.splits || current.splits,
+          splitDraft: persisted.splitDraft ?? current.splitDraft ?? null,
           exerciseLibrary: persisted.exerciseLibrary || current.exerciseLibrary,
           activeSplitId: persisted.activeSplitId ?? current.activeSplitId,
           cardioSessions: persisted.cardioSessions || current.cardioSessions,

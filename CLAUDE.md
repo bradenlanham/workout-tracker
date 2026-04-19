@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 16r — menu restructure + How AI Coaching Works)
+> Last updated: April 19, 2026 (Batch 17a — split draft auto-save + persist v4 migration)
 
 ## Rules for Claude
 
@@ -148,6 +148,7 @@ src/
   // ── Splits ──
   splits: [],                      // Array of split objects (built-in + user-created)
   activeSplitId: null,             // Currently active split ID
+  splitDraft: null,                // Batch 17a — in-progress wizard/canvas draft; { originalId, draft, updatedAt } | null
   exerciseLibrary: [],             // Canonical Exercise[] — seeded by initLibrary() on mount
                                    // from data/exerciseLibrary.js + extended by the v2→v3
                                    // migration with needsTagging:true entries for any
@@ -425,11 +426,12 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 
 ## Data Persistence
 
-- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 3`.
+- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 4`.
 - Custom `merge` function in the persist config handles schema evolution: new fields get defaults, existing user settings are preserved via deep merge, existing users auto-skip onboarding.
 - `migrate` hook handles versioned schema changes.
   - V1→V2 (Batch 14): backfills `rawWeight` on every set and recomputes `isNewPR` via `migrateSessionsToV2()` in helpers.js.
   - V2→V3 (Batch 15): seeds `exerciseLibrary` from built-in data if empty, assigns stable `exerciseId` to every LoggedExercise, canonicalizes display names against the library (Title Case variants win), flags unresolved names as `needsTagging: true`, and recomputes `isNewPR` keyed by exerciseId. Runs via `migrateSessionsToV3({sessions, library})`.
+  - V3→V4 (Batch 17a): additive — ensures `splitDraft` slot exists (defaults to `null`). Pre-v4 users simply don't have a draft, which is the correct initial state.
 - **Active session** (`activeSession`) persists across page reloads and app backgrounding so in-progress workouts are never lost.
 - **Rest timer** uses absolute timestamps (`restEndTimestamp`) rather than countdown values, so it stays accurate across backgrounding.
 
@@ -857,6 +859,18 @@ User-requested reorganization of the HamburgerMenu Settings screen to separate p
 205. **AI coaching description updated** (`HamburgerMenu.jsx:290`). Was "Show the coach's call banner + sheet" (written for Batch 16i when the only surface was Coach's Call). Now reads "Coach's Call tip + anomaly banners" so the toggle's expanded 16q scope is explicit in the UI.
 206. **"How AI Coaching Works" expandable** (`HamburgerMenu.jsx`). New collapsible entry under Info, alongside "How Tracking Works" and "How Streaks Work". Plain-English 2400-char explainer covers: your-strength estimate (Epley in layman's terms), today's suggestion (Layer 2 + Layer 3, capped 3%/wk in plain English), the readiness check-in (energy/sleep/goal), what the coach watches between sessions (grade, cardio, rest day, gap), miss-the-reps logic (hold weight / auto-deload), the three anomaly banners (plateau / regression / swing), and what the coach won't do (local data only, suggestion not rule, waits for enough history). Respects user UX preferences: no em dashes, less-is-more defaults (section starts collapsed), labels + strong-tagged key terms rather than bullet-heavy formatting.
 207. **Verified live in preview** (mobile 375×812, debug-backup.json). Menu → Settings: Profile Settings section lists Your Name → Theme → Accent Color in that order; Workout Defaults lists the five toggles in their original order. AI coaching toggle's description reads "Coach's Call tip + anomaly banners". Menu → Info: three expandables present — How Tracking Works / How Streaks Work / How AI Coaching Works — the third expands to 2435 chars of explainer content rendering without layout issues. No console errors.
+
+### Batch 17a (April 19, 2026) — Split draft auto-save + persist v4 migration
+
+First step of the Split Builder redesign (see `split-builder-redesign-handoff.md` Step 1). Closes the data-loss class where an accidental tab brush, OS kill, or tab close mid-wizard wiped the in-progress split. Additive store slice + persist bump + debounced auto-save + resume banner. No UI on the wizard side beyond the banner — engine-invisible otherwise.
+
+208. **`splitDraft` store slice + `setSplitDraft` / `clearSplitDraft` actions (`useStore.js`).** Shape: `{ originalId: string | null, draft: PartialSplit, updatedAt: number } | null`. `originalId` is `null` when creating new, or a split id when editing. One draft at a time — a second create overwrites any prior create draft; same for edit drafts scoped to the same id. The `draft` object carries only what the user has typed so far (name / emoji / workouts / rotation) so partial state is fine. Actions are dumb setters — debouncing + dirty-tracking live in the consumer.
+209. **Persist version bumped `3 → 4`** with additive `migrate` block — sets `splitDraft = null` when upgrading from v3. Pre-v4 users have no drafts on disk, which is the correct initial state. The `merge` hook also preserves `splitDraft` explicitly so it survives schema evolution. Idempotent: re-running the v4 block on a v4 state with a live draft preserves the draft untouched.
+210. **SplitBuilder auto-save + resume banner (`SplitBuilder.jsx`).** New `isDirty` flag + debounced (500ms) `useEffect` that writes the current wizard state to `setSplitDraft` whenever name/emoji/workouts/rotation change. Every setter passed down to Step1 / Step3 / workout-builder is wrapped so typing / adding / reordering all flow through one dirty pipeline. Mount effect: if a matching draft exists for this route context (create OR edit-of-this-id), show an amber banner at the top of Step 1 offering Resume / Discard. Banner copy includes `formatTimeAgo(updatedAt)` so users see "last saved 3m ago" rather than a raw timestamp.
+211. **Auto-clear safety rails (`SplitBuilder.jsx`).** Drafts older than 7 days auto-clear on mount (constant `DRAFT_STALE_MS`). Drafts with an `originalId` that no longer exists in `splits[]` (user deleted that split between drafting and returning) also auto-clear. Draft scoping: a create-mode draft shows the banner on `/splits/new` only, an edit-mode draft shows only on `/splits/edit/:id` where `id === originalId` — mismatched edit URLs leave the draft untouched (so returning to the owning url still surfaces it). `handleSave` and the explicit Discard button both call `clearSplitDraft()` so successful saves + intentional discards never leave orphan state behind.
+212. **`formatTimeAgo(tsOrIso)` helper (`helpers.js`).** Accepts a ms epoch or an ISO string. Returns "just now", "Nm ago", "Nh ago", "yesterday", "Nd ago" (under 7 days), or `formatDate(...)` beyond. Handles clock-skew (negative diffs → "just now") and invalid inputs → empty string.
+213. **`draft-sanity.mjs` at worktree root.** Node ESM — exercises the v3→v4 additive migration on a stripped backup, a full roundtrip through JSON.stringify/parse of a representative draft (create + edit), the clear path, and the edge cases `formatTimeAgo` handles (1m / 2h / yesterday / just-now / future / 10 days). 20/20 assertions pass. Mirrors the existing `migration-sanity.mjs` / `migration-v3-sanity.mjs` / `recommender-sanity.mjs` / `fatigue-sanity.mjs` / `anomaly-sanity.mjs` pattern.
+214. **Verified live in preview** (mobile 375×812). Six scenarios all pass — (A) create new / leave / resume restores name+emoji+workouts; (B) edit-mode scoping — banner fires on `/splits/edit/split_bam` when the draft's originalId matches, silent on `/splits/edit/other_id`; (C) Discard button nulls the store slice + hides the banner; (D) completing the wizard and tapping Save Split nulls the draft and navigates to `/splits`; (E) manually aging `updatedAt` 8 days auto-clears on next mount; (F) orphaned-split draft (originalId pointing at a deleted split) auto-clears on mount. No console errors across all six flows. ✓
 
 ---
 

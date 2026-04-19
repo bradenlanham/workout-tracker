@@ -3,8 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { EXERCISE_LIBRARY, MUSCLE_GROUPS } from '../data/exerciseLibrary'
-import { generateId, findSimilarExercises } from '../utils/helpers'
+import { generateId, findSimilarExercises, formatTimeAgo } from '../utils/helpers'
 import CreateExerciseModal from '../components/CreateExerciseModal'
+
+// Batch 17a — draft older than 7 days is auto-cleared on mount.
+const DRAFT_STALE_MS = 7 * 24 * 60 * 60 * 1000
 
 const FITNESS_EMOJIS = ['🏋️','💪','🦵','🏃','🔥','⚡','🎯','💎','🏆','👊','🦾','🧘','🏊','🚴']
 const DEFAULT_SECTION_LABELS = ['Primary', 'Choose 1', 'If You Have Time']
@@ -710,7 +713,7 @@ function WorkoutBuilder({ workout, onSave, onBack, theme }) {
 
 // ── Step 1: Name Your Split ────────────────────────────────────────────────────
 
-function Step1({ name, setName, emoji, setEmoji, onBack, onContinue, theme }) {
+function Step1({ name, setName, emoji, setEmoji, onBack, onContinue, theme, banner }) {
   return (
     <div className="min-h-screen pb-36">
       <div
@@ -727,6 +730,7 @@ function Step1({ name, setName, emoji, setEmoji, onBack, onContinue, theme }) {
       </div>
 
       <div className="px-4 space-y-5">
+        {banner}
         <div>
           <label className="text-xs font-semibold text-c-muted uppercase tracking-wide">Split Name</label>
           <input
@@ -1074,6 +1078,11 @@ export default function SplitBuilder() {
   const { splits, addSplit, updateSplit, setActiveSplit, settings } = useStore()
   const theme = getTheme(settings.accentColor)
 
+  // Batch 17a — draft state plumbing
+  const splitDraft      = useStore(s => s.splitDraft)
+  const setSplitDraft   = useStore(s => s.setSplitDraft)
+  const clearSplitDraft = useStore(s => s.clearSplitDraft)
+
   const isEdit = !!id
   const existingSplit = isEdit ? splits.find(s => s.id === id) : null
 
@@ -1105,6 +1114,65 @@ export default function SplitBuilder() {
   )
   const [rotation, setRotation] = useState(existingSplit?.rotation ? [...existingSplit.rotation] : [])
 
+  // Batch 17a — draft auto-save + resume banner state
+  const [isDirty, setIsDirty]               = useState(false)
+  const [showDraftBanner, setShowDraftBanner] = useState(false)
+
+  // Detect draft on mount:
+  //  - auto-clear if stale (>7 days) or if it points at a deleted split
+  //  - auto-clear if it's an edit draft but we're on a different route context
+  //  - otherwise, show the resume banner when the draft matches this route
+  useEffect(() => {
+    if (!splitDraft) return
+    const ageMs    = Date.now() - (splitDraft.updatedAt || 0)
+    const isStale  = ageMs > DRAFT_STALE_MS
+    const draftForDeletedSplit =
+      splitDraft.originalId && !splits.find(s => s.id === splitDraft.originalId)
+    if (isStale || draftForDeletedSplit) {
+      clearSplitDraft()
+      return
+    }
+    const isForCreate   = !isEdit && splitDraft.originalId === null
+    const isForThisEdit = isEdit  && splitDraft.originalId === id
+    if (isForCreate || isForThisEdit) {
+      setShowDraftBanner(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Debounced auto-save — only after user has made at least one change.
+  useEffect(() => {
+    if (!isDirty) return
+    const t = setTimeout(() => {
+      setSplitDraft({
+        originalId: isEdit ? id : null,
+        draft: { name: splitName, emoji: splitEmoji, workouts, rotation },
+      })
+    }, 500)
+    return () => clearTimeout(t)
+  }, [splitName, splitEmoji, workouts, rotation, isDirty, isEdit, id, setSplitDraft])
+
+  // Any user-driven state mutation flips isDirty so the debounce kicks in.
+  const markDirty = useCallback(() => setIsDirty(true), [])
+
+  // Resume the draft into local state and dismiss the banner.
+  const handleResumeDraft = () => {
+    const d = splitDraft?.draft || {}
+    if (d.name     !== undefined) setSplitName(d.name || '')
+    if (d.emoji    !== undefined) setSplitEmoji(d.emoji || '🏋️')
+    if (d.workouts !== undefined) setWorkouts(Array.isArray(d.workouts) ? d.workouts : [])
+    if (d.rotation !== undefined) setRotation(Array.isArray(d.rotation) ? d.rotation : [])
+    setShowDraftBanner(false)
+    // Resuming is NOT a dirty event — the restored state matches what's in the
+    // store already. Any subsequent user edit will re-dirty and re-save.
+    setIsDirty(false)
+  }
+
+  const handleDiscardDraft = () => {
+    clearSplitDraft()
+    setShowDraftBanner(false)
+  }
+
   // Workout builder
   const [editingIdx, setEditingIdx] = useState(null)
 
@@ -1120,6 +1188,7 @@ export default function SplitBuilder() {
     } else {
       setWorkouts(prev => prev.map((w, i) => i === editingIdx ? workout : w))
     }
+    markDirty()
     setView('step2')
   }
 
@@ -1131,12 +1200,14 @@ export default function SplitBuilder() {
       ;[next[idx], next[to]] = [next[to], next[idx]]
       return next
     })
+    markDirty()
   }
 
   const handleRemoveWorkout = (idx) => {
     const removed = workouts[idx]
     setWorkouts(prev => prev.filter((_, i) => i !== idx))
     setRotation(prev => prev.filter(rid => rid !== removed.id))
+    markDirty()
   }
 
   const handleContinueToStep3 = () => {
@@ -1147,6 +1218,13 @@ export default function SplitBuilder() {
     }
     setView('step3')
   }
+
+  // Dirtying rotation setter — wraps setRotation so Step3's manipulations
+  // (add rest day, reorder, remove) flow through the auto-save pipeline.
+  const setRotationDirty = useCallback((updater) => {
+    setRotation(updater)
+    setIsDirty(true)
+  }, [])
 
   const handleSave = (makeActive) => {
     const splitData = {
@@ -1162,6 +1240,8 @@ export default function SplitBuilder() {
       const newSplit = addSplit(splitData)
       if (makeActive) setActiveSplit(newSplit.id)
     }
+    // Save succeeded — drop the draft so the banner never shows for this work again.
+    clearSplitDraft()
     navigate('/splits')
   }
 
@@ -1175,6 +1255,38 @@ export default function SplitBuilder() {
       default:               navigate('/splits')
     }
   }
+
+  // Dirty-aware setters passed down to Step1 so text/emoji typing is captured.
+  const setSplitNameDirty = useCallback((value) => { setSplitName(value); setIsDirty(true) }, [])
+  const setSplitEmojiDirty = useCallback((value) => { setSplitEmoji(value); setIsDirty(true) }, [])
+
+  // Banner JSX — rendered only on step1, per Batch 17a spec. Amber, no em
+  // dashes, formatTimeAgo() for the last-saved hint.
+  const draftBanner = showDraftBanner && splitDraft ? (
+    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-3">
+      <span className="text-xl" aria-hidden="true">💾</span>
+      <div className="flex-1 text-sm min-w-0">
+        <div className="font-semibold text-amber-300">Resume your unsaved draft?</div>
+        <div className="text-c-secondary text-xs truncate">
+          You were {isEdit ? 'editing this split' : 'building a new split'} · last saved {formatTimeAgo(splitDraft.updatedAt)}.
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleResumeDraft}
+        className="px-3 py-1.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0"
+      >
+        Resume
+      </button>
+      <button
+        type="button"
+        onClick={handleDiscardDraft}
+        className="px-3 py-1.5 text-xs font-semibold rounded-full bg-item text-c-muted border border-subtle shrink-0"
+      >
+        Discard
+      </button>
+    </div>
+  ) : null
 
   const editingWorkout = editingIdx !== null ? workouts[editingIdx] : null
 
@@ -1193,12 +1305,13 @@ export default function SplitBuilder() {
     return (
       <Step1
         name={splitName}
-        setName={setSplitName}
+        setName={setSplitNameDirty}
         emoji={splitEmoji}
-        setEmoji={setSplitEmoji}
+        setEmoji={setSplitEmojiDirty}
         onBack={handleBack}
         onContinue={() => setView('step2')}
         theme={theme}
+        banner={draftBanner}
       />
     )
   }
@@ -1223,7 +1336,7 @@ export default function SplitBuilder() {
       <Step3
         workouts={workouts}
         rotation={rotation}
-        setRotation={setRotation}
+        setRotation={setRotationDirty}
         onContinue={() => setView('step4')}
         onBack={handleBack}
         theme={theme}

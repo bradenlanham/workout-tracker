@@ -37,6 +37,26 @@ export function isToday(isoString) {
   return d.toDateString() === now.toDateString()
 }
 
+// Batch 17a — human-readable relative time for the split-draft resume banner.
+// Accepts a ms epoch (Date.now()) or an ISO string. Returns "just now",
+// "5m ago", "2h ago", "yesterday", or a localized date for anything older.
+export function formatTimeAgo(tsOrIso) {
+  if (tsOrIso === null || tsOrIso === undefined) return ''
+  const ts = typeof tsOrIso === 'number' ? tsOrIso : new Date(tsOrIso).getTime()
+  if (!Number.isFinite(ts)) return ''
+  const diffMs = Date.now() - ts
+  if (diffMs < 0) return 'just now'
+  const diffMin = Math.floor(diffMs / 60_000)
+  if (diffMin < 1)  return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay === 1) return 'yesterday'
+  if (diffDay < 7)   return `${diffDay}d ago`
+  return formatDate(new Date(ts).toISOString())
+}
+
 // ── BB helpers ───────────────────────────────────────────────────────────────
 
 export function getNextBbWorkout(sessions, customSequence) {
