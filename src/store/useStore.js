@@ -195,10 +195,87 @@ const useStore = create(
           progressionClass:  exercise.progressionClass || 'isolation',
           needsTagging:      skipTagging,
           createdAt:         new Date().toISOString(),
-          ...(exercise.sessionGymTags ? { sessionGymTags: exercise.sessionGymTags } : {}),
+          ...(Array.isArray(exercise.sessionGymTags) && exercise.sessionGymTags.length
+            ? { sessionGymTags: [...exercise.sessionGymTags] } : {}),
+          ...(Array.isArray(exercise.skipGymTagPrompt) && exercise.skipGymTagPrompt.length
+            ? { skipGymTagPrompt: [...exercise.skipGymTagPrompt] } : {}),
         }
         set(state => ({ exerciseLibrary: [...state.exerciseLibrary, newEx] }))
         return newEx
+      },
+
+      // ── Gym tagging on Exercise records (Batch 20, spec §3.5) ──────────────
+      //
+      // Two sibling fields on each Exercise:
+      //   sessionGymTags:    gymIds where this exercise IS available
+      //   skipGymTagPrompt:  gymIds where the user chose "Always skip"
+      //                      so the auto-tag-on-use prompt stays quiet
+      //
+      // Both stored as arrays of gymId strings (matching session.gymId),
+      // not labels, so renaming a gym in Settings doesn't break tags.
+      // Empty or missing sessionGymTags means "universally available /
+      // unspecified" per §3.5.3.
+
+      addExerciseGymTag: (exerciseId, gymId) => {
+        if (!exerciseId || !gymId) return
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== exerciseId) return ex
+            const current = Array.isArray(ex.sessionGymTags) ? ex.sessionGymTags : []
+            if (current.includes(gymId)) return ex
+            return { ...ex, sessionGymTags: [...current, gymId] }
+          }),
+        }))
+      },
+
+      removeExerciseGymTag: (exerciseId, gymId) => {
+        if (!exerciseId || !gymId) return
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== exerciseId) return ex
+            const current = Array.isArray(ex.sessionGymTags) ? ex.sessionGymTags : []
+            if (!current.includes(gymId)) return ex
+            const next = current.filter(g => g !== gymId)
+            // Drop the field entirely when empty so the exercise reverts to
+            // "universally available / unspecified" rather than tracking an
+            // explicit empty list (which §3.5.3 treats the same way, but
+            // keeping the shape minimal avoids ambiguity in migrations/exports).
+            if (next.length === 0) {
+              const { sessionGymTags, ...rest } = ex
+              return rest
+            }
+            return { ...ex, sessionGymTags: next }
+          }),
+        }))
+      },
+
+      addSkipGymTagPrompt: (exerciseId, gymId) => {
+        if (!exerciseId || !gymId) return
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== exerciseId) return ex
+            const current = Array.isArray(ex.skipGymTagPrompt) ? ex.skipGymTagPrompt : []
+            if (current.includes(gymId)) return ex
+            return { ...ex, skipGymTagPrompt: [...current, gymId] }
+          }),
+        }))
+      },
+
+      removeSkipGymTagPrompt: (exerciseId, gymId) => {
+        if (!exerciseId || !gymId) return
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== exerciseId) return ex
+            const current = Array.isArray(ex.skipGymTagPrompt) ? ex.skipGymTagPrompt : []
+            if (!current.includes(gymId)) return ex
+            const next = current.filter(g => g !== gymId)
+            if (next.length === 0) {
+              const { skipGymTagPrompt, ...rest } = ex
+              return rest
+            }
+            return { ...ex, skipGymTagPrompt: next }
+          }),
+        }))
       },
 
       updateExerciseInLibrary: (id, patch) => {

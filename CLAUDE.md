@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 19d — WorkoutEditSheet: Change Section + scroll fix + header spacing)
+> Last updated: April 19, 2026 (Batch 20 — gym tagging data layer, AI coaching step 8 substep 1)
 
 ## Rules for Claude
 
@@ -86,9 +86,27 @@ src/
 │                              #   tagged with that instance (case-insensitive). Unscoped
 │                              #   when null/empty. Each history item also echoes
 │                              #   equipmentInstance so detectors can inspect machine context.
-│                              # getInstancesForExercise(sessions, id, name?): Batch 19 —
-│                              #   distinct non-empty equipmentInstance strings for this
-│                              #   exercise, most recent first, case-insensitive dedupe.
+│                              # getInstancesForExercise(sessions, id, name?, gymId?):
+│                              #   Batch 19 / Batch 20 — distinct non-empty
+│                              #   equipmentInstance strings for this exercise,
+│                              #   most recent first, case-insensitive dedupe.
+│                              #   Batch 20 adds optional gymId scoping so the
+│                              #   picker at VASA doesn't show TR's machines.
+│                              # getExerciseHistory(..., equipmentInstance?, gymId?):
+│                              #   Batch 20 adds a 5th optional arg — when set,
+│                              #   only sessions whose session.gymId matches
+│                              #   contribute. Legacy (pre-16n) sessions without
+│                              #   a gymId never match a scoped query (§3.5.6 —
+│                              #   "unspecified" stays unspecified). Callers do
+│                              #   the <3-session widen-scope fallback themselves.
+│                              #   History items echo gymId on each entry.
+│                              # isExerciseAvailableAtGym(exercise, gymId),
+│                              # shouldSkipGymTagPrompt(exercise, gymId),
+│                              # shouldPromptGymTag(exercise, gymId): Batch 20 —
+│                              #   three pure readers for the §3.5 gym-tagging
+│                              #   rules. Empty / missing sessionGymTags = "available
+│                              #   everywhere", skipGymTagPrompt silences the
+│                              #   auto-tag prompt per (exercise, gym) pair.
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -187,7 +205,16 @@ src/
                                    // user-created session names that didn't resolve.
                                    // Entry shape: { id, name, aliases, primaryMuscles[],
                                    // equipment, isBuiltIn, defaultUnilateral, loadIncrement,
-                                   // defaultRepRange, progressionClass, needsTagging, createdAt }
+                                   // defaultRepRange, progressionClass, needsTagging, createdAt,
+                                   // sessionGymTags?: string[],      // Batch 20, spec §3.5:
+                                   //                                   gymIds where this
+                                   //                                   exercise IS available.
+                                   //                                   Empty/missing = "universally
+                                   //                                   available / unspecified".
+                                   // skipGymTagPrompt?: string[] }   // Batch 20, spec §3.5.4:
+                                   //                                   gymIds where the user
+                                   //                                   chose "Always skip" on
+                                   //                                   the auto-tag prompt.
 
   // ── Legacy ──
   customTemplates: [],             // Pre-splits custom workout templates
@@ -1220,6 +1247,24 @@ Two quick follow-ups on 19b: user wanted the running-state scale back (it disamb
 
 333. **Build.** Same bundle size (one value flip + one transform wrapper — nothing measurable).
 
+### Batch 20 (April 19, 2026) — Gym tagging data layer (AI coaching step 8 substep 1)
+
+First substep of Step 8 — the final v1 milestone. Spec §3.5 + §9.7. Additive data layer only; no UI surface lands yet. Paves the way for 20a (session gym pill in BbLogger header), 20b (Machine chip gym-scoped auto-fill + auto-tag-on-use prompt), 20c (picker filter), 20d (Settings UI for gym CRUD). `settings.gyms` + `session.gymId` already exist from Batch 16n; this batch adds the per-Exercise axis the spec calls for (§3.5.1 Level 1) plus the §3.5.6 history-scoping variants.
+
+339. **Two new optional fields on Exercise records (`useStore.js`).** `sessionGymTags?: string[]` (§3.5.1 Level 1 — gymIds where this exercise IS available) and `skipGymTagPrompt?: string[]` (§3.5.4 — gymIds where the user tapped "Always skip" so the auto-tag prompt stays quiet). Both stored as arrays of gymIds (not labels), matching how session.gymId already works, so renaming a gym via Settings won't orphan tags. Empty or missing means "universally available / unspecified" per §3.5.3. The `addExerciseToLibrary` passthrough already carried `sessionGymTags` (Batch 17j left a ghost hook in place); mirrors it for `skipGymTagPrompt` and fixes both to survive only when non-empty so new exercises stay minimal.
+
+340. **Four store actions for the two fields (`useStore.js`).** `addExerciseGymTag(exerciseId, gymId)` (dedup by gymId), `removeExerciseGymTag(exerciseId, gymId)` (drops the field entirely when the array empties out so the shape stays minimal), `addSkipGymTagPrompt(exerciseId, gymId)`, `removeSkipGymTagPrompt(exerciseId, gymId)` (symmetric — lets a user undo an Always-skip decision in Settings). All are no-ops on missing/invalid inputs so the call sites in 20b–20d don't need defensive guards.
+
+341. **Three pure gym-tag helpers (`helpers.js`).** `isExerciseAvailableAtGym(exercise, gymId)` — returns true when gymId is null, when sessionGymTags is empty/missing, or when the array includes gymId (§3.5.3 "available here" rule with the empty-means-universal fallback). `shouldSkipGymTagPrompt(exercise, gymId)` — pure read of the skip list. `shouldPromptGymTag(exercise, gymId)` — composed boolean that drives 20b's prompt: fires when a gym is set, not already tagged, and not opted-out. All three defensive against null/undefined/non-array inputs so the picker filter (20c) can feed them raw library rows.
+
+342. **`getExerciseHistory` accepts `gymId` as 5th arg (`helpers.js`).** Adds to the existing `equipmentInstance` 4th-arg pattern. When a non-empty gymId is passed, only sessions whose `session.gymId` matches contribute. Sessions without a gymId (pre-16n data, or skipped-readiness sessions) do NOT match a scoped query per §3.5.6 — "unspecified" stays unspecified. Instance + gym compose with AND so "Hoist @ VASA" restricts correctly when the user has the same machine name at two gyms for distinct models. Each history item now echoes `gymId` alongside the existing `equipmentInstance` echo. Callers do the <3-session fallback themselves (same pattern Batch 19 established for machines); the helper stays pure.
+
+343. **`getInstancesForExercise` accepts `gymId` as 4th arg (`helpers.js`).** Drives 20b's Machine-chip picker: the prior-instances list at VASA shows only instances used AT VASA, at TR shows only TR instances. Unscoped behavior unchanged.
+
+344. **`gym-tags-sanity.mjs` at worktree root.** 49/49 pass. Covers: (1) `isExerciseAvailableAtGym` across 9 cases (no gymId, null/undefined exercise, missing/empty/non-array sessionGymTags, matching tag, multiple tags, tagged-elsewhere-only); (2) `shouldSkipGymTagPrompt` 6 cases; (3) `shouldPromptGymTag` composition 8 cases (the auto-tag decision table); (4) `getExerciseHistory` gymId scoping against 6 synthetic sessions across 2 gyms + 1 legacy unspecified — confirms history-item gymId echo, exact-match filter, legacy-session exclusion from scoped queries, empty-string / whitespace-only gymId short-circuits to unscoped; (5) `getInstancesForExercise` gym scoping; (6) composed instance+gym AND intersection including case-insensitive instance match; (7) `debug-backup.json` baseline — 0 real sessions have a gymId yet, unscoped calls match pre-Batch-20 behavior exactly, any scoped call returns empty. Mirrors the existing `equipment-instance-sanity.mjs` / `fatigue-sanity.mjs` / `anomaly-sanity.mjs` / `readiness-sanity.mjs` / `migration-*` patterns.
+
+345. **No UI surface this batch, no preview verification.** Change is engine-only — nothing renders differently in the browser. Batch 20a wires the session gym pill into the BbLogger header as the first visible surface; that's when preview walkthrough returns. Build passes (`npx vite build --outDir /tmp/test-build` → 736.31 KB / gzipped 198.80 KB, +4.2 KB vs 19d).
+
 ### Batch 19d (April 19, 2026) — WorkoutEditSheet: Change Section + scroll fix + header spacing
 
 Three targeted fixes in the workout editor sheet after live-feedback on Batch 18f.
@@ -1240,9 +1285,14 @@ Three targeted fixes in the workout editor sheet after live-feedback on Batch 18
 
 ### What's remaining
 
-Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped, and **step 7 equipment instance** landed in Batch 19. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, the coach surfaces plateau / regression / swing banners on the exercise card, and per-machine trend-fit scoping ships with a smart fallback. One v1 data-collection feature remains.
+Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped, step 7 equipment instance landed in Batch 19, and **Step 8 substep 1 (data layer)** landed in Batch 20. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, the coach surfaces plateau / regression / swing banners on the exercise card, per-machine trend-fit scoping ships with a smart fallback, and the gym-tagging data layer + §3.5 helpers are now wired up for the UI substeps to consume.
 
-**Step 8 — Gym tagging full loop (§3.5, §9.7) — NEXT.** Exercise-level `sessionGymTags`, auto-tag-on-use prompts ("You usually do this at VASA — tag it?"), picker filter ("Only available at VASA"). Settings UI for managing the gym list (currently gyms are added inline from the readiness overlay only). Size: moderate-to-large.
+**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer (Exercise.sessionGymTags + skipGymTagPrompt, four store actions, three helpers, getExerciseHistory + getInstancesForExercise gymId scoping, `gym-tags-sanity.mjs`). Remaining substeps:
+
+- **20a — Session gym pill in BbLogger header.** Small "Gym: VASA ▾" pill at the top of the session logger, tap to change mid-session. Uses the existing `settings.gyms` slice from Batch 16n + session.gymId. **Hard requirement** per user UX: make AI inferences visible — the pill is what tells users that Machine chip auto-fills and recommender history are driven by the gym selection.
+- **20b — Machine chip gym-scoped auto-fill + auto-tag-on-use prompt.** Machine chip seeds from "most recent at THIS gym" (not just globally). When the user selects an exercise at a gym not in its sessionGymTags, show inline prompt "Tag as available at VASA? [Yes] [Not this time] [Always skip]". `shouldPromptGymTag` from Batch 20 gates the render; `addExerciseGymTag` / `addSkipGymTagPrompt` commit the answer.
+- **20c — Picker filter.** "Only available at VASA" toggle/chip on `ExercisePicker`. §9.7 Option A-style hard filter, default off so nothing's hidden until the user opts in. `isExerciseAvailableAtGym` from Batch 20 does the filter check.
+- **20d — Settings UI for gym CRUD.** HamburgerMenu → Settings (Profile Settings section) → "My Gyms" — add/rename/delete gyms. Guard deletion with a session-count warning. Currently gyms can only be added inline from the readiness overlay. Should also clean up orphan references: when a gym is deleted, strip it from every exercise's sessionGymTags / skipGymTagPrompt so no dangling IDs remain. (Sessions' historical gymId references are preserved — they're a record of past truth.)
 
 ### Post-v1 roadmap (explicitly deferred per plan Part 4)
 
@@ -1253,4 +1303,4 @@ Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped
 
 ### Recommended sequencing
 
-**Step 8 (gym tagging) closes out v1.** The gym list grows organically as sessions accumulate — the Batch 19 Machine chip already starts producing per-exercise machine data, and Batch 16n's `settings.gyms` slice captures the session-level gym from the readiness overlay. Step 8 wires the two together: exercise-level `sessionGymTags` (where CAN I do this), auto-tag-on-use prompts, picker filters ("Only available at VASA"), and a proper Settings UI for managing the gym list.
+**Step 8 (gym tagging) closes out v1.** Batch 20's data layer is the foundation. The UI substeps (20a → 20d) can ship in order — each is independently reviewable and none depends on later ones. 20a (session gym pill) is the smallest and surfaces the feature visibly first; 20b (auto-fill + prompt) is the richest; 20c (picker filter) is a small chip; 20d (Settings UI) closes the loop with gym lifecycle management.

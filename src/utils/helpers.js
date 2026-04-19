@@ -776,6 +776,50 @@ export function percent1RM(targetReps) {
   return 0.73
 }
 
+// ── Gym tagging helpers (Batch 20, spec §3.5) ─────────────────────────────
+//
+// Exercise records carry two optional gym-related arrays:
+//   sessionGymTags:   gymIds where this exercise IS available
+//   skipGymTagPrompt: gymIds where the user chose "Always skip" in the
+//                     auto-tag-on-use prompt
+// Neither array is set on built-in or pre-Batch-20 entries; the helpers
+// here normalize "missing / empty / populated" into the §3.5 rules.
+
+// Returns true if the exercise is considered available at gymId per §3.5.3:
+//   - No gymId passed (caller isn't scoping by gym) → true
+//   - Exercise has no sessionGymTags, or the array is empty → true
+//     (spec: "empty or missing = available everywhere / unspecified")
+//   - Exercise explicitly tags this gym → true
+//   - Otherwise (tagged elsewhere but not here) → false
+export function isExerciseAvailableAtGym(exercise, gymId) {
+  if (!gymId) return true
+  if (!exercise || typeof exercise !== 'object') return true
+  const tags = Array.isArray(exercise.sessionGymTags) ? exercise.sessionGymTags : null
+  if (!tags || tags.length === 0) return true
+  return tags.includes(gymId)
+}
+
+// Returns true when the auto-tag-on-use prompt should stay silent for this
+// (exercise, gym) pair. The "Always skip" branch of the prompt (§3.5.4)
+// writes the gymId into exercise.skipGymTagPrompt; this helper just reads it.
+export function shouldSkipGymTagPrompt(exercise, gymId) {
+  if (!exercise || !gymId) return false
+  const skip = Array.isArray(exercise.skipGymTagPrompt) ? exercise.skipGymTagPrompt : null
+  return !!skip && skip.includes(gymId)
+}
+
+// True when the UI should surface the auto-tag-on-use prompt (§3.5.4):
+// a gym is set on the session, the exercise isn't already tagged there,
+// and the user hasn't opted out of prompts for this pair. Pure boolean,
+// no side effects.
+export function shouldPromptGymTag(exercise, gymId) {
+  if (!gymId || !exercise) return false
+  const tags = Array.isArray(exercise.sessionGymTags) ? exercise.sessionGymTags : null
+  if (tags && tags.includes(gymId)) return false
+  if (shouldSkipGymTagPrompt(exercise, gymId)) return false
+  return true
+}
+
 // Per-session top set for an exercise — the working set with the highest
 // e1RM. Skips warmups; drop sets count (same per-side load as the parent
 // working set is fine for fit purposes). Returns chronological ascending.
@@ -788,13 +832,25 @@ export function percent1RM(targetReps) {
 // carries that same instance (case-insensitive) contribute; history items
 // also echo the instance string for downstream detectors. When null/empty,
 // all sessions contribute (pre-Batch-19 behavior).
-export function getExerciseHistory(sessions, exerciseId, exerciseName = null, equipmentInstance = null) {
+// gymId (spec §3.5.6, Batch 20) — optional scoping. When passed, only
+// sessions whose `session.gymId` matches contribute; history items also
+// echo the session's gymId for downstream consumers. Sessions without a
+// gymId are treated as "unspecified" and do NOT match a scoped query —
+// callers that want to fall back to all history (§3.5.6 rule) should
+// widen the scope themselves (same pattern as the equipmentInstance
+// <3-session fallback BbLogger does for machines).
+// instance + gym compose with AND — passing both restricts to sessions
+// matching the specific machine AT the specific gym.
+export function getExerciseHistory(sessions, exerciseId, exerciseName = null, equipmentInstance = null, gymId = null) {
   if (!Array.isArray(sessions) || !exerciseId) return []
   const instNeedle = typeof equipmentInstance === 'string' ? equipmentInstance.trim().toLowerCase() : ''
   const scopeByInstance = instNeedle.length > 0
+  const gymNeedle = typeof gymId === 'string' ? gymId.trim() : ''
+  const scopeByGym = gymNeedle.length > 0
   const out = []
   for (const s of sessions) {
     if (s?.mode !== 'bb' || !s?.data?.exercises) continue
+    if (scopeByGym && s.gymId !== gymNeedle) continue
     const ex = s.data.exercises.find(e =>
       e.exerciseId === exerciseId ||
       (exerciseName && e.name === exerciseName)
@@ -824,6 +880,7 @@ export function getExerciseHistory(sessions, exerciseId, exerciseName = null, eq
           e1RM:   e,
           rpe:    Number.isFinite(rpe) && rpe >= 1 && rpe <= 10 ? rpe : null,
           equipmentInstance: exInstRaw || null,
+          gymId:  typeof s.gymId === 'string' && s.gymId ? s.gymId : null,
         }
       }
     }
@@ -832,17 +889,23 @@ export function getExerciseHistory(sessions, exerciseId, exerciseName = null, eq
   return out.sort((a, b) => new Date(a.date) - new Date(b.date))
 }
 
-// getInstancesForExercise(sessions, exerciseId, exerciseName?)
+// getInstancesForExercise(sessions, exerciseId, exerciseName?, gymId?)
 //
 // Returns distinct non-empty equipmentInstance strings for this exercise
 // across all bb sessions, most recent first, deduplicated case-insensitively
 // while preserving the user's original casing of the first (most-recent)
 // occurrence. Used by the Machine picker on the exercise card to show
 // previously-used instances without forcing the user to retype them.
-export function getInstancesForExercise(sessions, exerciseId, exerciseName = null) {
+// gymId (Batch 20): when passed, only sessions at that gym contribute —
+// so at VASA you see "Hoist", at TR you see "Cybex", without the two
+// locations' machines getting confused for each other.
+export function getInstancesForExercise(sessions, exerciseId, exerciseName = null, gymId = null) {
   if (!Array.isArray(sessions) || !exerciseId) return []
+  const gymNeedle = typeof gymId === 'string' ? gymId.trim() : ''
+  const scopeByGym = gymNeedle.length > 0
   const sorted = sessions
     .filter(s => s?.mode === 'bb' && s?.data?.exercises)
+    .filter(s => !scopeByGym || s.gymId === gymNeedle)
     .sort((a, b) => new Date(b.date) - new Date(a.date))
   const seen = new Set()
   const out = []
