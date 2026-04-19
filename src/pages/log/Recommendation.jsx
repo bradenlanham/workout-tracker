@@ -711,3 +711,73 @@ function buildAnomalyCopy(anomaly, name) {
   }
   return ''
 }
+
+// Batch 20b — auto-tag-on-use prompt (spec §3.5.4).
+//
+// Rendered inside an expanded exercise card when the user is logging at a gym
+// that's NOT in this exercise's sessionGymTags AND hasn't been opted out of
+// prompts via "Always skip". Three actions:
+//
+//   Yes        → addExerciseGymTag(id, gymId)           — persists indefinitely
+//   Not now    → dismissGymPrompt(id, gymId)            — session-scoped silence
+//   Always     → addSkipGymTagPrompt(id, gymId)         — persists indefinitely
+//                (silences the prompt for this (exercise, gym) pair forever —
+//                 user can undo it later in Settings → My Gyms per 20d).
+//
+// Accent-tinted per theme so the prompt reads as coaching UI, not a warning.
+// Placed above the AnomalyBanner in the exercise card so tagging decisions
+// come first (correctly-scoped history → fewer false anomaly signals).
+export function GymTagPrompt({ exerciseName, gymLabel, onTag, onNotNow, onAlwaysSkip, theme }) {
+  if (!gymLabel) return null
+  const accent = theme?.hex || 'rgb(59,130,246)'
+  return (
+    <div
+      style={{
+        margin: '6px 0 8px',
+        padding: '10px 12px',
+        borderRadius: 10,
+        background: `${accent}12`,
+        border: `1px solid ${accent}40`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          lineHeight: 1.4,
+          color: 'var(--text-primary)',
+        }}
+      >
+        Tag <strong>{exerciseName || 'this exercise'}</strong> as available at <strong>{gymLabel}</strong>?
+      </div>
+      <div className="flex gap-1.5 flex-wrap">
+        <button
+          type="button"
+          onClick={onTag}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: accent, color: theme?.contrastText || '#fff' }}
+          aria-label={`Tag ${exerciseName} as available at ${gymLabel}`}
+        >
+          Yes, tag it
+        </button>
+        <button
+          type="button"
+          onClick={onNotNow}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-item text-c-secondary border border-subtle"
+        >
+          Not this time
+        </button>
+        <button
+          type="button"
+          onClick={onAlwaysSkip}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-item text-c-muted border border-subtle"
+          title="Stop asking for this exercise at this gym"
+        >
+          Always skip
+        </button>
+      </div>
+    </div>
+  )
+}

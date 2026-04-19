@@ -8,12 +8,13 @@ import {
   findSimilarExercises, normalizeExerciseName,
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
   detectAnomalies, formatRec, getInstancesForExercise,
+  shouldPromptGymTag,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
-import { RecommendationChip, RecommendationSheet, AnomalyBanner } from './Recommendation'
+import { RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt } from './Recommendation'
 import ReadinessCheckIn from './ReadinessCheckIn'
 import SessionGymPill from './SessionGymPill'
 
@@ -739,6 +740,7 @@ function ExerciseItem({
   isFirst, isLast, onMoveUp, onMoveDown, reorderMode, workoutType,
   aggressivenessMultiplier = 1, suggestedMode = 'push',
   fatigueSignals = null, activeSessionId = null,
+  currentGymId = null, currentGymLabel = null,
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
@@ -755,7 +757,9 @@ function ExerciseItem({
     if (!expanded && editingRec) commitRec()
     // eslint-disable-next-line
   }, [expanded])
-  const { settings, setRestEndTimestamp, dismissAnomaly } = useStore()
+  const { settings, setRestEndTimestamp, dismissAnomaly, dismissGymPrompt } = useStore()
+  const addExerciseGymTag    = useStore(s => s.addExerciseGymTag)
+  const addSkipGymTagPrompt  = useStore(s => s.addSkipGymTagPrompt)
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const numpadCtx = useContext(NumpadContext)
   const [recSheetOpen,    setRecSheetOpen]    = useState(false)
@@ -907,26 +911,50 @@ function ExerciseItem({
     return 10
   }, [libraryEntry])
 
-  // Instance-scoping (spec §3.4, Batch 19): when the user has tagged the
-  // current session's equipmentInstance AND there's enough matching history
-  // on that specific machine (≥3 sessions), scope the recommender to it.
-  // Otherwise fall back to unscoped history so first-time-on-this-machine
-  // doesn't cold-start the recommender into silence.
+  // Instance + gym scoping (spec §3.4, §3.5.6). Progressive fallback keyed
+  // on the richness of available history:
+  //   1. Instance + gym       (most specific — same machine at same gym)
+  //   2. Gym only             (same gym, any machine — covers machine swaps within a gym)
+  //   3. Instance only        (same machine at any gym — covers gym swaps on identically named machines)
+  //   4. Unscoped             (everything — the pre-Batch-19 safety net)
+  // Each tier must clear the ≥3-session bar to be used; otherwise we fall
+  // to the next tier. Guarantees first-time-at-this-gym or first-time-on-this-machine
+  // never cold-starts the recommender into silence.
   const currentInstance = (exercise.equipmentInstance || '').trim()
   const recHistoryId = libraryEntry?.id || exercise.exerciseId
   const recHistory = useMemo(() => {
     const unscoped = getExerciseHistory(allSessions, recHistoryId, exercise.name)
-    if (!currentInstance) return unscoped
-    const scoped = getExerciseHistory(allSessions, recHistoryId, exercise.name, currentInstance)
-    return scoped.length >= 3 ? scoped : unscoped
-  }, [allSessions, recHistoryId, exercise.name, currentInstance])
+    // Fast path: no scoping to apply
+    if (!currentInstance && !currentGymId) return unscoped
+    const instScoped = currentInstance
+      ? getExerciseHistory(allSessions, recHistoryId, exercise.name, currentInstance)
+      : unscoped
+    const gymScoped = currentGymId
+      ? getExerciseHistory(allSessions, recHistoryId, exercise.name, null, currentGymId)
+      : unscoped
+    // Tier 1: instance + gym
+    if (currentInstance && currentGymId) {
+      const both = getExerciseHistory(allSessions, recHistoryId, exercise.name, currentInstance, currentGymId)
+      if (both.length >= 3) return both
+    }
+    // Tier 2: gym alone
+    if (currentGymId && gymScoped.length >= 3) return gymScoped
+    // Tier 3: instance alone
+    if (currentInstance && instScoped.length >= 3) return instScoped
+    // Tier 4: unscoped safety net
+    return unscoped
+  }, [allSessions, recHistoryId, exercise.name, currentInstance, currentGymId])
 
-  // Machine picker options — prior distinct instances for this exercise,
-  // most recent first, case-insensitive dedupe.
-  const machineOptions = useMemo(
-    () => getInstancesForExercise(allSessions, recHistoryId, exercise.name),
-    [allSessions, recHistoryId, exercise.name]
-  )
+  // Machine picker options — prior distinct instances for this exercise at
+  // the current gym (if set) so the VASA picker doesn't show TR's machines.
+  // Falls back to all instances when no gym is set or when the gym-scoped
+  // list is empty (so first-time-at-this-gym still surfaces historical picks
+  // as a starting point rather than showing an empty list).
+  const machineOptions = useMemo(() => {
+    const scoped = getInstancesForExercise(allSessions, recHistoryId, exercise.name, currentGymId)
+    if (scoped.length > 0) return scoped
+    return getInstancesForExercise(allSessions, recHistoryId, exercise.name)
+  }, [allSessions, recHistoryId, exercise.name, currentGymId])
 
   // Machine chip visibility (Batch 19a): only surface for exercises whose
   // library entry is classified as equipment: 'Machine'. For Barbell,
@@ -969,6 +997,29 @@ function ExerciseItem({
   const dismissedFor = settings.dismissedAnomalies?.[anomalyKey]
   const dismissedThisSession = dismissedFor != null && activeSessionId != null && dismissedFor === activeSessionId
   const showAnomalyBanner = settings.enableAiCoaching && anomaly && !dismissedThisSession
+
+  // ── Gym-tag prompt (Batch 20b, spec §3.5.4) ─────────────────────────────
+  // Surface the "Tag X as available at Y?" prompt when the exercise has a
+  // library entry, the session has a gym set, the exercise isn't already
+  // tagged at this gym, AND the user hasn't opted out of prompts for this
+  // (exercise, gym) pair (either via "Always skip" -> skipGymTagPrompt, or
+  // via "Not this time" -> dismissedGymPrompts). libraryEntry.id (rather
+  // than exercise.exerciseId) is used as the prompt key because
+  // template-seeded exercises don't carry exerciseId until save time —
+  // using libraryEntry.id matches what addExerciseGymTag expects.
+  const promptKey = libraryEntry?.id
+    ? `${libraryEntry.id}:${currentGymId}`
+    : null
+  const gymPromptDismissedFor = promptKey
+    ? settings.dismissedGymPrompts?.[promptKey]
+    : null
+  const gymPromptDismissedThisSession = gymPromptDismissedFor != null && activeSessionId != null && gymPromptDismissedFor === activeSessionId
+  const showGymTagPrompt =
+    settings.enableAiCoaching &&
+    !!libraryEntry &&
+    !!currentGymId &&
+    shouldPromptGymTag(libraryEntry, currentGymId) &&
+    !gymPromptDismissedThisSession
 
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
@@ -1247,6 +1298,20 @@ function ExerciseItem({
               </div>
             )}
           </div>
+
+          {/* Gym-tag prompt (Batch 20b) — rendered above AnomalyBanner so
+              tagging decisions come first and correctly-scoped history
+              reduces false-positive anomaly signals. */}
+          {showGymTagPrompt && (
+            <GymTagPrompt
+              exerciseName={exercise.name}
+              gymLabel={currentGymLabel}
+              theme={theme}
+              onTag={() => addExerciseGymTag(libraryEntry.id, currentGymId)}
+              onNotNow={() => dismissGymPrompt(libraryEntry.id, currentGymId)}
+              onAlwaysSkip={() => addSkipGymTagPrompt(libraryEntry.id, currentGymId)}
+            />
+          )}
 
           {/* Anomaly banner (Batch 16q) — plateau / regression / swing */}
           {showAnomalyBanner && (
@@ -2027,12 +2092,40 @@ export default function BbLogger() {
     .filter(s => s.mode === 'bb' && s.type === type && s.data?.exercises?.length)
     .sort((a, b) => new Date(b.date) - new Date(a.date))
 
+  // Batch 20b: prefer the most recent session AT THIS GYM for each exercise
+  // name when a gym is set. Falls back to the most recent anywhere if no
+  // same-gym session exists yet. This gym-preferring pass is what makes
+  // the Machine chip seed to Hoist at VASA and Cybex at TR instead of
+  // whichever the user used most recently overall. Other init fields
+  // (unilateral / plateLoaded) benefit too — "what plate config did I
+  // last use at THIS gym" is usually more relevant than the global most-
+  // recent.
+  //
+  // We read the gym from savedSession or fall back to settings.defaultGymId
+  // because this computation runs before the gymId useState — TDZ would
+  // crash if we referenced the live state here. Resumed sessions: use
+  // savedSession.gymId exactly. Fresh starts: settings.defaultGymId is
+  // what the readiness overlay will default to, so it's the most likely
+  // gym for this session. A mid-session gym change via the SessionGymPill
+  // doesn't re-seed these maps; user can tap the Machine chip to pick a
+  // different machine at that point.
+  const seedGymId = savedSession?.gymId || settings.defaultGymId || null
   const lastExDataByName = {}
+  if (seedGymId) {
+    // First pass: same-gym sessions only
+    for (const sess of allPastSessions) {
+      if (sess.gymId !== seedGymId) continue
+      for (const ex of sess.data.exercises) {
+        if (!lastExDataByName[ex.name]) lastExDataByName[ex.name] = ex
+      }
+    }
+  }
+  // Second pass: fill any remaining names from the broader history so
+  // exercises not-yet-done-at-this-gym still get SOME seed rather than
+  // starting fully blank.
   for (const sess of allPastSessions) {
     for (const ex of sess.data.exercises) {
-      if (!lastExDataByName[ex.name]) {
-        lastExDataByName[ex.name] = ex // first seen = most recent (sorted newest-first)
-      }
+      if (!lastExDataByName[ex.name]) lastExDataByName[ex.name] = ex
     }
   }
 
@@ -2143,6 +2236,14 @@ export default function BbLogger() {
   // a pre-16n session — recommender treats it as neutral (multiplier 1.0).
   const [readiness, setReadiness] = useState(savedSession?.readiness || null)
   const [gymId,     setGymId]     = useState(savedSession?.gymId     || null)
+
+  // Label lookup for the gym-tag prompt + any future surface that needs a
+  // human-readable name alongside the id. Memo cheap but keeps renders clean.
+  const gyms = useStore(s => s.settings.gyms || [])
+  const currentGymLabel = useMemo(
+    () => (gymId ? gyms.find(g => g.id === gymId)?.label || null : null),
+    [gymId, gyms]
+  )
 
   const calcElapsed = () => {
     if (!sessionStarted || !startTimestamp.current) return 0
@@ -2709,6 +2810,8 @@ export default function BbLogger() {
                       suggestedMode={readiness?.suggestedMode ?? 'push'}
                       fatigueSignals={fatigueSignals}
                       activeSessionId={startTimestamp.current || null}
+                      currentGymId={gymId}
+                      currentGymLabel={currentGymLabel}
                     />
                   )
                 })}

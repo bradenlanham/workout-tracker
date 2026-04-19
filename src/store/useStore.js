@@ -99,6 +99,13 @@ const useStore = create(
         // the startTimestamp changes each new session. Stale entries are
         // harmless — the check compares against the current session id.
         dismissedAnomalies: {},
+        // Batch 20b — per-(exercise, gym) auto-tag-prompt dismissal map
+        // (spec §3.5.4, "Not this time" branch). Shape:
+        // { [`${exerciseId}:${gymId}`]: sessionId }. Mirrors
+        // dismissedAnomalies — session-scoped, stale entries self-invalidate
+        // via startTimestamp change. The "Always skip" branch writes to
+        // Exercise.skipGymTagPrompt instead (persists across sessions).
+        dismissedGymPrompts: {},
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
@@ -615,6 +622,28 @@ const useStore = create(
             dismissedAnomalies: {
               ...(state.settings.dismissedAnomalies || {}),
               [exerciseKey]: activeId,
+            },
+          },
+        }))
+      },
+
+      // ── Gym-tag prompt "Not this time" dismissal (Batch 20b, §3.5.4) ──
+      // Stamps the current activeSession.startTimestamp against an
+      // (exerciseKey, gymId) pair so the auto-tag prompt stays hidden for
+      // the rest of this session. Next session a new startTimestamp means
+      // the check misses and the prompt returns (unless the user chose
+      // "Always skip" instead, which writes to Exercise.skipGymTagPrompt
+      // via addSkipGymTagPrompt and persists indefinitely).
+      dismissGymPrompt: (exerciseKey, gymId) => {
+        if (!exerciseKey || !gymId) return
+        const activeId = get().activeSession?.startTimestamp || 'no-session'
+        const mapKey = `${exerciseKey}:${gymId}`
+        set(state => ({
+          settings: {
+            ...state.settings,
+            dismissedGymPrompts: {
+              ...(state.settings.dismissedGymPrompts || {}),
+              [mapKey]: activeId,
             },
           },
         }))

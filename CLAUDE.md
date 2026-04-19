@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 20a — session gym pill in BbLogger header, AI coaching step 8 substep 2)
+> Last updated: April 19, 2026 (Batch 20b — gym-scoped recommender + auto-tag prompt, AI coaching step 8 substep 3)
 
 ## Rules for Claude
 
@@ -158,9 +158,13 @@ src/
         │                      # accepts aggressivenessMultiplier + defaultMode from readiness
         │                      # check-in), AnomalyBanner (Batch 16q — inline card banner for
         │                      # plateau/regression/swing, severity-keyed tint, dismiss-per-session
-        │                      # X; rendered between toolbar row and column headers).
-        │                      # Batches 16b + 16f + 16n + 16n-1 + 16q.
-        │                      # Exports: RecommendationChip, RecommendationSheet, AnomalyBanner.
+        │                      # X; rendered between toolbar row and column headers),
+        │                      # GymTagPrompt (Batch 20b — accent-tinted banner inside the
+        │                      # expanded exercise card surfacing "Tag X as available at Y?"
+        │                      # with Yes / Not this time / Always skip actions per §3.5.4;
+        │                      # rendered above AnomalyBanner so tagging decisions come first).
+        │                      # Batches 16b + 16f + 16n + 16n-1 + 16q + 20b.
+        │                      # Exports: RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt.
         ├── ReadinessCheckIn.jsx # Batch 16n — three-tap pre-session overlay (§2.5): Energy /
         │                      # Sleep / Goal rows + gym chip. Goal→mode, Energy+Sleep→multiplier.
         │                      # Defaults OK/OK/Push = no-op (mult 1.0). Skip link + Go back.
@@ -200,6 +204,7 @@ src/
     gyms: [],                      // Batch 16n — [{id, label}] — populated inline from readiness chip picker
     defaultGymId: null,            // Batch 16n — last-selected gym (seeds the chip next session)
     dismissedAnomalies: {},        // Batch 16q — { [exerciseKey]: sessionId } — anomaly-banner dismissals scoped to current active session
+    dismissedGymPrompts: {},       // Batch 20b — { [`${exerciseId}:${gymId}`]: sessionId } — "Not this time" dismissals of the auto-tag-on-use prompt, session-scoped. "Always skip" writes to Exercise.skipGymTagPrompt instead (persists).
   },
 
   // ── Splits ──
@@ -1254,6 +1259,26 @@ Two quick follow-ups on 19b: user wanted the running-state scale back (it disamb
 
 333. **Build.** Same bundle size (one value flip + one transform wrapper — nothing measurable).
 
+### Batch 20b (April 19, 2026) — Gym-scoped recommender + Machine chip gym seed + auto-tag prompt (AI coaching step 8 substep 3)
+
+Second visible UI surface from Step 8, plus the engine wiring that Step 7 left on the table: the recommender and the Machine chip now both scope by the session's gymId, so training at different locations produces correctly-scoped prescriptions and the right prior-machine seed. New GymTagPrompt banner captures the §3.5.4 "Tag X as available at Y?" decision inline at the top of the expanded exercise card. All three pieces rely on the Batch 20 data layer.
+
+352. **`recHistory` progressive-fallback gym + instance scoping (`BbLogger.jsx` ExerciseItem).** The useMemo that feeds the recommender + anomaly detectors + sparkline now tries four tiers in descending specificity: (1) `instance + gym` (most specific — same machine at same gym), (2) `gym alone` (same gym, any machine — covers intra-gym machine swaps), (3) `instance alone` (same machine at any gym — covers identically named machines across gyms), (4) unscoped (the pre-Batch-19 safety net). Each tier must clear the ≥3-session bar to be used; otherwise it falls to the next. Verified live: at TR with 3 Cybex sessions, the sheet reports "last 3 sessions" with Peak 293 and pushes 220×10; switching the SessionGymPill to VASA (4 Hoist sessions) re-renders "last 4 sessions", Peak 240, pushes 185×10 — same exercise, different prescription per gym.
+
+353. **Gym-preferring `lastExDataByName` seed (`BbLogger.jsx`).** Two-pass build: first pass collects per-exercise seeds from same-gym sessions only, second pass fills any missing names from the broader history. Drives the Machine chip's initial value + the unilateral / plateLoaded init flags. Reads `seedGymId = savedSession?.gymId || settings.defaultGymId || null` — resumed sessions use the saved gym exactly, fresh starts fall back to `defaultGymId` (what the readiness overlay will default to), so the Machine chip seed reflects what the user is about to pick without the TDZ hazard of reading the yet-to-be-declared `gymId` useState. Verified live: fresh session at VASA (default gym) seeds Pec Dec to Hoist; fresh session at TR seeds it to Cybex.
+
+354. **`getInstancesForExercise` gym-scoped with fallback (`BbLogger.jsx` ExerciseItem).** Machine picker options now come from `getInstancesForExercise(allSessions, id, name, currentGymId)`. Fallback to the unscoped list when the gym-scoped result is empty, so first-time-at-a-gym surfaces historical picks as a starting point rather than nothing.
+
+355. **`dismissedGymPrompts` + `dismissGymPrompt(key, gymId)` store action (`useStore.js`).** Shape: `{ [`${exerciseId}:${gymId}`]: sessionId }`. Mirrors `dismissedAnomalies` — session-scoped, self-invalidates on next session's startTimestamp change. This is the persistence hook for the prompt's "Not this time" branch; "Always skip" persists via `Exercise.skipGymTagPrompt` instead (Batch 20).
+
+356. **`GymTagPrompt` component (`src/pages/log/Recommendation.jsx`).** Accent-tinted banner with three action buttons: "Yes, tag it" (primary, accent-filled), "Not this time" (secondary, `bg-item`), "Always skip" (tertiary, muted). Rendered inline inside an expanded exercise card, above the AnomalyBanner so tagging decisions come first and correctly-scoped history reduces false-positive anomaly signals. Copy: `Tag {exerciseName} as available at {gymLabel}?`. Co-located with `AnomalyBanner` in `Recommendation.jsx` for style consistency.
+
+357. **BbLogger wiring — 3 new props + 3 new store subscriptions.** ExerciseItem accepts `currentGymId` + `currentGymLabel` and threads them into recHistory, machineOptions, and the GymTagPrompt render gate. Also subscribes to `addExerciseGymTag` / `addSkipGymTagPrompt` / `dismissGymPrompt` so each of the three prompt actions fires the right store action. The prompt's render gate composes: `settings.enableAiCoaching && libraryEntry && currentGymId && shouldPromptGymTag(libraryEntry, currentGymId) && !dismissedThisSession`. Uses `libraryEntry.id` as the prompt key (not `exercise.exerciseId`) because template-seeded exercises don't carry exerciseId until save time.
+
+358. **Verified live in preview** (mobile 375×812). Seven scenarios pass with zero new console errors after the initial seedGymId fix: (a) fresh session at VASA → Pec Dec seeds to Hoist; (b) fresh session at TR → seeds to Cybex; (c) GymTagPrompt renders in expanded Pec Dec card with "Tag Pec Dec as available at VASA?"; (d) Yes, tag it → `exerciseLibrary['ex_pec_dec'].sessionGymTags = ['gym_vasa']`, prompt disappears; (e) Not this time → `settings.dismissedGymPrompts['ex_pec_dec:gym_vasa']` stamped with activeSession.startTimestamp, prompt disappears, no tag added; (f) Always skip → `skipGymTagPrompt = ['gym_vasa']` on library entry (persistent), prompt disappears; (g) mid-session gym swap (TR → VASA via SessionGymPill) re-scopes the recommender live — sheet flipped from "last 3 sessions, Peak 293, Push 220×10" to "last 4 sessions, Peak 240, Push 185×10" in the same flow. Screenshot confirmed clean layout at VASA with purple accent.
+
+359. **Build.** `npx vite build --outDir /tmp/test-build` → 743.18 KB bundle / 200.39 KB gzipped (+2.6 KB vs 20a, accounted for by the GymTagPrompt component + the progressive-fallback recHistory + gym-preferring seed pass).
+
 ### Batch 20a (April 19, 2026) — Session gym pill in BbLogger header (AI coaching step 8 substep 2)
 
 First visible UI surface from Step 8. Makes the gym-driven AI inferences (Machine chip auto-fill from Batch 19, incoming recommender-history scoping in 20b) visible to the user per their UX principle: "make AI inferences visible — don't hide auto-behavior." Hard requirement surfaced in the Step 8 briefing.
@@ -1310,11 +1335,10 @@ Three targeted fixes in the workout editor sheet after live-feedback on Batch 18
 
 Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped, step 7 equipment instance landed in Batch 19, and **Step 8 substep 1 (data layer)** landed in Batch 20. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, the coach surfaces plateau / regression / swing banners on the exercise card, per-machine trend-fit scoping ships with a smart fallback, and the gym-tagging data layer + §3.5 helpers are now wired up for the UI substeps to consume.
 
-**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer (Exercise.sessionGymTags + skipGymTagPrompt, four store actions, three helpers, getExerciseHistory + getInstancesForExercise gymId scoping, `gym-tags-sanity.mjs`). Batch 20a added the session gym pill to the BbLogger header — the first visible UI surface from Step 8. Remaining substeps:
+**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer. Batch 20a added the session gym pill. Batch 20b wired gym-scoped recommender history + gym-preferring Machine chip seed + the auto-tag-on-use prompt with Yes / Not this time / Always skip. Remaining substeps:
 
-- **20b — Machine chip gym-scoped auto-fill + auto-tag-on-use prompt.** Machine chip seeds from "most recent at THIS gym" (not just globally). When the user selects an exercise at a gym not in its sessionGymTags, show inline prompt "Tag as available at VASA? [Yes] [Not this time] [Always skip]". `shouldPromptGymTag` from Batch 20 gates the render; `addExerciseGymTag` / `addSkipGymTagPrompt` commit the answer. Also: the recommender's `recHistory` in BbLogger should start using `getExerciseHistory(..., gymId)` with the <3-session fallback so trend fits scope to same-gym sessions.
 - **20c — Picker filter.** "Only available at VASA" toggle/chip on `ExercisePicker`. §9.7 Option A-style hard filter, default off so nothing's hidden until the user opts in. `isExerciseAvailableAtGym` from Batch 20 does the filter check.
-- **20d — Settings UI for gym CRUD.** HamburgerMenu → Settings (Profile Settings section) → "My Gyms" — add/rename/delete gyms. Guard deletion with a session-count warning. Currently gyms can only be added inline from the readiness overlay or the new 20a pill popover. Should also clean up orphan references: when a gym is deleted, strip it from every exercise's sessionGymTags / skipGymTagPrompt so no dangling IDs remain. (Sessions' historical gymId references are preserved — they're a record of past truth.)
+- **20d — Settings UI for gym CRUD.** HamburgerMenu → Settings (Profile Settings section) → "My Gyms" — add/rename/delete gyms. Guard deletion with a session-count warning. Currently gyms can only be added inline from the readiness overlay or the 20a pill popover. Should also clean up orphan references: when a gym is deleted, strip it from every exercise's sessionGymTags / skipGymTagPrompt so no dangling IDs remain. (Sessions' historical gymId references are preserved — they're a record of past truth.)
 
 ### Post-v1 roadmap (explicitly deferred per plan Part 4)
 
