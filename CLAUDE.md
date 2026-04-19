@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17f — ChooseStartingPoint + 6 split templates)
+> Last updated: April 19, 2026 (Batch 17g — SplitCanvas + WorkoutEditSheet)
 
 ## Rules for Claude
 
@@ -76,7 +76,9 @@ src/
 │   ├── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
 │   ├── ExerciseEditSheet.jsx   # Bottom-sheet editor for existing library entries (Batch 16j)
 │   ├── Toast.jsx               # Batch 17e — event-bus undo toast; showToast({message, undo}) from anywhere
-│   └── RestDayChip.jsx         # Batch 17f — shared dashed-circle "R" rest chip (D3); size prop
+│   ├── RestDayChip.jsx         # Batch 17f — shared dashed-circle "R" rest chip (D3); size prop
+│   ├── EmojiPicker.jsx         # Batch 17g — curated 32-emoji grid + OS fallback via paste input (D5)
+│   └── WorkoutEditSheet.jsx    # Batch 17g — bottom-sheet editor for a single workout; editable section labels, inline rec editor, nested ExercisePicker
 │
 │
 └── pages/
@@ -88,7 +90,8 @@ src/
     ├── Guide.jsx              # Static training guide (sets, reps, hypertrophy tips)
     ├── CardioLogger.jsx       # Cardio session logger: type selection, stopwatch, manual entry, HR, distance, intensity
     ├── SplitManager.jsx       # List all splits, set active, edit, clone, export/import, delete
-    ├── SplitBuilder.jsx       # 4-step wizard: name/emoji → add workouts → set rotation → review & save
+    ├── SplitBuilder.jsx       # 4-step wizard: name/emoji → add workouts → set rotation → review & save — KEPT as a component post-17g for the 72h stability window; no longer reachable via route
+    ├── SplitCanvas.jsx        # Batch 17g — single-canvas editor (the new /splits/new + /splits/edit/:id surface); identity + workouts + rotation always visible, sticky footer, cycle/week rotation toggle (D6), ⋮ overflow for Export/Delete
     ├── ChooseStartingPoint.jsx # Batch 17f — /splits/new/start template chooser (6 templates + Blank + Import)
     ├── TemplateEditor.jsx     # Create/edit custom workout templates (legacy, pre-splits feature)
     ├── Backfill.jsx           # One-time tagging screen for library entries with needsTagging: true.
@@ -419,8 +422,8 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 | `/templates/:id` | TemplateEditor | Legacy template editing |
 | `/splits` | SplitManager | Split list & management |
 | `/splits/new/start` | ChooseStartingPoint | Template chooser (6 templates + Blank + Import) |
-| `/splits/new` | SplitBuilder | New split wizard |
-| `/splits/edit/:id` | SplitBuilder | Edit existing split |
+| `/splits/new` | SplitCanvas | Single-canvas editor (Batch 17g) |
+| `/splits/edit/:id` | SplitCanvas | Single-canvas editor for existing splits (Batch 17g) |
 | `/backfill` | Backfill | One-time muscle-group + equipment tagging for user-created exercises |
 | `/exercises` | ExerciseLibraryManager | Full library management — filter, search, edit any entry |
 
@@ -922,6 +925,29 @@ Step 6 of the Split Builder redesign (see `split-builder-redesign-handoff.md` St
 237. **`/splits/new/start` page + route (`src/pages/ChooseStartingPoint.jsx`, `App.jsx`).** Sticky header with back arrow, heading `"How do you want to start?"`, subtitle `"Pick a template and customize, or build from scratch."`. 7 template cards (6 from `SPLIT_TEMPLATES` + a Blank slate with dashed accent border + `✨` emoji). Each card shows the template's emoji, bold title, cycle badge, description, and a rotation preview row of 22px chips (workout emojis and `RestDayChip`s). Tapping a template calls `loadTemplate` → `navigate('/splits/new')`. Tapping Blank clears any existing draft and navigates to `/splits/new` with no banner. An inline file input at the bottom surfaces the Import path without having to route into SplitManager with a query string — accepts the same `bambam-split-export` shape as SplitManager's import. Route registered BEFORE `/splits/new` in App.jsx so React Router v6's specificity-first matching picks it up.
 238. **`SplitManager` + `Welcome` wired through the chooser.** SplitManager's "Create New Split" button now routes to `/splits/new/start`. Welcome's Build-Own path (`pendingDestination === 'splits-new'`) also routes there, so new users see the scaffolding on their very first wizard visit instead of dropping cold into an empty form. Existing `/splits/new` URL stays live — direct-URL enthusiasts + any bookmarks still work.
 239. **Verified live in preview** (mobile 375×812). Route renders all 7 cards (6 templates + Blank) with correct rotation preview (including dashed-R rest chips). Nav is hidden on `/splits/new/start` (the `/splits/new` prefix predicate from Batch 17b covers it for free). Tapping Full Body × 3/week templates seeds `splitDraft` with `{name: 'Full Body × 3/week', emoji: '🏋️', workouts: [FullBodyA/B/C], rotation: ['fb_a','rest','fb_b','rest','fb_c','rest','rest']}` and navigates to `/splits/new`. SplitBuilder's mount-effect surfaces the resume banner; tapping Resume restores all four fields into local state (name input + 🏋️ emoji selected + 3 workouts visible on Step 2). Blank path clears `splitDraft = null` and shows no banner. Back arrow returns to the prior page. No console errors. ✓
+
+### Batch 17g (April 19, 2026) — SplitCanvas + WorkoutEditSheet (the big one)
+
+Steps 7 + 8 of the Split Builder redesign (see `split-builder-redesign-handoff.md` Steps 7 + 8). These two ship together per the handoff's hard-dependency note — Canvas needs the sheet for the workout editor surface, and the sheet is meaningless without the Canvas to call it. Replaces SplitBuilder's 4-step linear wizard with a single canvas where identity, workouts, and rotation are always visible and always editable; saving is always one tap away via a sticky footer.
+
+240. **`EmojiPicker.jsx` (`src/components/EmojiPicker.jsx`).** Shared emoji picker per decision D5: 32 curated emojis in a 6-col grid (Strength / Cardio / Focus / Other buckets interleaved), plus a "paste any emoji" text input at the bottom as the OS fallback. Renders via `createPortal` at z-index 270. Selected state uses ring-2. Per-tap onSelect fires immediately (no Save button — tap = pick). Accepts 1–8 char inputs for multi-codepoint ZWJ sequences.
+241. **`SplitCanvas.jsx` (`src/pages/SplitCanvas.jsx`).** Single-page editor that owns identity + workouts + rotation + save-on-click.
+    - **Identity row**: large 80×80 emoji button (opens EmojiPicker) + centered name input placeholder `"Untitled split"`.
+    - **Workouts section**: collapsible header `Workouts (N)`, workout cards with left-side up/down arrows, emoji + name + preview text (top 3 exercise names + `"+K more"`), right-side ⋮ overflow menu (Edit / Duplicate / Delete), `"+ Add workout"` button that creates a stub and opens the sheet in `isNew` mode. Delete has undo-toast via Batch 17e's `showToast`; auto-prunes rotation references to the deleted workout's id. Duplicate uses the same deep-clone pattern Batch 17e ships — fresh workout id, `(Copy)` suffix, not auto-added to rotation.
+    - **Rotation section**: collapsible header `Your Week` + `Cycle / Week` toggle (default Cycle per D6). Cycle view is a horizontal scrollable strip of 64×80 day chips (`D1` label + emoji or RestDayChip). Week view is a 7-col grid (Sun–Sat). Rotation chips open a bottom-sheet `RotationChipMenu` (z-250) to assign a workout or rest day, or remove the slot. Cycle view has inline ← → arrows to reorder; Week view cycles !== 7 show a "switch to Cycle view" hint.
+    - **Sticky footer**: accent-colored Save button full-width. Create mode shows an "Activate this split on save" toggle (default on); edit mode omits it. Disabled state includes a helper hint listing missing fields (name / workouts / rotation).
+    - **Back arrow**: if `isDirty`, opens `DiscardUnsavedModal` (z-280) with "Keep editing" / "Discard"; else navigates immediately. Save path calls `clearSplitDraft()` so the resume banner never fires on a split that was just saved.
+    - **Overflow menu (edit mode only)**: Export (downloads a `bambam-split-export` JSON blob from current canvas state) + Delete split (native confirm → `deleteSplit` + clearDraft + navigate). Delete is hidden for built-in splits.
+    - **Draft banner**: matches Batch 17a's pattern but pre-loads the draft into local state BEFORE showing the banner (the wizard required a Resume tap to commit; Canvas shows the draft immediately and the banner is an informational "Keep / Discard" chip). Orphaned and stale drafts auto-clear on mount per the 7-day rule.
+242. **`WorkoutEditSheet.jsx` (`src/components/WorkoutEditSheet.jsx`).** Bottom-sheet editor for a single workout at z-270.
+    - **Identity row**: 56×56 emoji button + workout name input.
+    - **Section blocks**: collapsible, editable label input, up/down reorder buttons, × delete (with native confirm if non-empty). Each exercise row: up/down reorder, name, RecPill, × remove. `+ Add exercise` opens a nested ExercisePicker (z-275).
+    - **ExercisePicker (inlined)**: full-screen overlay with search, muscle-group tabs, library-backed list, "Or add your own" bottom input with fuzzy-match dedup (reuses `findSimilarExercises` at 0.85 threshold) and CreateExerciseModal fallback. Structurally identical to SplitBuilder's picker — Step 10 will extract and improve both.
+    - **Rec editor**: simple string-only editor for Step 7; structured REC (`{sets, reps, note}`) lands in Step 9. 20-char cap preserved. Saving with an empty value promotes the exercise back to a bare string to avoid noise in the rec data.
+    - **Save / Close / Cancel**: Save enabled when name is non-empty. Cancel / Close / backdrop-tap → if dirty, opens a nested DiscardConfirm (z-280); else closes. Header + Save footer both pinned, middle content scrolls at up-to-92vh sheet height.
+243. **`RestDayChip` reuse.** Used in the rotation strip (28px for cycle chips, 26px for week grid), in the RotationChipMenu's rest-day option, in the "Add rest" quick-add button (18px). Full D3 application to Dashboard's calendar stays in Batch 17f's follow-up slot.
+244. **Route wiring (`App.jsx`).** `/splits/new` and `/splits/edit/:id` now render SplitCanvas. SplitBuilder.jsx remains in the repo as a component for the 72h stability window Step 12 calls for, but no route points at it.
+245. **Verified live in preview** (mobile 375×812, debug-backup.json localStorage). `/splits/new` renders empty canvas with "New Split" heading, `Untitled split` placeholder, `WORKOUTS (0)` + "No workouts yet" empty state, YOUR WEEK section with Cycle default + Add rest quick chip, sticky footer with `Activate on save` toggle on + `Save & Activate` disabled with helper `Add a name · Add at least one workout · Add to rotation`. `/splits/edit/split_bam` loads BamBam's Blueprint with 💎 emoji + `BamBam's Blueprint` name + 5 workouts (Push, Quads, Pull, Shoulders & Arms, Hams — each showing top-3 exercise preview text) + 7 rotation chips. Tapping `+ Add workout` pushes a `New Workout` stub into the list AND opens WorkoutEditSheet with `Add workout` header and the stub's name pre-filled. Back arrow from a dirty state opens the DiscardUnsavedModal. No console errors.
 
 ---
 

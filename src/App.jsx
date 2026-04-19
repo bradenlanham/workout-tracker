@@ -15,6 +15,7 @@ import CardioLogger from './pages/CardioLogger'
 import TemplateEditor from './pages/TemplateEditor'
 import SplitManager from './pages/SplitManager'
 import SplitBuilder from './pages/SplitBuilder'
+import SplitCanvas from './pages/SplitCanvas'
 import ChooseStartingPoint from './pages/ChooseStartingPoint'
 import Welcome from './pages/Welcome'
 import Backfill from './pages/Backfill'
@@ -58,8 +59,12 @@ function ThemedApp() {
           {/* /splits/new/start must register BEFORE /splits/new so React
               Router v6's specificity-first matching picks it up */}
           <Route path="/splits/new/start" element={<ChooseStartingPoint />} />
-          <Route path="/splits/new" element={<SplitBuilder />} />
-          <Route path="/splits/edit/:id" element={<SplitBuilder />} />
+          {/* Batch 17g — SplitCanvas replaces SplitBuilder for the
+              /splits/new + /splits/edit/:id entry points. SplitBuilder is
+              retained as a component for the 72h-stability window per
+              Step 12 but is no longer reachable via route. */}
+          <Route path="/splits/new" element={<SplitCanvas />} />
+          <Route path="/splits/edit/:id" element={<SplitCanvas />} />
           <Route path="/backfill" element={<Backfill />} />
           <Route path="/exercises" element={<ExerciseLibraryManager />} />
         </Routes>
