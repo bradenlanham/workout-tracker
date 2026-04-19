@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17c — SplitManager card-tap activation + overflow menu)
+> Last updated: April 19, 2026 (Batch 17d — delete legacy SplitEditor + /split route)
 
 ## Rules for Claude
 
@@ -86,7 +86,6 @@ src/
     ├── CardioLogger.jsx       # Cardio session logger: type selection, stopwatch, manual entry, HR, distance, intensity
     ├── SplitManager.jsx       # List all splits, set active, edit, clone, export/import, delete
     ├── SplitBuilder.jsx       # 4-step wizard: name/emoji → add workouts → set rotation → review & save
-    ├── SplitEditor.jsx        # Legacy built-in split rotation reorder (kept for backward compat)
     ├── TemplateEditor.jsx     # Create/edit custom workout templates (legacy, pre-splits feature)
     ├── Backfill.jsx           # One-time tagging screen for library entries with needsTagging: true.
     │                          # Per-card draft state + Confirm button (Batch 16j) — auto-save
@@ -348,7 +347,6 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 ### Splits System
 - **SplitManager:** List, activate, edit, clone, export (JSON), import, delete splits.
 - **SplitBuilder:** 4-step wizard. Step 1: split name + emoji. Step 2: add/edit workouts (each with name, emoji, exercise sections pulled from the exercise library or custom input). Step 3: set rotation order (drag workouts + rest days). Step 4: review & save.
-- **SplitEditor:** Legacy editor for reordering the built-in split's rotation only.
 - Splits are auto-created on first app load (built-in "BamBam's Blueprint").
 - When a split is created/edited, workout IDs are generated via `generateId()`. These IDs are used in the rotation array and as the `type` field in logged sessions.
 
@@ -415,7 +413,6 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 | `/guide` | Guide | Training tips |
 | `/templates/new` | TemplateEditor | Legacy template creation |
 | `/templates/:id` | TemplateEditor | Legacy template editing |
-| `/split` | SplitEditor | Legacy built-in split reorder |
 | `/splits` | SplitManager | Split list & management |
 | `/splits/new` | SplitBuilder | New split wizard |
 | `/splits/edit/:id` | SplitBuilder | Edit existing split |
@@ -469,7 +466,6 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 - The app uses `HashRouter` (not `BrowserRouter`) for Vercel SPA deployment compatibility.
 - Max width is constrained to `max-w-lg` (32rem / 512px) and centered — mobile-first design.
 - Bottom nav hides during logging sessions AND during the split builder / canvas routes (`/splits/new`, `/splits/new/start`, `/splits/edit/:id`). Hamburger menu mirrors the same fullscreen-flow hide predicate. The `/splits` list view still shows the nav.
-- The `SplitEditor` page is a legacy component for reordering the built-in split only. The `SplitBuilder` is the full-featured split creation/editing tool.
 - `customTemplates` is a legacy feature predating the splits system. Templates use `tpl_` prefixed IDs.
 - The exercise library (`exerciseLibrary.js`) has 140+ exercises organized by muscle group and is used by the SplitBuilder's exercise picker. The session logger's "Add Exercise" panel has its own smaller hardcoded suggestion list of 15 common exercises.
 
@@ -890,6 +886,15 @@ Step 3 of the Split Builder redesign (see `split-builder-redesign-handoff.md` St
 221. **Duplicate stays on the list (`handleDuplicate`).** `cloneSplit` fires and the new `"(Copy)"` entry appears in place; no auto-navigate to the builder. Users who want to edit the duplicate can open its own ⋯ menu and pick Edit — keeps the surface predictable, since a surprise redirect breaks the "I was just making a copy to reference" flow.
 222. **Copy updated (`SplitManager.jsx`).** The header instruction reads `Tap a split to activate it. Use ⋯ for more actions.` — matches the new model exactly. The old "Clone built-in splits to customise them" line is removed since Duplicate is now in the menu for every split.
 223. **Verified live in preview** (mobile 375×812). Six scenarios pass: (a) Tapping an inactive card sets it active, `aria-pressed` + accent border update, active-card aria-label becomes `{name}, currently active`; (b) Tapping an already-active card is a no-op; (c) ⋯ on an active built-in split shows `Edit / Duplicate / Export` (3 items); (d) ⋯ on a non-active non-built-in split shows `Set Active / Edit / Duplicate / Export / Delete` (5 items); (e) Duplicate adds `"(Copy)"` entry without navigating away, splits count +1, hash stays at `#/splits`; (f) Edit navigates to `/splits/edit/:id`. Outside-click + Escape both dismiss the menu; tapping the ⋯ button itself doesn't fire the card-tap. No console errors. ✓
+
+### Batch 17d (April 19, 2026) — Delete legacy SplitEditor + /split route
+
+Step 4 of the Split Builder redesign (see `split-builder-redesign-handoff.md` Step 4). `SplitEditor.jsx` was a pre-splits artifact that reordered only the built-in split's rotation. SplitBuilder's Step 3 (rotation) replaces it entirely. Nothing in the current UI links to `/split` anymore.
+
+224. **Deleted `src/pages/SplitEditor.jsx`.** Confirmed via grep that no other file references the component or the singular `/split` route. The related `customTemplates` slice and `workoutSequence` field are kept (still referenced by pre-splits session history and the TemplateEditor fallback).
+225. **Removed import + `<Route path="/split">` from `src/App.jsx`.** The `/split` URL now falls through to React Router's default no-match behavior (blank), which matches every other unregistered route. Any stale bookmark lands in the same place; not worth a redirect shim for a route that was never linked from the UI.
+226. **`useStore.js` comment clean-up.** The `updateWorkoutSequence` docblock used to reference "the existing SplitEditor" — rewritten to explain the real reason the action still exists (legacy built-in split rotation sync).
+227. **Verified build** via `npx vite build --outDir /tmp/test-build` — bundle size down ~6 KB. Manual smoke: `/dashboard → /splits → /splits/edit/:id` unaffected. No broken imports, no unused-symbol warnings. No preview walkthrough needed — change is subtractive and the affected surface had no reachable users.
 
 ---
 

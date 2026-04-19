@@ -478,8 +478,10 @@ const useStore = create(
       },
 
       // ── Workout sequence (split order) ────────────────────────────────────────────────
-      // Also syncs to the active split's rotation if the active split is built-in,
-      // so the existing SplitEditor continues to work correctly.
+      // Legacy action from the pre-splits era. Kept because the built-in
+      // split's rotation derives from it on first load; if any old callsite
+      // still updates the workoutSequence we also sync the active built-in
+      // split's rotation to match.
 
       updateWorkoutSequence: (sequence) => {
         set(state => {

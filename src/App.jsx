@@ -12,7 +12,6 @@ import Guide from './pages/Guide'
 import BbLogger from './pages/log/BbLogger'
 import CardioLogger from './pages/CardioLogger'
 import TemplateEditor from './pages/TemplateEditor'
-import SplitEditor from './pages/SplitEditor'
 import SplitManager from './pages/SplitManager'
 import SplitBuilder from './pages/SplitBuilder'
 import Welcome from './pages/Welcome'
@@ -53,7 +52,6 @@ function ThemedApp() {
           <Route path="/guide" element={<Guide />} />
           <Route path="/templates/new" element={<TemplateEditor />} />
           <Route path="/templates/:id" element={<TemplateEditor />} />
-          <Route path="/split" element={<SplitEditor />} />
           <Route path="/splits" element={<SplitManager />} />
           <Route path="/splits/new" element={<SplitBuilder />} />
           <Route path="/splits/edit/:id" element={<SplitBuilder />} />
