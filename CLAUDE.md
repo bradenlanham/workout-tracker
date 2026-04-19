@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 19b — Rest timer: hide cog, long-press for settings)
+> Last updated: April 19, 2026 (Batch 19c — Rest timer scale restored + auto-start default on)
 
 ## Rules for Claude
 
@@ -1207,6 +1207,18 @@ User feedback on the floating rest timer: the always-visible settings cog was cl
 328. **Verified live in preview** (mobile 375×812). Cog button absent. Long-press (simulated touch start → 1100ms wait → touchend) opens the settings panel without starting the timer. Subsequent short-tap starts the timer. `user-select: none`, `transform: none`, `webkit-tap-highlight-color: rgba(0,0,0,0)` all confirmed via computed-style inspection. Screenshot shows running timer at fixed position with settings panel opened to its left, no overlap with session header or exercise cards. Zero console errors.
 
 329. **Build.** `npx vite build --outDir /tmp/test-build` → same bundle size (tiny refactor, no new dependencies).
+
+### Batch 19c (April 19, 2026) — Rest timer expansion restored + auto-start rest default on
+
+Two quick follow-ups on 19b: user wanted the running-state scale back (it disambiguates resting vs idle at a glance), and wanted the auto-start-rest-after-a-working-set behavior on by default instead of gated behind a settings toggle.
+
+330. **`scale(1.5)` on running restored** (`src/components/RestTimer.jsx`). Wrapped the button in a dedicated transform container with `transform-origin: top right` so the circle grows down+left into empty space rather than off-screen at top:70 / right:16. Transition stays at `0.3s ease`. All long-press + text-select guards from 19b remain on the underlying button, so the hold-to-open-settings flow still works while scaled.
+
+331. **`autoStartRest` default flipped `false → true`** (`src/store/useStore.js`). Fresh installs now auto-start the rest timer when the user completes a working set (weight + reps both present) and moves to a new set via the numpad's Next-on-reps action or the `+ Add Set` button. The existing `addSet` guard in `BbLogger.jsx:819` (`settings.autoStartRest && lastSet?.type === 'working' && (lastSet.reps || lastSet.weight)`) is unchanged — just the default value. Users who want it off can still toggle via HamburgerMenu → Settings → Workout Defaults. **Note for existing users:** the persist merge preserves any value already saved to localStorage, so long-time users whose setting was explicitly set to false (or matched the old default) will keep false until they toggle it on once in settings.
+
+332. **Verified live in preview** (mobile 375×812). Idle state: timer transform is `matrix(1,0,0,1,0,0)` (scale 1). Tap starts the timer → transform transitions to `matrix(1.5,0,0,1.5,0,0)` after the 0.3s ease. Auto-start path: seeded Pec Dec with weight:185 / reps:10 on set 0; tapped `+ Add Set` → `restEndTimestamp` flips from null to a future epoch ms (~90s out) immediately. Screenshot confirms the blue running timer at 1.5× scale in the upper-right, no cog, Pec Dec showing the filled 185×10 set with trophy + the new empty row below. Zero console errors.
+
+333. **Build.** Same bundle size (one value flip + one transform wrapper — nothing measurable).
 
 ---
 

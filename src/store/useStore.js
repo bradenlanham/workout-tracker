@@ -74,7 +74,7 @@ const useStore = create(
         accentColor: 'violet',
         backgroundTheme: 'obsidian',
         userName: '',
-        autoStartRest: false,
+        autoStartRest: true,
         defaultFirstSetType: 'warmup',
         restTimerChime: true,
         hasSeenTutorial: false,

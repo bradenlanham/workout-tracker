@@ -185,68 +185,80 @@ export default function RestTimer() {
       className="flex flex-col items-end gap-2"
     >
       <div className="flex items-center gap-2">
-        {/* Timer button — tap to start/stop, long-press (1s) for settings */}
-        <button
-          onClick={(e) => {
-            if (longPressFired.current) {
-              longPressFired.current = false
-              e.preventDefault()
-              e.stopPropagation()
-              return
-            }
-            handleTap()
-          }}
-          onTouchStart={(e) => {
-            const t = e.touches[0]
-            beginLongPress(t.clientX, t.clientY)
-          }}
-          onTouchMove={(e) => {
-            const t = e.touches[0]
-            movePressed(t.clientX, t.clientY)
-          }}
-          onTouchEnd={cancelLongPress}
-          onTouchCancel={cancelLongPress}
-          onMouseDown={(e) => beginLongPress(e.clientX, e.clientY)}
-          onMouseMove={(e) => movePressed(e.clientX, e.clientY)}
-          onMouseUp={cancelLongPress}
-          onMouseLeave={cancelLongPress}
-          onContextMenu={(e) => e.preventDefault()}
-          aria-label={isRunning ? 'Pause rest timer (long-press for settings)' : 'Start rest timer (long-press for settings)'}
+        {/* Timer button — tap to start/stop, long-press (1s) for settings.
+            Scales 1.5× while running (top-right anchored so it grows down+left
+            into empty space rather than off-screen). The user-select + tap
+            suppression attributes prevent iOS callout / text highlight on
+            hold. */}
+        <div
           style={{
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            WebkitTouchCallout: 'none',
-            WebkitTapHighlightColor: 'transparent',
+            transition: 'transform 0.3s ease',
+            transform: isRunning && timeLeft > 0 ? 'scale(1.5)' : 'scale(1)',
+            transformOrigin: 'top right',
           }}
-          className={`relative w-16 h-16 rounded-full shadow-lg flex flex-col items-center justify-center transition-colors font-bold ${
-            isDone
-              ? 'bg-green-500 text-white'
-              : isAlmostDone
-              ? 'bg-amber-500 text-white'
-              : isRunning
-              ? 'bg-blue-500 text-white'
-              : 'bg-item text-c-secondary'
-          }`}
         >
-          {/* Progress ring */}
-          <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 64 64">
-            <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
-            <circle
-              cx="32" cy="32" r="28" fill="none"
-              stroke="currentColor" strokeWidth="3"
-              strokeDasharray={`${2 * Math.PI * 28}`}
-              strokeDashoffset={`${2 * Math.PI * 28 * (1 - Math.max(0, Math.min(100, pct)) / 100)}`}
-              strokeLinecap="round"
-              className="transition-all duration-500"
-            />
-          </svg>
-          <span className="text-sm font-bold z-10">
-            {isDone ? '✓' : `${mm}:${ss}`}
-          </span>
-          <span className="text-xs z-10 opacity-70">
-            {isRunning ? 'REST' : isDone ? 'DONE' : 'TAP'}
-          </span>
-        </button>
+          <button
+            onClick={(e) => {
+              if (longPressFired.current) {
+                longPressFired.current = false
+                e.preventDefault()
+                e.stopPropagation()
+                return
+              }
+              handleTap()
+            }}
+            onTouchStart={(e) => {
+              const t = e.touches[0]
+              beginLongPress(t.clientX, t.clientY)
+            }}
+            onTouchMove={(e) => {
+              const t = e.touches[0]
+              movePressed(t.clientX, t.clientY)
+            }}
+            onTouchEnd={cancelLongPress}
+            onTouchCancel={cancelLongPress}
+            onMouseDown={(e) => beginLongPress(e.clientX, e.clientY)}
+            onMouseMove={(e) => movePressed(e.clientX, e.clientY)}
+            onMouseUp={cancelLongPress}
+            onMouseLeave={cancelLongPress}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label={isRunning ? 'Pause rest timer (long-press for settings)' : 'Start rest timer (long-press for settings)'}
+            style={{
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+            className={`relative w-16 h-16 rounded-full shadow-lg flex flex-col items-center justify-center transition-colors font-bold ${
+              isDone
+                ? 'bg-green-500 text-white'
+                : isAlmostDone
+                ? 'bg-amber-500 text-white'
+                : isRunning
+                ? 'bg-blue-500 text-white'
+                : 'bg-item text-c-secondary'
+            }`}
+          >
+            {/* Progress ring */}
+            <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
+              <circle
+                cx="32" cy="32" r="28" fill="none"
+                stroke="currentColor" strokeWidth="3"
+                strokeDasharray={`${2 * Math.PI * 28}`}
+                strokeDashoffset={`${2 * Math.PI * 28 * (1 - Math.max(0, Math.min(100, pct)) / 100)}`}
+                strokeLinecap="round"
+                className="transition-all duration-500"
+              />
+            </svg>
+            <span className="text-sm font-bold z-10">
+              {isDone ? '✓' : `${mm}:${ss}`}
+            </span>
+            <span className="text-xs z-10 opacity-70">
+              {isRunning ? 'REST' : isDone ? 'DONE' : 'TAP'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {expanded && (
