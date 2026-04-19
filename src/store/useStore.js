@@ -8,6 +8,7 @@ import {
   BB_EXERCISE_GROUPS,
 } from '../data/exercises'
 import { EXERCISE_LIBRARY as BUILT_IN_RAW } from '../data/exerciseLibrary'
+import { loadTemplateForDraft } from '../data/splitTemplates'
 
 // ── Exercise library seeding ───────────────────────────────────────────────────
 // Transforms the raw { name, muscleGroup, equipment } shape from
@@ -374,6 +375,22 @@ const useStore = create(
         set({ splitDraft: { ...payload, updatedAt: Date.now() } }),
 
       clearSplitDraft: () => set({ splitDraft: null }),
+
+      // Batch 17f — seed a fresh create-mode draft from a split template
+      // (used by ChooseStartingPoint when the user taps a template card).
+      // Returns true if the template id resolved, false otherwise.
+      loadTemplate: (templateId) => {
+        const draft = loadTemplateForDraft(templateId)
+        if (!draft) return false
+        set({
+          splitDraft: {
+            originalId: null,
+            draft,
+            updatedAt: Date.now(),
+          },
+        })
+        return true
+      },
 
       // ── Cardio actions ────────────────────────────────────────────────────────────────
 

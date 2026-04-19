@@ -441,7 +441,7 @@ export default function SplitManager() {
       {/* ── Create new split ────────────────────────────────────────────────── */}
       <div className="px-4 mt-4">
         <button
-          onClick={() => navigate('/splits/new')}
+          onClick={() => navigate('/splits/new/start')}
           className={`w-full py-4 rounded-2xl border-2 border-dashed font-semibold flex items-center justify-center gap-2 transition-colors ${theme.border} ${theme.text} hover:${theme.bgSubtle}`}
         >
           <span className="text-xl leading-none">+</span>

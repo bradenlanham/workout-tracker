@@ -15,6 +15,7 @@ import CardioLogger from './pages/CardioLogger'
 import TemplateEditor from './pages/TemplateEditor'
 import SplitManager from './pages/SplitManager'
 import SplitBuilder from './pages/SplitBuilder'
+import ChooseStartingPoint from './pages/ChooseStartingPoint'
 import Welcome from './pages/Welcome'
 import Backfill from './pages/Backfill'
 import ExerciseLibraryManager from './pages/ExerciseLibraryManager'
@@ -54,6 +55,9 @@ function ThemedApp() {
           <Route path="/templates/new" element={<TemplateEditor />} />
           <Route path="/templates/:id" element={<TemplateEditor />} />
           <Route path="/splits" element={<SplitManager />} />
+          {/* /splits/new/start must register BEFORE /splits/new so React
+              Router v6's specificity-first matching picks it up */}
+          <Route path="/splits/new/start" element={<ChooseStartingPoint />} />
           <Route path="/splits/new" element={<SplitBuilder />} />
           <Route path="/splits/edit/:id" element={<SplitBuilder />} />
           <Route path="/backfill" element={<Backfill />} />

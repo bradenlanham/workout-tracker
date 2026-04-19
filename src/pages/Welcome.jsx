@@ -61,7 +61,9 @@ export default function Welcome() {
   const handleDone = () => {
     completeOnboarding()
     if (pendingDestination === 'splits-new') {
-      navigate('/splits/new', { replace: true })
+      // Batch 17f — route Build-Own through the template chooser first so new
+      // users always see the scaffold instead of dropping cold into the wizard.
+      navigate('/splits/new/start', { replace: true })
     } else {
       navigate('/dashboard', { replace: true })
     }

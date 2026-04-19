@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17e — duplicate action + undo toast)
+> Last updated: April 19, 2026 (Batch 17f — ChooseStartingPoint + 6 split templates)
 
 ## Rules for Claude
 
@@ -48,7 +48,8 @@ src/
 │
 ├── data/
 │   ├── exercises.js           # Built-in "BamBam's Blueprint" workout data (5 workouts, exercise groups)
-│   └── exerciseLibrary.js     # 140+ exercises by muscle group for the exercise picker
+│   ├── exerciseLibrary.js     # 140+ exercises by muscle group for the exercise picker
+│   └── splitTemplates.js      # Batch 17f — 6 curated templates for ChooseStartingPoint (BamBam / FullBody×3 / Upper-Lower×4 / PPL×3 / PPL×6 / Bro / 5×5) + loadTemplateForDraft(id)
 │
 ├── utils/
 │   └── helpers.js             # getNextBbWorkout, getLastBbSession, perSideLoad, getExercisePRs, isSetPR, isPR,
@@ -74,7 +75,8 @@ src/
 │   ├── CustomNumpad.jsx       # Numpad overlay used by BbLogger for weight/reps entry
 │   ├── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
 │   ├── ExerciseEditSheet.jsx   # Bottom-sheet editor for existing library entries (Batch 16j)
-│   └── Toast.jsx               # Batch 17e — event-bus undo toast; showToast({message, undo}) from anywhere
+│   ├── Toast.jsx               # Batch 17e — event-bus undo toast; showToast({message, undo}) from anywhere
+│   └── RestDayChip.jsx         # Batch 17f — shared dashed-circle "R" rest chip (D3); size prop
 │
 │
 └── pages/
@@ -87,6 +89,7 @@ src/
     ├── CardioLogger.jsx       # Cardio session logger: type selection, stopwatch, manual entry, HR, distance, intensity
     ├── SplitManager.jsx       # List all splits, set active, edit, clone, export/import, delete
     ├── SplitBuilder.jsx       # 4-step wizard: name/emoji → add workouts → set rotation → review & save
+    ├── ChooseStartingPoint.jsx # Batch 17f — /splits/new/start template chooser (6 templates + Blank + Import)
     ├── TemplateEditor.jsx     # Create/edit custom workout templates (legacy, pre-splits feature)
     ├── Backfill.jsx           # One-time tagging screen for library entries with needsTagging: true.
     │                          # Per-card draft state + Confirm button (Batch 16j) — auto-save
@@ -415,6 +418,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 | `/templates/new` | TemplateEditor | Legacy template creation |
 | `/templates/:id` | TemplateEditor | Legacy template editing |
 | `/splits` | SplitManager | Split list & management |
+| `/splits/new/start` | ChooseStartingPoint | Template chooser (6 templates + Blank + Import) |
 | `/splits/new` | SplitBuilder | New split wizard |
 | `/splits/edit/:id` | SplitBuilder | Edit existing split |
 | `/backfill` | Backfill | One-time muscle-group + equipment tagging for user-created exercises |
@@ -907,6 +911,17 @@ Step 5 of the Split Builder redesign (see `split-builder-redesign-handoff.md` St
 231. **SplitManager Duplicate wired to the new action (`SplitManager.jsx`).** `handleDuplicate` now calls `duplicateSplit` and fires `showToast({ message: 'Duplicated "X"', undo: () => removeSplitById(dup.id) })`. 5-second auto-dismiss; Undo button inside the toast removes the dup. Still stays on the list view — no surprise redirect to the builder.
 232. **SplitBuilder Step 2 workout duplicate (`SplitBuilder.jsx`).** New inline copy-icon button added to each workout card's action row (between "Move down" and "Remove"). `handleDuplicateWorkout(idx)` deep-clones sections + exercises + rec, generates a fresh workout id, appends `"(Copy)"` to the name, and appends to `workouts`. Does NOT auto-add to rotation (user typically wants Push 2 at a different rotation position than Push, so making the choice explicit is better than silent append). Toast with 5s undo restores the pre-duplicate workouts array via closure-captured snapshot.
 233. **Verified live in preview** (mobile 375×812). Split duplicate scenarios pass: (a) built-in BamBam's Blueprint duplicated → new entry with `"(Copy)"` suffix, `isBuiltIn: false`, fresh workout ids, rotation correctly remapped to the new ids ('rest' passes through unchanged); (b) toast renders with emerald Undo button; (c) Undo removes the dup from the store, splits count back to pre-dup value. Workout duplicate scenarios pass: (d) Duplicate Push → "Push (Copy)" appended to Step 2 workout list, not added to rotation; (e) toast renders; (f) Undo removes "Push (Copy)" from the builder's local state. No console errors. ✓
+
+### Batch 17f (April 19, 2026) — ChooseStartingPoint + 6 split templates
+
+Step 6 of the Split Builder redesign (see `split-builder-redesign-handoff.md` Step 6, decisions D2 + D3). New users who don't think in BamBam's Blueprint terms had no scaffolding for what a "workout" / "rotation" means. This step introduces a runway screen at `/splits/new/start` with 6 opinionated templates plus a Blank slate plus an Import entry point. Tapping a template seeds `splitDraft` and routes to `/splits/new` where the existing resume-banner hands it off to the wizard's local state.
+
+234. **`SPLIT_TEMPLATES` + `loadTemplateForDraft(id)` data file (`src/data/splitTemplates.js`).** All 6 templates per decision D2: BamBam's Blueprint, Full Body × 3/week, Upper / Lower × 4/week, PPL × 3/week, PPL × 6/week, Bro Split, 5x5 Strength. Each has `id`, `name`, `emoji`, `description`, `cycleLengthLabel` (e.g. `"5-day"`, `"7-day"`), `previewEmojis[]` (uses the `'rest'` sentinel for rest-day slots), `workouts[]`, `rotation[]`. Namespaced workout ids (`fb_a`, `upper_a`, `ppl_push`, `bro_chest`, `x5_a` …) so templates can't collide if someone imports multiple. `loadTemplateForDraft(id)` returns a deep-cloned partial split shape ready to seed `splitDraft`. BamBam's workouts are drawn from the canonical `data/exercises.js` so the template stays in sync with any future tweaks.
+235. **`RestDayChip` shared component (`src/components/RestDayChip.jsx`).** Renders per decision D3: dashed-circle border, muted "R" glyph. Size is tunable (default 24px); the R scales proportionally. Used by ChooseStartingPoint's template preview strip and available to Step 7's SplitCanvas. Full D3 application across Dashboard's weekly/monthly calendar strips is flagged as a follow-up mini-batch — this step only surfaces it where Step 6 needs it.
+236. **`loadTemplate(templateId)` store action (`useStore.js`).** Thin wrapper around `loadTemplateForDraft`. Sets `splitDraft = { originalId: null, draft, updatedAt: Date.now() }` on success. Returns `true` if the template id resolved, `false` otherwise (the caller just shouldn't navigate in that case).
+237. **`/splits/new/start` page + route (`src/pages/ChooseStartingPoint.jsx`, `App.jsx`).** Sticky header with back arrow, heading `"How do you want to start?"`, subtitle `"Pick a template and customize, or build from scratch."`. 7 template cards (6 from `SPLIT_TEMPLATES` + a Blank slate with dashed accent border + `✨` emoji). Each card shows the template's emoji, bold title, cycle badge, description, and a rotation preview row of 22px chips (workout emojis and `RestDayChip`s). Tapping a template calls `loadTemplate` → `navigate('/splits/new')`. Tapping Blank clears any existing draft and navigates to `/splits/new` with no banner. An inline file input at the bottom surfaces the Import path without having to route into SplitManager with a query string — accepts the same `bambam-split-export` shape as SplitManager's import. Route registered BEFORE `/splits/new` in App.jsx so React Router v6's specificity-first matching picks it up.
+238. **`SplitManager` + `Welcome` wired through the chooser.** SplitManager's "Create New Split" button now routes to `/splits/new/start`. Welcome's Build-Own path (`pendingDestination === 'splits-new'`) also routes there, so new users see the scaffolding on their very first wizard visit instead of dropping cold into an empty form. Existing `/splits/new` URL stays live — direct-URL enthusiasts + any bookmarks still work.
+239. **Verified live in preview** (mobile 375×812). Route renders all 7 cards (6 templates + Blank) with correct rotation preview (including dashed-R rest chips). Nav is hidden on `/splits/new/start` (the `/splits/new` prefix predicate from Batch 17b covers it for free). Tapping Full Body × 3/week templates seeds `splitDraft` with `{name: 'Full Body × 3/week', emoji: '🏋️', workouts: [FullBodyA/B/C], rotation: ['fb_a','rest','fb_b','rest','fb_c','rest','rest']}` and navigates to `/splits/new`. SplitBuilder's mount-effect surfaces the resume banner; tapping Resume restores all four fields into local state (name input + 🏋️ emoji selected + 3 workouts visible on Step 2). Blank path clears `splitDraft = null` and shows no banner. Back arrow returns to the prior page. No console errors. ✓
 
 ---
 
