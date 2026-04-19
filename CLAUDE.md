@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 18f — WorkoutEditSheet hotfixes)
+> Last updated: April 19, 2026 (Batch 19 — Equipment instance)
 
 ## Rules for Claude
 
@@ -81,6 +81,14 @@ src/
 │                              #   date-only strings to avoid the Batch 16k timezone drift.
 │                              # (theme.js also exports getSaveTheme(accentColor) as of Batch 18e —
 │                              #   red→emerald fallback for Save/commit buttons.)
+│                              # getExerciseHistory(sessions, id, name?, equipmentInstance?):
+│                              #   Batch 19 — optional fourth arg scopes history to sessions
+│                              #   tagged with that instance (case-insensitive). Unscoped
+│                              #   when null/empty. Each history item also echoes
+│                              #   equipmentInstance so detectors can inspect machine context.
+│                              # getInstancesForExercise(sessions, id, name?): Batch 19 —
+│                              #   distinct non-empty equipmentInstance strings for this
+│                              #   exercise, most recent first, case-insensitive dedupe.
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -234,6 +242,9 @@ src/
         notes: '...',
         completedAt: timestamp,
         unilateral: false,              // If true, volume was doubled at save time
+        equipmentInstance: 'Hoist',     // Batch 19 — optional §3.4 machine tag
+                                        // (e.g. "Hoist leg press" vs "Cybex leg press").
+                                        // Omitted when blank. Picker seeds from last session.
         sets: [
           {
             type: 'warmup' | 'working' | 'drop',
@@ -1143,25 +1154,45 @@ Three live-feedback hotfixes on the sheet. User feedback: "you still can't see a
 
 308. **Build.** `npx vite build --outDir /tmp/test-build` → 727.32 KB bundle (+0.2 KB vs 18e, accounted for by the portal + flip logic). Gzipped 196.74 KB.
 
+### Batch 19 (April 19, 2026) — Equipment instance (AI coaching step 7)
+
+Step 7 of the AI Coaching Recommender plan per spec §3.4. Per-session optional machine tag on each LoggedExercise plus a toolbar chip for picking from prior values or typing a custom name. Trend fits and anomaly detectors scope by instance when set, with an "instance history <3 sessions → fall back to unscoped" safety so switching machines never cold-starts the recommender into silence. Additive schema (no persist bump); Batch 16q's swing-detector prompt ("Same machine?") already primed users for this feature.
+
+309. **`getExerciseHistory(sessions, id, name?, equipmentInstance?)`** (`helpers.js`). Optional fourth argument — when a non-empty string is passed, filters each session's matching LoggedExercise by case-insensitive `equipmentInstance` equality. Each history item also gains `equipmentInstance: string | null` so downstream detectors can inspect machine context. Empty / null / whitespace-only input short-circuits back to the pre-Batch-19 behavior (all sessions).
+
+310. **`getInstancesForExercise(sessions, id, name?)`** (`helpers.js`). Returns distinct non-empty `equipmentInstance` strings for the given exercise, most-recent first, case-insensitively deduped while preserving the original casing of the first (newest) occurrence. Drives the picker's prior-values list.
+
+311. **`EquipmentInstancePopover` (`BbLogger.jsx`).** Portal-rendered popover at z-220 (same layer as `PlateConfigPopover`, below RecommendationSheet). Shows the current value + historical instances as tappable pills, a free-text input that commits on Enter or via an Add button (40-char cap), and a Clear option when a value is set. The currently-set value is surfaced even if it's not yet in session history, so the picker always reflects state correctly. Outside-click + Escape dismiss. Viewport-edge clamp at left:8 so the 240px panel stays on screen even when the chip is far right on mobile.
+
+312. **Machine chip in the toolbar row (`BbLogger.jsx`).** New cyan-tinted chip `[Machine {name}]` appended after the Tip chip. Empty-state is a muted dashed-border placeholder labeled `Machine`. The toolbar row is now `flex flex-wrap items-center gap-2` so the six chips gracefully wrap to a second line on mobile 375px when the combined width overflows (Plates/Uni/Last/PR fit row 1; Tip + Machine wrap to row 2). `max-w-[10rem]` + `truncate` on the chip prevents long machine names from blowing up the layout.
+
+313. **Seed from last session + persist end-to-end (`BbLogger.jsx`).** `templateExercises` and the "Added" extras list both pick up `lastExDataByName[name]?.equipmentInstance` so a fresh session pre-fills from the most recent past tag. `buildExerciseData` writes a trimmed 40-char `equipmentInstance` onto the LoggedExercise only when non-empty (keeps the saved shape minimal for untagged exercises). `activeSession` serialization carries the field automatically through the existing exercise-object round-trip.
+
+314. **Instance-scoped recommender history with fallback (`BbLogger.jsx`).** `recHistory` now reads the current exercise's `equipmentInstance` and, when set, scopes `getExerciseHistory` to matching machines. If the scoped history has fewer than 3 sessions AND the unscoped history has more, falls back to unscoped so first-time-on-this-machine doesn't cold-start the engine. Anomaly detection runs over the same `recHistory` — meaning a swap to a different machine produces scoped history whose prev+last are on the SAME machine once enough data accumulates, naturally suppressing the 16q swing detector's cross-machine false positives (the original spec §3.4 goal).
+
+315. **`equipment-instance-sanity.mjs` (worktree root).** Node ESM — 31/31 pass. Validates (1) instance-filtered `getExerciseHistory` on synthetic data (case-insensitive matching, history-item instance echo, null/empty/whitespace short-circuit to unscoped); (2) `getInstancesForExercise` dedupe and whitespace trimming; (3) scoped vs unscoped histories producing divergent recommender prescriptions (6 Hoist sessions with clear uptrend + 6 Cybex sessions flat → Hoist rec ≥225 lbs, Cybex rec ≈290 lbs); (4) `debug-backup.json` baseline — 24 real sessions, 46 distinct exerciseIds, zero pre-19 `equipmentInstance` tags, pre-19 and post-19 call signatures return identical history. Mirrors the existing migration/recommender/fatigue/anomaly sanity script pattern.
+
+316. **Verified live in preview** (mobile 375×812, debug-backup.json seeded). Scenarios pass: (a) Machine chip renders dashed-border placeholder when empty; (b) tap opens the popover at the correct fixed position with viewport-edge clamp; (c) typing "Hoist" + Add commits, chip flips to filled cyan state, `activeSession.exercises[Pec Dec].equipmentInstance === "Hoist"` in localStorage; (d) reload preserves the chip state via `activeSession`; (e) Clear button returns to dashed empty state and persists `""`; (f) with synthetic Hoist + Cybex prior sessions, a FRESH session seeds Pec Dec to Hoist (newest), picker options show `[Hoist (selected)] [Cybex] [Add] [Clear]` chronologically; (g) tap Cybex switches the chip without closing-then-reopening; (h) 6-chip toolbar gracefully wraps to row 2 on 375px — no horizontal overflow. Zero console errors across every scenario.
+
+317. **Build.** `npx vite build --outDir /tmp/test-build` → 731.93 KB bundle (+4.6 KB vs 18f, accounted for by the popover + two helpers + instance-scoping branch in BbLogger). Gzipped 197.79 KB.
+
 ---
 
 ## Where to Go From Here
 
 ### What's remaining
 
-Core v1 engine work is DONE: steps 1–6 + §3.8 all shipped, and step 9 anomaly UI landed in 16q. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, and the coach now surfaces plateau / regression / swing banners on the exercise card. Remaining v1 steps are two data-collection features — neither touches prescription math.
+Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped, and **step 7 equipment instance** landed in Batch 19. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, the coach surfaces plateau / regression / swing banners on the exercise card, and per-machine trend-fit scoping ships with a smart fallback. One v1 data-collection feature remains.
 
-**Step 7 — Equipment instance (§3.4).** Per-session `equipmentInstance: string` optional field on LoggedExercise (e.g. "Hoist leg press" vs "Cybex leg press"). The swing detector shipped in 16q catches machine swaps via the "Same machine?" prompt even without this field, so step 7 is now primarily about trend-fit scoping (separate progression regressions per machine) and a small per-exercise instance chip for explicit tracking. Size: moderate (persist change + anomaly detection refinement + small UI).
-
-**Step 8 — Gym tagging full loop (§3.5, §9.7).** Exercise-level `sessionGymTags`, auto-tag-on-use prompts, picker filter ("Only available at VASA"). Settings UI for managing the gym list (currently gyms are added inline from the readiness overlay only). Size: moderate-to-large.
+**Step 8 — Gym tagging full loop (§3.5, §9.7) — NEXT.** Exercise-level `sessionGymTags`, auto-tag-on-use prompts ("You usually do this at VASA — tag it?"), picker filter ("Only available at VASA"). Settings UI for managing the gym list (currently gyms are added inline from the readiness overlay only). Size: moderate-to-large.
 
 ### Post-v1 roadmap (explicitly deferred per plan Part 4)
 
 - **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI. Trivial engine work, interesting UI work.
 - **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in.
-- **Anomaly detector refinements**: the three v1 detectors use conservative thresholds. Possible tunings once we have real usage signal: (a) per-exercise threshold (compound vs isolation expect different variance), (b) grade-aware plateau (a flat trend with consistent A grades is different from a flat trend with consistent C grades), (c) swing detector integration with equipment instance (step 7) to suppress cross-machine false positives.
+- **Anomaly detector refinements**: the three v1 detectors use conservative thresholds. Possible tunings once we have real usage signal: (a) per-exercise threshold (compound vs isolation expect different variance), (b) grade-aware plateau (a flat trend with consistent A grades is different from a flat trend with consistent C grades), (c) tighter swing-detector integration with Batch 19's equipment instance — scoping already naturally suppresses cross-machine swings once enough data accumulates, but an explicit "just switched machines" reasoning pass could be layered on.
 - **§8.x tracks** (visual goals, coaching commentary, coach marketplace, macro/nutrition, learned readiness model): out of v1 scope entirely.
 
 ### Recommended sequencing
 
-**Step 7 (equipment instance) next** is my pick. It's the only remaining feature that touches the session schema, so getting it out of the way before step 8 means all v1 schema work ships before the final UI-heavy loop. The 16q swing detector primes the UI for this: users have already been prompted "Same machine?" so asking them to tag the instance will feel natural. Step 8 naturally goes last since the gym list grows organically as sessions accumulate — we want some gym data to exist before shipping the picker filter.
+**Step 8 (gym tagging) closes out v1.** The gym list grows organically as sessions accumulate — the Batch 19 Machine chip already starts producing per-exercise machine data, and Batch 16n's `settings.gyms` slice captures the session-level gym from the readiness overlay. Step 8 wires the two together: exercise-level `sessionGymTags` (where CAN I do this), auto-tag-on-use prompts, picker filters ("Only available at VASA"), and a proper Settings UI for managing the gym list.

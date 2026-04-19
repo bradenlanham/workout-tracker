@@ -7,7 +7,7 @@ import {
   getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
   findSimilarExercises, normalizeExerciseName,
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
-  detectAnomalies, formatRec,
+  detectAnomalies, formatRec, getInstancesForExercise,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -207,6 +207,154 @@ function PlateConfigPopover({ open, onClose, anchorRef, barWeight, multiplier, o
         >
           ✓ Confirm
         </button>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ── Machine / equipment-instance popover (spec §3.4, Batch 19) ─────────────────
+//
+// Opens below the Machine chip in the exercise toolbar. Shows prior instances
+// tapped from this exercise's history (tap to select), a free-text "Other…"
+// input that commits on Enter, and a Clear option when one is currently set.
+// All state is owned by the parent ExerciseItem via `value` + `onChange`.
+
+function EquipmentInstancePopover({
+  open, onClose, anchorRef, value, options, onChange, theme,
+}) {
+  const popoverRef = useRef(null)
+  const [pos, setPos] = useState(null)
+  const [draft, setDraft] = useState('')
+
+  useEffect(() => {
+    if (!open) { setPos(null); setDraft(''); return }
+    const rect = anchorRef?.current?.getBoundingClientRect()
+    if (!rect) return
+    // Anchor the popover's right edge near the button's right edge so the
+    // panel stays within the viewport when the chip sits at the end of the
+    // toolbar row (common case). 240px panel width matches the design.
+    const width = 240
+    const left = Math.min(rect.right - width, window.innerWidth - width - 8)
+    setPos({ top: rect.bottom + 8, left: Math.max(8, left), width })
+  }, [open, anchorRef])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = e => {
+      const insidePopover = popoverRef.current?.contains(e.target)
+      const insideAnchor  = anchorRef?.current?.contains(e.target)
+      if (!insidePopover && !insideAnchor) onClose()
+    }
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handler)
+      document.addEventListener('touchstart', handler)
+      document.addEventListener('keydown', onKey)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open, onClose, anchorRef])
+
+  if (!open || !pos) return null
+
+  // Surface the currently-set value at the top of the options list even if
+  // it hasn't been saved to any session yet (e.g. just typed in this session),
+  // so the user can see their current choice and the row's selected style.
+  const displayOptions = (() => {
+    const list = Array.isArray(options) ? [...options] : []
+    const hasCurrent = list.some(o => value && o.toLowerCase() === value.toLowerCase())
+    if (value && !hasCurrent) list.unshift(value)
+    return list
+  })()
+
+  const commitDraft = () => {
+    const v = (draft || '').trim().slice(0, 40)
+    if (!v) return
+    onChange(v)
+    onClose()
+  }
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      className="fixed bg-card border border-white/10 rounded-xl shadow-xl p-3"
+      style={{ zIndex: 220, top: pos.top, left: pos.left, width: pos.width }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="text-[10px] uppercase tracking-wider text-c-faint mb-2">
+        Which machine?
+      </div>
+
+      {displayOptions.length > 0 && (
+        <div className="mb-2 space-y-1">
+          {displayOptions.map(opt => {
+            const selected = value && opt.toLowerCase() === value.toLowerCase()
+            return (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => { onChange(opt); onClose() }}
+                className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                  selected
+                    ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
+                    : 'bg-item text-c-secondary border border-transparent'
+                }`}
+              >
+                {opt}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="mb-2">
+        <div className="text-[11px] text-c-muted mb-1">Other</div>
+        <div className="flex gap-1.5">
+          <input
+            type="text"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commitDraft() }
+            }}
+            placeholder="e.g. Cybex"
+            maxLength={40}
+            className="flex-1 min-w-0 px-2.5 py-2 rounded-lg bg-item border border-white/10 text-xs text-c-primary placeholder-c-faint focus:outline-none focus:border-white/20"
+          />
+          <button
+            type="button"
+            onClick={commitDraft}
+            disabled={!draft.trim()}
+            className={`px-3 py-2 rounded-lg text-xs font-bold ${
+              draft.trim()
+                ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
+                : 'bg-item text-c-faint border border-transparent'
+            }`}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        {value ? (
+          <button
+            type="button"
+            onClick={() => { onChange(''); onClose() }}
+            className="flex-1 py-2 rounded-lg bg-item text-c-muted text-xs font-semibold"
+          >
+            Clear
+          </button>
+        ) : (
+          <div className="flex-1 text-[11px] text-c-faint py-2 text-center">
+            Optional — leave blank if not on a machine.
+          </div>
+        )}
       </div>
     </div>,
     document.body
@@ -611,7 +759,9 @@ function ExerciseItem({
   const numpadCtx = useContext(NumpadContext)
   const [recSheetOpen,    setRecSheetOpen]    = useState(false)
   const [plateConfigOpen, setPlateConfigOpen] = useState(false)
+  const [machineOpen,     setMachineOpen]     = useState(false)
   const platesBtnRef      = useRef(null)
+  const machineBtnRef     = useRef(null)
 
   // ── Focus mode: when numpad is open, check if THIS exercise owns the active field.
   // If the numpad is open but the active field belongs to a different exercise,
@@ -756,9 +906,25 @@ function ExerciseItem({
     return 10
   }, [libraryEntry])
 
-  const recHistory = useMemo(
-    () => getExerciseHistory(allSessions, libraryEntry?.id || exercise.exerciseId, exercise.name),
-    [allSessions, libraryEntry?.id, exercise.exerciseId, exercise.name]
+  // Instance-scoping (spec §3.4, Batch 19): when the user has tagged the
+  // current session's equipmentInstance AND there's enough matching history
+  // on that specific machine (≥3 sessions), scope the recommender to it.
+  // Otherwise fall back to unscoped history so first-time-on-this-machine
+  // doesn't cold-start the recommender into silence.
+  const currentInstance = (exercise.equipmentInstance || '').trim()
+  const recHistoryId = libraryEntry?.id || exercise.exerciseId
+  const recHistory = useMemo(() => {
+    const unscoped = getExerciseHistory(allSessions, recHistoryId, exercise.name)
+    if (!currentInstance) return unscoped
+    const scoped = getExerciseHistory(allSessions, recHistoryId, exercise.name, currentInstance)
+    return scoped.length >= 3 ? scoped : unscoped
+  }, [allSessions, recHistoryId, exercise.name, currentInstance])
+
+  // Machine picker options — prior distinct instances for this exercise,
+  // most recent first, case-insensitive dedupe.
+  const machineOptions = useMemo(
+    () => getInstancesForExercise(allSessions, recHistoryId, exercise.name),
+    [allSessions, recHistoryId, exercise.name]
   )
 
   // Ref so the updateSet closure (declared above) can read the latest
@@ -936,8 +1102,8 @@ function ExerciseItem({
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
 
-          {/* Plate mode + Uni + Tip chip + Last session */}
-          <div className="flex items-center gap-2">
+          {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine (wraps when tight) */}
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <button
                 ref={platesBtnRef}
@@ -1040,6 +1206,33 @@ function ExerciseItem({
                 onTap={() => setRecSheetOpen(true)}
               />
             )}
+            <div className="relative">
+              <button
+                ref={machineBtnRef}
+                type="button"
+                onClick={() => setMachineOpen(v => !v)}
+                title={currentInstance ? `Machine: ${currentInstance}` : 'Tag a specific machine (optional)'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap max-w-[10rem] ${
+                  currentInstance
+                    ? 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300'
+                    : 'bg-item text-c-faint border border-dashed border-white/10'
+                }`}
+              >
+                <span className="font-bold">Machine</span>
+                {currentInstance && (
+                  <span className="truncate opacity-90">{currentInstance}</span>
+                )}
+              </button>
+              <EquipmentInstancePopover
+                open={machineOpen}
+                onClose={() => setMachineOpen(false)}
+                anchorRef={machineBtnRef}
+                value={currentInstance}
+                options={machineOptions}
+                onChange={val => onUpdate({ ...exercise, equipmentInstance: val })}
+                theme={theme}
+              />
+            </div>
           </div>
 
           {/* Anomaly banner (Batch 16q) — plateau / regression / swing */}
@@ -1848,6 +2041,7 @@ export default function BbLogger() {
         barWeight: 45,
         unilateral: !!lastExDataByName[name]?.unilateral,
         plateLoaded: !!(lastExDataByName[name]?.plates),
+        equipmentInstance: lastExDataByName[name]?.equipmentInstance || '',
       }
     })
   )
@@ -1877,6 +2071,7 @@ export default function BbLogger() {
             barWeight: 45,
             unilateral: !!lastEx?.unilateral,
             plateLoaded: !!(lastEx?.plates),
+            equipmentInstance: lastEx?.equipmentInstance || '',
           })
         }
       }
@@ -2093,12 +2288,16 @@ export default function BbLogger() {
                 normalizeExerciseName(a) === normalizeExerciseName(ex.name)
               )
             )
+        const trimmedInstance = typeof ex.equipmentInstance === 'string'
+          ? ex.equipmentInstance.trim().slice(0, 40)
+          : ''
         return {
           name:       libEntry?.name ?? ex.name,  // canonicalize on save
           exerciseId: libEntry?.id,
           notes: ex.notes,
           completedAt: ex.completedAt || 0,
           unilateral: uni,
+          ...(trimmedInstance ? { equipmentInstance: trimmedInstance } : {}),
           plates: ex.plateLoaded ? ex.sets.map(s => s.plates ? { plates: s.plates, barWeight: s.barWeight } : null) : undefined,
           sets: filledSets.map(s => {
             const rawW = parseFloat(s.weight) || 0

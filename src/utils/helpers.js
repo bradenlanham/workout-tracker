@@ -783,8 +783,15 @@ export function percent1RM(targetReps) {
 // sessions that haven't been migrated through the live persist hook yet.
 // rpe (1–10, optional) carried through when set so Layer 3's Δreps can
 // factor in reps-in-reserve (§3.7).
-export function getExerciseHistory(sessions, exerciseId, exerciseName = null) {
+// equipmentInstance (spec §3.4, Batch 19) — optional scoping. When a
+// non-empty string is passed, only sessions whose matching LoggedExercise
+// carries that same instance (case-insensitive) contribute; history items
+// also echo the instance string for downstream detectors. When null/empty,
+// all sessions contribute (pre-Batch-19 behavior).
+export function getExerciseHistory(sessions, exerciseId, exerciseName = null, equipmentInstance = null) {
   if (!Array.isArray(sessions) || !exerciseId) return []
+  const instNeedle = typeof equipmentInstance === 'string' ? equipmentInstance.trim().toLowerCase() : ''
+  const scopeByInstance = instNeedle.length > 0
   const out = []
   for (const s of sessions) {
     if (s?.mode !== 'bb' || !s?.data?.exercises) continue
@@ -793,6 +800,9 @@ export function getExerciseHistory(sessions, exerciseId, exerciseName = null) {
       (exerciseName && e.name === exerciseName)
     )
     if (!ex) continue
+    const exInstRaw = typeof ex.equipmentInstance === 'string' ? ex.equipmentInstance.trim() : ''
+    const exInstKey = exInstRaw.toLowerCase()
+    if (scopeByInstance && exInstKey !== instNeedle) continue
     const working = (ex.sets || []).filter(st =>
       (st.type === 'working' || st.type === 'drop') &&
       (perSideLoad(st) > 0) &&
@@ -813,12 +823,43 @@ export function getExerciseHistory(sessions, exerciseId, exerciseName = null) {
           reps:   r,
           e1RM:   e,
           rpe:    Number.isFinite(rpe) && rpe >= 1 && rpe <= 10 ? rpe : null,
+          equipmentInstance: exInstRaw || null,
         }
       }
     }
     if (top) out.push({ date: s.date, ...top })
   }
   return out.sort((a, b) => new Date(a.date) - new Date(b.date))
+}
+
+// getInstancesForExercise(sessions, exerciseId, exerciseName?)
+//
+// Returns distinct non-empty equipmentInstance strings for this exercise
+// across all bb sessions, most recent first, deduplicated case-insensitively
+// while preserving the user's original casing of the first (most-recent)
+// occurrence. Used by the Machine picker on the exercise card to show
+// previously-used instances without forcing the user to retype them.
+export function getInstancesForExercise(sessions, exerciseId, exerciseName = null) {
+  if (!Array.isArray(sessions) || !exerciseId) return []
+  const sorted = sessions
+    .filter(s => s?.mode === 'bb' && s?.data?.exercises)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+  const seen = new Set()
+  const out = []
+  for (const s of sorted) {
+    const ex = s.data.exercises.find(e =>
+      e.exerciseId === exerciseId ||
+      (exerciseName && e.name === exerciseName)
+    )
+    if (!ex) continue
+    const inst = typeof ex.equipmentInstance === 'string' ? ex.equipmentInstance.trim() : ''
+    if (!inst) continue
+    const key = inst.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(inst)
+  }
+  return out
 }
 
 // Layer 1 — current e1RM as the max of the last two sessions' top sets.
