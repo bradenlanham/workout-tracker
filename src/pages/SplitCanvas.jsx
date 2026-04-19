@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import useStore from '../store/useStore'
-import { getTheme } from '../theme'
+import { getTheme, getSaveTheme } from '../theme'
 import { generateId, formatTimeAgo, normalizeExerciseName, normalizeExerciseEntry } from '../utils/helpers'
 import WorkoutEditSheet from '../components/WorkoutEditSheet'
 import EmojiPicker from '../components/EmojiPicker'
 import RestDayChip from '../components/RestDayChip'
 import DragHandle from '../components/DragHandle'
+import RowOverflowMenu from '../components/RowOverflowMenu'
 import { showToast } from '../components/Toast'
 
 // Batch 17g — SplitCanvas (Step 7 of the Split Builder redesign).
@@ -47,13 +48,8 @@ export default function SplitCanvas() {
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const settings        = useStore(s => s.settings)
   const theme           = getTheme(settings.accentColor)
-  // Batch 18c — Save button must never render red (it's a commit action,
-  // not destructive). When the user's accent is red, fall back to emerald
-  // so the "save" affordance still reads as positive. The active-state
-  // accent tints on SplitManager and the hero tile here deliberately keep
-  // red because they're thematic, not primary CTAs. 18e extracts this as
-  // getSaveTheme() in theme.js.
-  const saveTheme       = getTheme(settings.accentColor === 'red' ? 'emerald' : settings.accentColor)
+  // Batch 18e — shared getSaveTheme() handles the red→emerald fallback.
+  const saveTheme       = getSaveTheme(settings.accentColor)
 
   const existingSplit = isEditing ? splits.find(s => s.id === id) : null
 
@@ -693,8 +689,6 @@ function SectionHeader({ label, expanded, onToggle, extraRight = null }) {
 // real drag-and-drop lands later. Preview text is now a calm "N exercises"
 // count instead of the first-3-names list that was interesting but noisy.
 function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, onMoveUp, onMoveDown }) {
-  const [showMenu, setShowMenu] = useState(false)
-
   const previewText = useMemo(() => {
     const all = (workout.sections || []).flatMap(s =>
       (s.exercises || []).map(ex => typeof ex === 'string' ? ex : ex.name).filter(Boolean)
@@ -703,6 +697,9 @@ function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, 
     return `${all.length} exercise${all.length === 1 ? '' : 's'}`
   }, [workout.sections])
 
+  // Batch 18e — the ⋯ trigger + popover now come from the shared
+  // <RowOverflowMenu />. Move up/down items filter out at list boundaries
+  // via null onSelect.
   return (
     <div className="bg-card rounded-2xl border border-subtle p-4 flex items-center gap-3">
       <DragHandle />
@@ -719,84 +716,16 @@ function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, 
           <p className="text-xs text-c-muted mt-0.5 truncate">{previewText}</p>
         </div>
       </button>
-      <div className="relative shrink-0">
-        <button
-          type="button"
-          onClick={() => setShowMenu(v => !v)}
-          aria-label={`More actions for ${workout.name}`}
-          aria-haspopup="menu"
-          aria-expanded={showMenu}
-          className="w-10 h-10 flex items-center justify-center rounded-xl text-c-muted hover:bg-item"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <circle cx="12" cy="5"  r="1.8" />
-            <circle cx="12" cy="12" r="1.8" />
-            <circle cx="12" cy="19" r="1.8" />
-          </svg>
-        </button>
-        {showMenu && (
-          <WorkoutCardMenu
-            onEdit={() => { onEdit(); setShowMenu(false) }}
-            onDuplicate={() => { onDuplicate(); setShowMenu(false) }}
-            onMoveUp={!isFirst ? () => { onMoveUp(); setShowMenu(false) } : null}
-            onMoveDown={!isLast ? () => { onMoveDown(); setShowMenu(false) } : null}
-            onDelete={() => { onDelete(); setShowMenu(false) }}
-            onClose={() => setShowMenu(false)}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function WorkoutCardMenu({ onEdit, onDuplicate, onMoveUp, onMoveDown, onDelete, onClose }) {
-  useEffect(() => {
-    const onDocDown = (e) => { if (!e.target.closest('[data-workout-menu]')) onClose() }
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    const timer = setTimeout(() => {
-      document.addEventListener('mousedown', onDocDown)
-      document.addEventListener('touchstart', onDocDown)
-    }, 0)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      clearTimeout(timer)
-      document.removeEventListener('mousedown', onDocDown)
-      document.removeEventListener('touchstart', onDocDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose])
-
-  // Only render Move items when reordering is possible in that direction.
-  // `null` onSelect from the parent → item is hidden.
-  const items = [
-    { label: 'Edit',      onSelect: onEdit,      tone: 'primary' },
-    { label: 'Duplicate', onSelect: onDuplicate, tone: 'primary' },
-    { label: 'Move up',   onSelect: onMoveUp,    tone: 'primary' },
-    { label: 'Move down', onSelect: onMoveDown,  tone: 'primary' },
-    { label: 'Delete',    onSelect: onDelete,    tone: 'destructive' },
-  ].filter(it => typeof it.onSelect === 'function')
-
-  return (
-    <div
-      data-workout-menu
-      role="menu"
-      className="absolute right-0 top-11 bg-card border border-subtle rounded-xl p-1 shadow-xl z-20 min-w-[160px]"
-    >
-      {items.map(it => (
-        <button
-          key={it.label}
-          type="button"
-          role="menuitem"
-          onClick={it.onSelect}
-          className={`w-full px-3 py-2.5 text-sm text-left rounded-lg ${
-            it.tone === 'destructive'
-              ? 'text-red-400 hover:bg-red-500/10'
-              : 'text-c-primary hover:bg-item'
-          }`}
-        >
-          {it.label}
-        </button>
-      ))}
+      <RowOverflowMenu
+        ariaLabel={`More actions for ${workout.name}`}
+        items={[
+          { label: 'Edit',      onSelect: onEdit },
+          { label: 'Duplicate', onSelect: onDuplicate },
+          { label: 'Move up',   onSelect: isFirst ? null : onMoveUp },
+          { label: 'Move down', onSelect: isLast  ? null : onMoveDown },
+          { label: 'Delete',    onSelect: onDelete, destructive: true },
+        ]}
+      />
     </div>
   )
 }

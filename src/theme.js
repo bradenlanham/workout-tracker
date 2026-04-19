@@ -157,3 +157,13 @@ export const THEMES = {
 export function getTheme(id) {
   return THEMES[id] || THEMES.violet
 }
+
+// Batch 18e — safe-color helper for Save buttons. If the user's accent
+// color is red, fall back to emerald so the commit action never visually
+// collides with destructive-red. Accent-tinted decorative elements
+// (SplitManager's active pill / left bar / hero tile) deliberately keep
+// red when chosen — those are small thematic surfaces, not primary CTAs.
+// Used by SplitCanvas.jsx and WorkoutEditSheet.jsx for their save buttons.
+export function getSaveTheme(id) {
+  return getTheme(id === 'red' ? 'emerald' : id)
+}

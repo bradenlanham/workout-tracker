@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 18d — WorkoutEditSheet redesign)
+> Last updated: April 19, 2026 (Batch 18e — Shared split-builder primitives)
 
 ## Rules for Claude
 
@@ -79,6 +79,8 @@ src/
 │                              # formatRelativeDate(iso), formatStartDate(isoOrDateStr): Batch 18b —
 │                              #   SplitCard date formatters. formatStartDate local-parses
 │                              #   date-only strings to avoid the Batch 16k timezone drift.
+│                              # (theme.js also exports getSaveTheme(accentColor) as of Batch 18e —
+│                              #   red→emerald fallback for Save/commit buttons.)
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -94,7 +96,8 @@ src/
 │   ├── ExercisePicker.jsx      # Batch 17i — shared exercise picker extracted from WorkoutEditSheet's inline version. Adds "Recent in this split" tab (union of exercises from sibling workouts) + "Search all muscles" checkbox (default on). Drives both the Canvas sheet and any future logger surface.
 │   ├── RecPill.jsx             # Batch 17h — shared rec-display pill; renders formatRec(rec) in any supported shape
 │   ├── RecEditor.jsx           # Batch 17h — structured rec editor sheet (sets / reps / note with live preview)
-│   └── DragHandle.jsx          # Batch 18c — shared decorative drag-handle glyph (10x18 dot grid). Signals row is reorderable; actual drag lands later. Consumed by SplitCanvas.jsx's WorkoutCard; WorkoutEditSheet pickup in 18d.
+│   ├── DragHandle.jsx          # Batch 18c — shared decorative drag-handle glyph (10x18 dot grid). Signals row is reorderable; actual drag lands later. Consumed by SplitCanvas.jsx's WorkoutCard; WorkoutEditSheet pickup in 18d.
+│   └── RowOverflowMenu.jsx     # Batch 18e — shared row-level ⋯ popover. Replaces three inline implementations (SplitCanvas's WorkoutCardMenu, WorkoutEditSheet's section + exercise menus). Accepts items: [{label, onSelect, destructive?, icon?}]; null onSelect filters the item out so boundary Move up/down vanish cleanly.
 │
 │
 └── pages/
@@ -1097,6 +1100,32 @@ Step 4 of the Split Builder polish pass (see `split-builder-polish-handoff.md` B
     - Console clean.
 
 297. **Build.** `npx vite build --outDir /tmp/test-build` → 728.65 KB bundle (+0.3 KB vs 18c). Gzipped 196.77 KB.
+
+### Batch 18e (April 19, 2026) — Shared split-builder primitives
+
+Step 5 (final) of the Split Builder polish pass (see `split-builder-polish-handoff.md` Batch 18e). Pure refactor — extracts the reusable pieces Batches 18b–18d duplicated. No user-visible changes beyond a tighter bundle and the guarantee that any future Save button / ⋯ menu gets the same treatment for free.
+
+298. **`src/components/RowOverflowMenu.jsx` shared component.** Consolidates three near-identical inline ⋯-menu implementations:
+    - `WorkoutCardMenu` in `SplitCanvas.jsx` (~60 lines).
+    - Section-header ⋯ popover in `WorkoutEditSheet.jsx` (~35 lines).
+    - Exercise-row ⋯ popover in `WorkoutEditSheet.jsx` (same shape).
+    All three now render via `<RowOverflowMenu items={…} ariaLabel={…} anchorClass={…} />`. Items with non-function `onSelect` are filtered out so boundary Move up/down items vanish cleanly (no more `isFirst ? null : …` null-guarding in every call site — the component handles it). Outside-click (mousedown + touchstart) + Escape dismiss, timer-deferred attach so the opening click doesn't immediately close. z-20 local (row-level positioning; page-level menus like SplitManager's still own their z-60 portal pattern).
+
+299. **`getSaveTheme(accentColor)` helper in `theme.js`.** Replaces the inline `accentColor === 'red' ? 'emerald' : accentColor` branch that SplitCanvas (18c) and WorkoutEditSheet (18d) each duplicated. Both now call `getSaveTheme(settings.accentColor)` directly. Canvas's Save + activate-on-save toggle track and the sheet's Save workout button share one source of truth.
+
+300. **Dedup results.** `WorkoutEditSheet.jsx` drops 75 lines (inline menu component + its `useRef` import). `SplitCanvas.jsx` drops 85 lines (`WorkoutCardMenu` component + its state/effect + the inline trigger button inside `WorkoutCard`). Net: `-160 source lines / +95 shared-primitive lines = -65 net`. Bundle 727.14 KB (-1.5 KB vs 18d). Gzipped 196.53 KB.
+
+301. **Live preview verification** (mobile 375×812, debug-backup.json).
+    - Canvas: tap Push ⋯ → `Edit / Duplicate / Move down / Delete` (first card, no Move up). Shared component behaves identically to the 18c-retired `WorkoutCardMenu`.
+    - Sheet: open Push → Pec Dec ⋯ → `Move down / Remove` (first exercise). Section ⋯ menu renders with `Move up / Move down / Delete` on middle sections. Identical to 18d's inline menu.
+    - Red accent: Canvas footer Save button `rgb(16,185,129)` (emerald). Sheet Save workout button `rgb(16,185,129)` (emerald). Both via the shared `getSaveTheme()`.
+    - Console clean. No regressions.
+
+302. **Shipped primitives inventory.** The Split Builder redesign now owns three shared primitives that future work can reuse without copy-paste:
+    - `src/components/DragHandle.jsx` (18c) — decorative drag-handle glyph.
+    - `src/components/RowOverflowMenu.jsx` (18e) — row-level ⋯ popover with null-filtered items + standard dismiss behaviors.
+    - `src/theme.js` → `getSaveTheme()` (18e) — red→emerald safe-color routing for commit buttons.
+    Also in the supporting library: `src/components/RestDayChip.jsx` (17f), `src/components/EmojiPicker.jsx` (17g), `src/components/Toast.jsx` (17e), `src/components/RecPill.jsx` + `RecEditor.jsx` (17h), `src/components/ExercisePicker.jsx` (17i). Polish loop complete.
 
 ---
 

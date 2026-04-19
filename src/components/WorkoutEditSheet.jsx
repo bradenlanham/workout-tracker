@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import useStore from '../store/useStore'
-import { getTheme } from '../theme'
+import { getTheme, getSaveTheme } from '../theme'
 import { normalizeExerciseEntry } from '../utils/helpers'
 import EmojiPicker from './EmojiPicker'
 import RecPill from './RecPill'
 import RecEditor from './RecEditor'
 import ExercisePicker from './ExercisePicker'
 import DragHandle from './DragHandle'
+import RowOverflowMenu from './RowOverflowMenu'
 
 // Batch 17g — WorkoutEditSheet (Step 8 of the Split Builder redesign).
 // Bottom-sheet editor for a single workout — swaps out the legacy wizard's
@@ -26,10 +27,9 @@ import DragHandle from './DragHandle'
 export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = false, recentInSplit = [] }) {
   const settings = useStore(s => s.settings)
   const theme = getTheme(settings.accentColor)
-  // Batch 18d — Save button follows the same red→emerald fallback as Canvas
-  // (Batch 18c) so the commit action never reads as destructive. 18e extracts
-  // this into getSaveTheme() in theme.js.
-  const saveTheme = getTheme(settings.accentColor === 'red' ? 'emerald' : settings.accentColor)
+  // Batch 18e — Save button uses the shared getSaveTheme() helper so the
+  // red→emerald fallback lives in one place. See theme.js.
+  const saveTheme = getSaveTheme(settings.accentColor)
 
   // Normalize incoming sections so string/object exercises both work. We
   // preserve the original shape on save — strings stay strings unless the
@@ -337,7 +337,7 @@ function SectionBlock({
           </svg>
         </button>
         <RowOverflowMenu
-          label="Section actions"
+          ariaLabel="Section actions"
           anchorClass="hover:bg-card"
           items={[
             ...(isFirst ? [] : [{ label: 'Move up',   onSelect: onMoveUp   }]),
@@ -371,7 +371,7 @@ function SectionBlock({
                 </button>
                 <RecPill rec={rec} onTap={() => onEditRec(exIdx)} />
                 <RowOverflowMenu
-                  label={`Actions for ${nm}`}
+                  ariaLabel={`Actions for ${nm}`}
                   anchorClass="hover:bg-card"
                   items={[
                     ...(exIdx === 0 ? [] : [{ label: 'Move up',   onSelect: () => onMoveExercise(exIdx, -1) }]),
@@ -389,85 +389,6 @@ function SectionBlock({
           >
             + Add exercise
           </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── RowOverflowMenu ─────────────────────────────────────────────────────────
-//
-// Batch 18d — generic ⋯ row-action popover used by SectionBlock for section-
-// level actions AND each exercise row. Items with `onSelect: null` are
-// filtered out so Move up / Move down can be hidden at list boundaries.
-// 18e will promote this to a shared src/components/RowOverflowMenu.jsx
-// alongside SplitCanvas's WorkoutCardMenu — same API; no rename planned.
-
-function RowOverflowMenu({ label = 'More actions', items, anchorClass = 'hover:bg-item' }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    if (!open) return
-    const timer = setTimeout(() => {
-      const onDocDown = (e) => {
-        if (ref.current && !ref.current.contains(e.target)) setOpen(false)
-      }
-      document.addEventListener('mousedown', onDocDown)
-      document.addEventListener('touchstart', onDocDown)
-      ref.current._cleanup = () => {
-        document.removeEventListener('mousedown', onDocDown)
-        document.removeEventListener('touchstart', onDocDown)
-      }
-    }, 0)
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      clearTimeout(timer)
-      if (ref.current?._cleanup) ref.current._cleanup()
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const visible = (items || []).filter(it => typeof it.onSelect === 'function')
-  if (visible.length === 0) return null
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-c-muted ${anchorClass}`}
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4" aria-hidden="true">
-          <circle cx="12" cy="5"  r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="12" cy="19" r="1.8" />
-        </svg>
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-9 bg-card border border-subtle rounded-xl p-1 shadow-xl z-20 min-w-[140px]"
-        >
-          {visible.map((it, i) => (
-            <button
-              key={i}
-              role="menuitem"
-              type="button"
-              onClick={() => { it.onSelect(); setOpen(false) }}
-              className={`w-full px-3 py-2 text-sm text-left rounded-lg ${
-                it.destructive
-                  ? 'text-red-400 hover:bg-red-500/10'
-                  : 'text-c-primary hover:bg-item'
-              }`}
-            >
-              {it.label}
-            </button>
-          ))}
         </div>
       )}
     </div>
