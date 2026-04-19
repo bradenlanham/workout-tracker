@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 19c — Rest timer scale restored + auto-start default on)
+> Last updated: April 19, 2026 (Batch 19d — WorkoutEditSheet: Change Section + scroll fix + header spacing)
 
 ## Rules for Claude
 
@@ -1219,6 +1219,20 @@ Two quick follow-ups on 19b: user wanted the running-state scale back (it disamb
 332. **Verified live in preview** (mobile 375×812). Idle state: timer transform is `matrix(1,0,0,1,0,0)` (scale 1). Tap starts the timer → transform transitions to `matrix(1.5,0,0,1.5,0,0)` after the 0.3s ease. Auto-start path: seeded Pec Dec with weight:185 / reps:10 on set 0; tapped `+ Add Set` → `restEndTimestamp` flips from null to a future epoch ms (~90s out) immediately. Screenshot confirms the blue running timer at 1.5× scale in the upper-right, no cog, Pec Dec showing the filled 185×10 set with trophy + the new empty row below. Zero console errors.
 
 333. **Build.** Same bundle size (one value flip + one transform wrapper — nothing measurable).
+
+### Batch 19d (April 19, 2026) — WorkoutEditSheet: Change Section + scroll fix + header spacing
+
+Three targeted fixes in the workout editor sheet after live-feedback on Batch 18f.
+
+334. **"Change section" action** (`src/components/WorkoutEditSheet.jsx`). New item in each exercise row's ⋯ menu, ordered `Move up / Move down / Change section / Remove`. Only renders when the workout has more than one section. Tapping it opens a new `ChangeSectionModal` (z-278, above the sheet at 270 and RecEditor at 275, below DiscardConfirm at 280). The modal lists every section as a selectable pill — the current section is disabled with a `current` badge, others show their exercise count. User picks a target, taps Confirm; the exercise moves to the END of the target section. New `moveExerciseToSection(fromSectionIdx, exIdx, toSectionIdx)` helper powers the commit.
+
+335. **Sheet scroll on long sections** (same file). Two bugs stacked. First, the scrollable flex child was missing `min-h-0` — the classic flex-overflow gotcha where flex-1 refuses to shrink below its content's natural height, so `overflow-y-auto` never engages. Second, the SectionBlock outer div needed `shrink-0` — without it, the flex column was compressing each section card, and the card's own `overflow-hidden` (needed for rounded corners) then clipped the content instead of letting it bubble up to the scroll region. Both together: long sections now properly scroll inside the sheet. Verified at 375×500 with If You Have Time expanded (content 780px, scroll region 229px, scrollTop=150 succeeds).
+
+336. **Collapsed section header spacing** (same file). The old layout had the count badge floating between the flex-1 input and the right-hand controls, visually detached from the label. Restructured: label input + count are now wrapped in a single `<label>` element (with `cursor-text` so tapping anywhere in the label area focuses the input), count renders as a subtle `· 3` middot suffix in `text-c-muted` hugging the label text. Chevron + ⋯ cluster on the right with `gap-1.5`. Row padding bumped `py-2.5 → py-3` for breathing room. Chevron shrunk `w-8 → w-7` to free a few pixels for longer labels. Collapsed rows now read cleanly as `Primary · 3` with trailing `⌄ ⋮`, not `Primary _______ [3] > ⋮`.
+
+337. **Verified live in preview** (mobile 375×812 + 375×500 for overflow). Pec Dec's ⋯ menu on Primary (first row) shows `Move down / Change section / Remove` — no Move up, no Delete at exercise level. Change section → modal opens with Primary disabled (`current` badge) and Choose 1 / If You Have Time as options with their counts. Pick If You Have Time → Confirm → Pec Dec moves to the end of If You Have Time (count 7 → 8), Primary drops to 2 exercises, modal dismisses, sheet still open. Scroll check at 375×500: `scrollHeight: 780`, `clientHeight: 229`, `scrollable: true`, `scrollTop=150` sets cleanly. Collapsed headers render `Primary · 3` / `Choose 1 · 3` / `If You Have Time · 7` with inline middot counts. Zero console errors.
+
+338. **Build.** `npx vite build --outDir /tmp/test-build` → tiny bump for the new modal component + moveExerciseToSection helper.
 
 ---
 
