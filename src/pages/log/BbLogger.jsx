@@ -927,6 +927,15 @@ function ExerciseItem({
     [allSessions, recHistoryId, exercise.name]
   )
 
+  // Machine chip visibility (Batch 19a): only surface for exercises whose
+  // library entry is classified as equipment: 'Machine'. For Barbell,
+  // Dumbbell, Bodyweight, Kettlebell, Cable, Other — or exercises with no
+  // resolvable library entry — the chip is hidden so the toolbar doesn't
+  // waste space on an irrelevant prompt. Users who want the chip on an
+  // exercise currently classified otherwise can edit the library entry
+  // in My Exercises.
+  const showMachineChip = libraryEntry?.equipment === 'Machine'
+
   // Ref so the updateSet closure (declared above) can read the latest
   // recHistory for auto-classify without a temporal-dead-zone ReferenceError.
   recHistoryRef.current = recHistory
@@ -1206,33 +1215,36 @@ function ExerciseItem({
                 onTap={() => setRecSheetOpen(true)}
               />
             )}
-            <div className="relative">
-              <button
-                ref={machineBtnRef}
-                type="button"
-                onClick={() => setMachineOpen(v => !v)}
-                title={currentInstance ? `Machine: ${currentInstance}` : 'Tag a specific machine (optional)'}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap max-w-[10rem] ${
-                  currentInstance
-                    ? 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300'
-                    : 'bg-item text-c-faint border border-dashed border-white/10'
-                }`}
-              >
-                <span className="font-bold">Machine</span>
-                {currentInstance && (
-                  <span className="truncate opacity-90">{currentInstance}</span>
-                )}
-              </button>
-              <EquipmentInstancePopover
-                open={machineOpen}
-                onClose={() => setMachineOpen(false)}
-                anchorRef={machineBtnRef}
-                value={currentInstance}
-                options={machineOptions}
-                onChange={val => onUpdate({ ...exercise, equipmentInstance: val })}
-                theme={theme}
-              />
-            </div>
+            {showMachineChip && (
+              <div className="relative">
+                <button
+                  ref={machineBtnRef}
+                  type="button"
+                  onClick={() => setMachineOpen(v => !v)}
+                  title={currentInstance ? `Machine: ${currentInstance}` : 'Tag a specific machine (optional)'}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap max-w-[10rem] ${
+                    currentInstance
+                      ? 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300'
+                      : 'bg-item text-c-faint border border-dashed border-white/10'
+                  }`}
+                >
+                  {currentInstance ? (
+                    <span className="truncate">{currentInstance}</span>
+                  ) : (
+                    <span className="font-bold">Machine</span>
+                  )}
+                </button>
+                <EquipmentInstancePopover
+                  open={machineOpen}
+                  onClose={() => setMachineOpen(false)}
+                  anchorRef={machineBtnRef}
+                  value={currentInstance}
+                  options={machineOptions}
+                  onChange={val => onUpdate({ ...exercise, equipmentInstance: val })}
+                  theme={theme}
+                />
+              </div>
+            )}
           </div>
 
           {/* Anomaly banner (Batch 16q) — plateau / regression / swing */}

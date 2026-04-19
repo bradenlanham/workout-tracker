@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 19 — Equipment instance)
+> Last updated: April 19, 2026 (Batch 19a — Machine chip UX polish)
 
 ## Rules for Claude
 
@@ -1175,6 +1175,18 @@ Step 7 of the AI Coaching Recommender plan per spec §3.4. Per-session optional 
 316. **Verified live in preview** (mobile 375×812, debug-backup.json seeded). Scenarios pass: (a) Machine chip renders dashed-border placeholder when empty; (b) tap opens the popover at the correct fixed position with viewport-edge clamp; (c) typing "Hoist" + Add commits, chip flips to filled cyan state, `activeSession.exercises[Pec Dec].equipmentInstance === "Hoist"` in localStorage; (d) reload preserves the chip state via `activeSession`; (e) Clear button returns to dashed empty state and persists `""`; (f) with synthetic Hoist + Cybex prior sessions, a FRESH session seeds Pec Dec to Hoist (newest), picker options show `[Hoist (selected)] [Cybex] [Add] [Clear]` chronologically; (g) tap Cybex switches the chip without closing-then-reopening; (h) 6-chip toolbar gracefully wraps to row 2 on 375px — no horizontal overflow. Zero console errors across every scenario.
 
 317. **Build.** `npx vite build --outDir /tmp/test-build` → 731.93 KB bundle (+4.6 KB vs 18f, accounted for by the popover + two helpers + instance-scoping branch in BbLogger). Gzipped 197.79 KB.
+
+### Batch 19a (April 19, 2026) — Machine chip UX polish
+
+Two live-feedback fixes on Batch 19's Machine chip.
+
+318. **Chip label no longer repeats "Machine"** (`BbLogger.jsx`). The filled-state chip showed `Machine Hoist` — redundant once a value is set. Rewritten to render just the value (`Hoist`) when tagged; the `Machine` label is reserved for the empty dashed-border state where it serves as the field affordance.
+
+319. **Chip visibility gated on library equipment type** (`BbLogger.jsx`). New `showMachineChip = libraryEntry?.equipment === 'Machine'` guard wraps the chip + popover. Exercises whose library entry is Barbell / Dumbbell / Bodyweight / Kettlebell / Cable / Other — or exercises with no resolvable library entry — hide the chip entirely so the toolbar doesn't waste space on a prompt that doesn't apply. The tagging work a user does in `/exercises` or `/backfill` now carries into the logger automatically: classify Pec Dec as Machine and the chip appears; classify Lateral DB Raises as Dumbbell and it stays out of the way. Cable was deliberately excluded this round — user explicitly called out Machine as the relevant class; can be added later if Cable Fly / Cable Row gym-to-gym variation becomes worth tracking.
+
+320. **Verified live in preview** (mobile 375×812, debug-backup.json with synthetic Hoist seed). (a) Pec Dec (Machine) renders chip, pre-seeded to `Hoist` from prior session; chip text reads `Hoist` (not `Machine Hoist`). (b) Incline DB Press (Dumbbell) toolbar shows only `Plates / Uni / Last / Tip` — Machine chip absent. (c) Flat Bench Press (Barbell) and Dips (Bodyweight) also hide it. (d) Cable Fly (Cable) hides it too. (e) Any Plate-loaded Press (Machine, no prior tag) renders dashed-border empty-state `Machine` chip. No console errors.
+
+321. **Build.** `npx vite build --outDir /tmp/test-build` → 732.11 KB bundle (+0.2 KB vs 19, all in the gating branch). Gzipped 197.88 KB.
 
 ---
 
