@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17d — delete legacy SplitEditor + /split route)
+> Last updated: April 19, 2026 (Batch 17e — duplicate action + undo toast)
 
 ## Rules for Claude
 
@@ -73,7 +73,8 @@ src/
 │   ├── RestTimer.jsx          # Floating draggable rest timer with progress ring (visible only during logging)
 │   ├── CustomNumpad.jsx       # Numpad overlay used by BbLogger for weight/reps entry
 │   ├── CreateExerciseModal.jsx # Shared modal for adding a new library entry with required muscle + equipment
-│   └── ExerciseEditSheet.jsx   # Bottom-sheet editor for existing library entries (Batch 16j)
+│   ├── ExerciseEditSheet.jsx   # Bottom-sheet editor for existing library entries (Batch 16j)
+│   └── Toast.jsx               # Batch 17e — event-bus undo toast; showToast({message, undo}) from anywhere
 │
 │
 └── pages/
@@ -895,6 +896,17 @@ Step 4 of the Split Builder redesign (see `split-builder-redesign-handoff.md` St
 225. **Removed import + `<Route path="/split">` from `src/App.jsx`.** The `/split` URL now falls through to React Router's default no-match behavior (blank), which matches every other unregistered route. Any stale bookmark lands in the same place; not worth a redirect shim for a route that was never linked from the UI.
 226. **`useStore.js` comment clean-up.** The `updateWorkoutSequence` docblock used to reference "the existing SplitEditor" — rewritten to explain the real reason the action still exists (legacy built-in split rotation sync).
 227. **Verified build** via `npx vite build --outDir /tmp/test-build` — bundle size down ~6 KB. Manual smoke: `/dashboard → /splits → /splits/edit/:id` unaffected. No broken imports, no unused-symbol warnings. No preview walkthrough needed — change is subtractive and the affected surface had no reachable users.
+
+### Batch 17e (April 19, 2026) — Duplicate action + undo toast
+
+Step 5 of the Split Builder redesign (see `split-builder-redesign-handoff.md` Step 5). Adds Duplicate to both split cards and workout cards in the builder — Push 2 is 80% the same as Push in most real splits, so this cuts real friction. The Duplicate action on SplitManager was shallow-cloning in Batch 17c (via the existing `cloneSplit`), which actually shares workout object references and mutates both splits when one is edited. This step replaces it with a proper deep clone.
+
+228. **`Toast.jsx` component + `showToast` event bus (`src/components/Toast.jsx`, `App.jsx`).** Module-level listener registry so any component can call `showToast({ message, undo, duration=5000 })` without prop threading. Single toast at a time (a new call replaces the active one). Renders via `createPortal` at z-index 290 per the handoff's z-stack — above every established sheet / modal / popover. Tailwind-styled pill: accent-tinted border, bold "UNDO" in amber. Mounted once at the top of `App.jsx` alongside `<RestTimer />`.
+229. **`duplicateSplit(splitId)` store action (`useStore.js`).** Proper deep clone with workout id regeneration and rotation remap. Builds an `old-id → new-id` map, rewrites each workout's id, deep-copies the `sections` / `exercises` arrays, preserves `{name, rec}` structure and scalar rec strings, then rewrites the split's `rotation` through the map (`'rest'` passes through unchanged; dangling ids survive via `|| r` fallback instead of silently dropping). Returns the dup so the caller can surface an undo toast with the dup's id. `cloneSplit` is kept untouched since it's still referenced by import flows.
+230. **`removeSplitById(id)` store action (`useStore.js`).** Companion to `duplicateSplit` — symmetric removal by id. `deleteSplit` already exists but goes through the `confirmDelete` modal; this one is a direct-delete path for the undo toast flow. Also handles activeSplitId fallback if the removed split happened to be active.
+231. **SplitManager Duplicate wired to the new action (`SplitManager.jsx`).** `handleDuplicate` now calls `duplicateSplit` and fires `showToast({ message: 'Duplicated "X"', undo: () => removeSplitById(dup.id) })`. 5-second auto-dismiss; Undo button inside the toast removes the dup. Still stays on the list view — no surprise redirect to the builder.
+232. **SplitBuilder Step 2 workout duplicate (`SplitBuilder.jsx`).** New inline copy-icon button added to each workout card's action row (between "Move down" and "Remove"). `handleDuplicateWorkout(idx)` deep-clones sections + exercises + rec, generates a fresh workout id, appends `"(Copy)"` to the name, and appends to `workouts`. Does NOT auto-add to rotation (user typically wants Push 2 at a different rotation position than Push, so making the choice explicit is better than silent append). Toast with 5s undo restores the pre-duplicate workouts array via closure-captured snapshot.
+233. **Verified live in preview** (mobile 375×812). Split duplicate scenarios pass: (a) built-in BamBam's Blueprint duplicated → new entry with `"(Copy)"` suffix, `isBuiltIn: false`, fresh workout ids, rotation correctly remapped to the new ids ('rest' passes through unchanged); (b) toast renders with emerald Undo button; (c) Undo removes the dup from the store, splits count back to pre-dup value. Workout duplicate scenarios pass: (d) Duplicate Push → "Push (Copy)" appended to Step 2 workout list, not added to rotation; (e) toast renders; (f) Undo removes "Push (Copy)" from the builder's local state. No console errors. ✓
 
 ---
 

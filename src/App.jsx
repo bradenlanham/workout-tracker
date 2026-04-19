@@ -4,6 +4,7 @@ import useStore from './store/useStore'
 import HamburgerMenu from './components/HamburgerMenu'
 import BottomNav from './components/BottomNav'
 import RestTimer from './components/RestTimer'
+import Toast from './components/Toast'
 import Dashboard from './pages/Dashboard'
 import Log from './pages/Log'
 import History from './pages/History'
@@ -62,6 +63,7 @@ function ThemedApp() {
       <HamburgerMenu open={menuOpen} setOpen={setMenuOpen} />
       <BottomNav onMenuOpen={() => setMenuOpen(true)} menuOpen={menuOpen} />
       <RestTimer />
+      <Toast />
     </>
   )
 }

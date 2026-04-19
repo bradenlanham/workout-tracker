@@ -299,6 +299,71 @@ const useStore = create(
         return clone
       },
 
+      // Batch 17e — proper deep-clone duplicate that regenerates workout ids
+      // and remaps the rotation accordingly. `cloneSplit` above is a shallow
+      // copy that shares workout object references with the source (editing
+      // one mutates both). `duplicateSplit` is the correct path for the
+      // overflow-menu Duplicate action in SplitManager. Returns the dup so the
+      // caller can surface an undo toast.
+      duplicateSplit: (id) => {
+        const state = get()
+        const src = state.splits.find(sp => sp.id === id)
+        if (!src) return null
+        // Build id map old → new so we can rewrite the rotation after the
+        // workouts get fresh ids. `'rest'` is a sentinel, not a workout id, so
+        // it passes through unchanged.
+        const idMap = {}
+        const newWorkouts = (src.workouts || []).map(w => {
+          const newId = generateId()
+          idMap[w.id] = newId
+          return {
+            ...w,
+            id: newId,
+            sections: (w.sections || []).map(sec => ({
+              ...sec,
+              exercises: (sec.exercises || []).map(ex => {
+                if (typeof ex === 'string') return ex
+                // {name, rec} is the structured shape. Deep-copy rec if it's
+                // an object (Step 9's structured rec lands later); string recs
+                // are scalar and pass through.
+                const copiedRec = ex.rec && typeof ex.rec === 'object'
+                  ? { ...ex.rec }
+                  : ex.rec
+                return { ...ex, ...(copiedRec !== undefined ? { rec: copiedRec } : {}) }
+              }),
+            })),
+          }
+        })
+        const newRotation = (src.rotation || []).map(r =>
+          r === 'rest' ? 'rest' : (idMap[r] || r)
+        )
+        const dup = {
+          ...src,
+          id: generateId(),
+          name: `${src.name} (Copy)`,
+          isBuiltIn: false,
+          workouts: newWorkouts,
+          rotation: newRotation,
+          createdAt: new Date().toISOString().split('T')[0],
+        }
+        set(prev => ({ splits: [...prev.splits, dup] }))
+        return dup
+      },
+
+      // Batch 17e — used by the undo toast flow to back out a just-created
+      // duplicate. Symmetric with duplicateSplit. deleteSplit already exists
+      // but mis-fires if the user happens to have activated the duplicate
+      // in the window — this preserves the original's active state.
+      removeSplitById: (id) => {
+        set(state => {
+          const remaining = state.splits.filter(s => s.id !== id)
+          const newActiveId = state.activeSplitId === id
+            ? (remaining[0]?.id || null)
+            : state.activeSplitId
+          return { splits: remaining, activeSplitId: newActiveId }
+        })
+      },
+
       // ── Split draft (Batch 17a) ───────────────────────────────────────────
       // Auto-save plumbing for the wizard / Canvas. The UI is responsible for
       // debouncing writes (500ms is plenty); the store just holds the latest

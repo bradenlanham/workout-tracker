@@ -5,6 +5,7 @@ import { getTheme } from '../theme'
 import { EXERCISE_LIBRARY, MUSCLE_GROUPS } from '../data/exerciseLibrary'
 import { generateId, findSimilarExercises, formatTimeAgo } from '../utils/helpers'
 import CreateExerciseModal from '../components/CreateExerciseModal'
+import { showToast } from '../components/Toast'
 
 // Batch 17a — draft older than 7 days is auto-cleared on mount.
 const DRAFT_STALE_MS = 7 * 24 * 60 * 60 * 1000
@@ -763,7 +764,7 @@ function Step1({ name, setName, emoji, setEmoji, onBack, onContinue, theme, bann
 
 // ── Step 2: Add Workouts ───────────────────────────────────────────────────────
 
-function Step2({ workouts, onAddWorkout, onEditWorkout, onRemoveWorkout, onMoveWorkout, onContinue, onBack, theme }) {
+function Step2({ workouts, onAddWorkout, onEditWorkout, onDuplicateWorkout, onRemoveWorkout, onMoveWorkout, onContinue, onBack, theme }) {
   return (
     <div className="min-h-screen pb-36">
       <div
@@ -815,6 +816,18 @@ function Step2({ workouts, onAddWorkout, onEditWorkout, onRemoveWorkout, onMoveW
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {/* Batch 17e — duplicate workout (deep-clone, NOT auto-added to rotation) */}
+                <button
+                  onClick={() => onDuplicateWorkout(idx)}
+                  className="p-2 text-c-muted hover:text-c-secondary"
+                  aria-label={`Duplicate ${w.name}`}
+                  title="Duplicate"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                   </svg>
                 </button>
                 <button
@@ -1210,6 +1223,36 @@ export default function SplitBuilder() {
     markDirty()
   }
 
+  // Batch 17e — duplicate a workout inside the (unsaved) builder state.
+  // Deep-clones sections + exercises + rec, gives it a fresh id, appends
+  // "(Copy)" to the name. Does NOT auto-add to rotation (user typically wants
+  // to place Push 2 at a different rotation slot than Push). 5-second undo
+  // toast restores the prior workouts array.
+  const handleDuplicateWorkout = (idx) => {
+    const src = workouts[idx]
+    if (!src) return
+    const dup = {
+      ...src,
+      id: generateId(),
+      name: `${src.name} (Copy)`,
+      sections: (src.sections || []).map(sec => ({
+        ...sec,
+        exercises: (sec.exercises || []).map(ex => {
+          if (typeof ex === 'string') return ex
+          const copiedRec = ex.rec && typeof ex.rec === 'object' ? { ...ex.rec } : ex.rec
+          return { ...ex, ...(copiedRec !== undefined ? { rec: copiedRec } : {}) }
+        }),
+      })),
+    }
+    const priorWorkouts = workouts
+    setWorkouts(prev => [...prev, dup])
+    markDirty()
+    showToast({
+      message: `Duplicated "${src.name}"`,
+      undo: () => setWorkouts(priorWorkouts),
+    })
+  }
+
   const handleContinueToStep3 = () => {
     // Pre-populate rotation with workout order if it only has exactly the workout IDs
     // (no rest days added yet) and user hasn't manually modified it from the default
@@ -1322,6 +1365,7 @@ export default function SplitBuilder() {
         workouts={workouts}
         onAddWorkout={() => openWorkoutBuilder(null)}
         onEditWorkout={idx => openWorkoutBuilder(idx)}
+        onDuplicateWorkout={handleDuplicateWorkout}
         onRemoveWorkout={handleRemoveWorkout}
         onMoveWorkout={handleMoveWorkout}
         onContinue={handleContinueToStep3}

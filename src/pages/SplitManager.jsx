@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
+import { showToast } from '../components/Toast'
 
 // ── Export helper ──────────────────────────────────────────────────────────────
 
@@ -309,7 +310,7 @@ export default function SplitManager() {
   const navigate = useNavigate()
   const {
     splits, activeSplitId,
-    setActiveSplit, cloneSplit, deleteSplit, addSplit, settings,
+    setActiveSplit, duplicateSplit, removeSplitById, deleteSplit, addSplit, settings,
   } = useStore()
   const theme = getTheme(settings.accentColor)
 
@@ -321,11 +322,18 @@ export default function SplitManager() {
     navigate(`/splits/edit/${split.id}`)
   }
 
-  // Duplicate stays on the list view — users see the new "(Copy)" entry appear
-  // in place rather than being yanked into the builder. If they want to edit
-  // it, that's a tap away via the overflow menu on the duplicate.
+  // Duplicate stays on the list view — users see the new "(Copy)" entry
+  // appear in place rather than being yanked into the builder. Toast offers
+  // a 5s undo window (Batch 17e). If they want to edit the duplicate, that's
+  // a tap away via its own overflow menu.
   const handleDuplicate = (split) => {
-    cloneSplit(split.id)
+    const dup = duplicateSplit(split.id)
+    if (dup) {
+      showToast({
+        message: `Duplicated "${split.name}"`,
+        undo: () => removeSplitById(dup.id),
+      })
+    }
   }
 
   const handleDeleteConfirm = () => {
