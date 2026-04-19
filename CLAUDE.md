@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 18b — SplitManager redesign)
+> Last updated: April 19, 2026 (Batch 18c — SplitCanvas redesign)
 
 ## Rules for Claude
 
@@ -93,7 +93,8 @@ src/
 │   ├── WorkoutEditSheet.jsx    # Batch 17g + 17i — bottom-sheet editor for a single workout; editable section labels, structured rec editor (via RecPill + RecEditor as of 17h), accepts recentInSplit prop and renders the shared ExercisePicker component.
 │   ├── ExercisePicker.jsx      # Batch 17i — shared exercise picker extracted from WorkoutEditSheet's inline version. Adds "Recent in this split" tab (union of exercises from sibling workouts) + "Search all muscles" checkbox (default on). Drives both the Canvas sheet and any future logger surface.
 │   ├── RecPill.jsx             # Batch 17h — shared rec-display pill; renders formatRec(rec) in any supported shape
-│   └── RecEditor.jsx           # Batch 17h — structured rec editor sheet (sets / reps / note with live preview)
+│   ├── RecEditor.jsx           # Batch 17h — structured rec editor sheet (sets / reps / note with live preview)
+│   └── DragHandle.jsx          # Batch 18c — shared decorative drag-handle glyph (10x18 dot grid). Signals row is reorderable; actual drag lands later. Consumed by SplitCanvas.jsx's WorkoutCard; WorkoutEditSheet pickup in 18d.
 │
 │
 └── pages/
@@ -1040,6 +1041,32 @@ Step 2 of the Split Builder polish pass (see `split-manager-handoff.md` — auth
 276. **Live preview verification** (mobile 375×812, debug-backup.json). Seven split cards render with correct brand tiles, titles, meta lines, usage stats, provenance dates. BamBam's Blueprint renders with `23 sessions · 4 days ago` + `Started March 22, 2026`. Brazil Body Plan (never used) renders `Not yet used` + `Created March 22, 2026`. Title truncation confirmed on `BamBam's Blueprint (C…)`. Scenarios pass: (a) tap inactive card → `/splits/edit/{id}`; (b) tap `Set active ›` → activates without navigating; (c) ⋯ on active built-in → `Edit / Duplicate / Export` (3 items); (d) ⋯ on inactive non-built-in → all 5 items; (e) topbar `+` → `/splits/new/start`; (f) accent swap to red → active pill + left bar + topbar `+` all turn red. No console errors.
 
 277. **Build.** `npx vite build --outDir /tmp/test-build` → 727.36 KB bundle (+4.2 KB vs 18a, accounted for by the 4 helpers + the inline-styled active-card treatment). Gzipped 196.18 KB.
+
+### Batch 18c (April 19, 2026) — SplitCanvas redesign
+
+Step 3 of the Split Builder polish pass (see `split-builder-polish-handoff.md` Batch 18c). Reclaims above-the-fold real estate, removes the workout-card control stacking, guards the Save button from the red-accent collision, and preserves everything Batch 17g got right (single-canvas, draft-restore, always-visible rotation).
+
+278. **Compact identity hero (`SplitCanvas.jsx`).** Emoji tile + name input move from 80×80 stacked-centered to 64×64 inline-horizontal. Tile gets a small pencil glyph overlay (-1, -1 bottom-right) as a tap-to-edit cue. `text-2xl` centered name becomes `text-xl` left-aligned. Saves ~80px of vertical real estate; still reads as the hero row without dominating the fold.
+
+279. **WorkoutCard — compact row (`SplitCanvas.jsx`).** Up/down chevron column (24×48 of controls) removed entirely. Reorder now lives in the ⋯ menu (Move Up / Move Down, filtered out for first/last via null `onSelect`). A decorative `<DragHandle />` glyph on the left signals reorderability — the real drag-and-drop plumbing lands later. Card `p-3 → p-4`, border `rounded-xl → rounded-2xl`, emoji cell wrapped in a 40×40 `bg-item` tile, title bumped to `text-base`.
+
+280. **Preview text simplified.** Second line was a first-3-names list like `Pec Dec · Incline DB Press · Flat Bench Press · +7 more` that wrapped/truncated inconsistently; now reads `13 exercises` (singular `1 exercise`). Pluralization and tabular-nums handled inline.
+
+281. **`DragHandle.jsx` shared component (`src/components/DragHandle.jsx`).** 10×18 two-column dot SVG in `text-c-faint`, `pointer-events-none` so it doesn't steal taps from the surrounding button. 18e will re-export from the same path alongside `RowOverflowMenu` — no rename planned. WorkoutEditSheet picks it up in 18d for section headers and exercise rows.
+
+282. **Save button never renders red (`SplitCanvas.jsx`).** If `settings.accentColor === 'red'`, a local `saveTheme = getTheme('emerald')` takes over for the Save button + activate-on-save toggle track. Accent-tinted hero tile, active-pill, and left-bar treatments on SplitManager (18b) deliberately keep red because they're thematic, not primary CTAs. Batch 18e extracts this into `getSaveTheme()` in `theme.js`.
+
+283. **CYCLE/WEEK toggle own row.** SectionHeader's inline `extraRight` slot for `Your Week` is vacated; the `RotationViewToggle` now renders on its own right-aligned row below the header. Header gets its breathing room back and the toggle becomes a discoverable first-class control.
+
+284. **"+ Assign" replaces `?` (`RotationWeekGrid` unassigned slot).** Empty week-grid cells previously rendered an ambiguous `?` glyph. Now render a `+` glyph with a `9px` "Assign" label under it — users know this cell is a target, not a mystery.
+
+285. **Add-to-rotation labeled block.** The inline pill row below the rotation strip is wrapped in a labeled section: `ADD TO ROTATION` uppercase heading (`text-[11px] font-bold text-c-muted`) + pill row beneath. Also: rest-day pill copy `Add rest → Rest day` — the heading already says "add", no need to repeat it per pill.
+
+286. **Activate-on-save toggle elevated to chrome card (`SplitCanvas.jsx`).** In create mode, the activate toggle was a subtle `text-c-secondary` switch row above the Save button. Now lifted into a shared `bg-card border-subtle rounded-2xl` card that wraps BOTH the toggle and the Save button, so activation reads as part of the save action rather than an afterthought. Toggle label simplified from `"Activate this split on save"` → `"Activate on save"`. Helper hint (`"Add a name · Add at least one workout · Add to rotation"`) still renders below the card when `!canSave`.
+
+287. **Live preview verification** (mobile 375×812, debug-backup.json). Edit BamBam's Blueprint: compact hero renders with pencil glyph, 5 WorkoutCards show drag handle + 10×10 emoji tile + "N exercises" count + ⋯ (first card = `Edit/Duplicate/Move down/Delete`, middle = `Edit/Duplicate/Move up/Move down/Delete`, last = `Edit/Duplicate/Move up/Delete`). YOUR WEEK section header has no inline toggle; toggle renders on own right-aligned row. ADD TO ROTATION labeled block with pills. Red accent → Save button `bg-emerald-500` (`rgb(16,185,129)`). Create mode: Activate on save toggle + Save & Activate button share one chrome card. No console errors.
+
+288. **Build.** `npx vite build --outDir /tmp/test-build` → 728.35 KB bundle (+1 KB vs 18b). Gzipped 196.59 KB.
 
 ---
 

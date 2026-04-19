@@ -7,6 +7,7 @@ import { generateId, formatTimeAgo, normalizeExerciseName, normalizeExerciseEntr
 import WorkoutEditSheet from '../components/WorkoutEditSheet'
 import EmojiPicker from '../components/EmojiPicker'
 import RestDayChip from '../components/RestDayChip'
+import DragHandle from '../components/DragHandle'
 import { showToast } from '../components/Toast'
 
 // Batch 17g — SplitCanvas (Step 7 of the Split Builder redesign).
@@ -46,6 +47,13 @@ export default function SplitCanvas() {
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const settings        = useStore(s => s.settings)
   const theme           = getTheme(settings.accentColor)
+  // Batch 18c — Save button must never render red (it's a commit action,
+  // not destructive). When the user's accent is red, fall back to emerald
+  // so the "save" affordance still reads as positive. The active-state
+  // accent tints on SplitManager and the hero tile here deliberately keep
+  // red because they're thematic, not primary CTAs. 18e extracts this as
+  // getSaveTheme() in theme.js.
+  const saveTheme       = getTheme(settings.accentColor === 'red' ? 'emerald' : settings.accentColor)
 
   const existingSplit = isEditing ? splits.find(s => s.id === id) : null
 
@@ -453,15 +461,24 @@ export default function SplitCanvas() {
         </div>
       )}
 
-      {/* Identity row: emoji + name */}
-      <section className="px-4 pt-6 pb-4 flex flex-col items-center gap-3">
+      {/* Batch 18c — compact identity hero. 64×64 tile inline with the name
+          input. Pencil glyph overlays the tile's bottom-right as a subtle
+          tap-to-edit cue. Saves ~80px above the fold vs the prior
+          centered 80×80 stack. */}
+      <section className="px-4 pt-5 pb-3 flex items-center gap-4">
         <button
           type="button"
           onClick={() => setShowEmojiPicker(true)}
           aria-label="Change emoji"
-          className="w-20 h-20 rounded-2xl bg-card border border-subtle flex items-center justify-center text-5xl active:scale-95 transition-transform"
+          className="relative w-16 h-16 rounded-2xl bg-card border border-subtle flex items-center justify-center text-4xl active:scale-95 transition-transform shrink-0"
         >
           {emoji}
+          <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-item border border-base flex items-center justify-center">
+            <svg className="w-2.5 h-2.5 text-c-dim" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" />
+            </svg>
+          </span>
         </button>
         <input
           type="text"
@@ -469,7 +486,7 @@ export default function SplitCanvas() {
           onChange={e => { setName(e.target.value); markDirty() }}
           placeholder="Untitled split"
           aria-label="Split name"
-          className="text-center text-2xl font-extrabold bg-transparent outline-none text-c-primary placeholder:text-c-faint w-full"
+          className="flex-1 min-w-0 text-xl font-extrabold bg-transparent outline-none text-c-primary placeholder:text-c-faint"
         />
       </section>
 
@@ -507,17 +524,20 @@ export default function SplitCanvas() {
         </div>
       )}
 
-      {/* Rotation section */}
+      {/* Rotation section. Batch 18c — CYCLE/WEEK toggle moves out of the
+          header into its own right-aligned row below, so the header has
+          room to breathe. Add-to-rotation pills are wrapped in a labeled
+          uppercase block so their purpose is clear. */}
       <SectionHeader
         label="Your Week"
         expanded={rotationExpanded}
         onToggle={() => setRotationExpanded(v => !v)}
-        extraRight={
-          <RotationViewToggle value={rotationView} onChange={setRotationView} />
-        }
       />
       {rotationExpanded && (
         <div className="px-4 pb-6">
+          <div className="flex items-center justify-end mb-3">
+            <RotationViewToggle value={rotationView} onChange={setRotationView} />
+          </div>
           {rotation.length === 0 && (
             <p className="text-sm text-c-muted italic mb-3">
               No rotation yet. Add workouts or rest days in the order you want to train them.
@@ -538,57 +558,66 @@ export default function SplitCanvas() {
             />
           )}
 
-          {/* Add-to-rotation controls */}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => handleAddRotation('rest')}
-              className="flex items-center gap-1.5 bg-slate-500/20 text-c-secondary text-sm px-3 py-2 rounded-xl font-medium hover:bg-slate-500/30 border border-slate-500/30 transition-colors"
-            >
-              <RestDayChip size={18} />
-              <span>Add rest</span>
-            </button>
-            {workouts.map(w => (
+          {/* Add-to-rotation controls, now labeled. */}
+          <div className="mt-4">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-c-muted mb-2">Add to rotation</p>
+            <div className="flex flex-wrap gap-2">
               <button
-                key={w.id}
                 type="button"
-                onClick={() => handleAddRotation(w.id)}
-                className="flex items-center gap-1.5 bg-item text-c-secondary text-sm px-3 py-2 rounded-xl font-medium hover:bg-card transition-colors"
+                onClick={() => handleAddRotation('rest')}
+                className="flex items-center gap-1.5 bg-slate-500/20 text-c-secondary text-sm px-3 py-2 rounded-xl font-medium hover:bg-slate-500/30 border border-slate-500/30 transition-colors"
               >
-                <span>{w.emoji}</span>
-                <span className="max-w-[120px] truncate">{w.name}</span>
+                <RestDayChip size={18} />
+                <span>Rest day</span>
               </button>
-            ))}
+              {workouts.map(w => (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => handleAddRotation(w.id)}
+                  className="flex items-center gap-1.5 bg-item text-c-secondary text-sm px-3 py-2 rounded-xl font-medium hover:bg-card transition-colors"
+                >
+                  <span>{w.emoji}</span>
+                  <span className="max-w-[120px] truncate">{w.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Sticky save footer */}
+      {/* Sticky save footer. Batch 18c — activate-on-save toggle elevated into
+          its own pill-chrome card above the Save button so it reads as part
+          of the save action. Save button uses saveTheme (red accent falls
+          back to emerald). */}
       <footer
         className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 pt-3 bg-base/95 backdrop-blur-sm border-t border-subtle"
         style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
       >
-        {!isEditing && (
+        <div className="bg-card border border-subtle rounded-2xl p-3 flex flex-col gap-3">
+          {!isEditing && (
+            <button
+              type="button"
+              onClick={() => setActivateOnSave(v => !v)}
+              aria-pressed={activateOnSave}
+              className="flex items-center gap-3 text-left"
+            >
+              <div className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${activateOnSave ? saveTheme.bg : 'bg-item'}`}>
+                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${activateOnSave ? 'right-0.5' : 'left-0.5'}`} />
+              </div>
+              <span className="flex-1 text-sm font-semibold text-c-primary">Activate on save</span>
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setActivateOnSave(v => !v)}
-            className="w-full flex items-center justify-between text-sm font-semibold text-c-secondary mb-2 px-1"
+            onClick={handleSave}
+            disabled={!canSave}
+            className={`w-full py-4 rounded-xl font-bold text-base transition-all disabled:opacity-40 ${saveTheme.bg}`}
+            style={{ color: saveTheme.contrastText }}
           >
-            <span>Activate this split on save</span>
-            <div className={`w-11 h-6 rounded-full relative transition-colors ${activateOnSave ? theme.bg : 'bg-item'}`}>
-              <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${activateOnSave ? 'right-0.5' : 'left-0.5'}`} />
-            </div>
+            {isEditing ? 'Save' : (activateOnSave ? 'Save & Activate' : 'Save')}
           </button>
-        )}
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!canSave}
-          className={`w-full py-4 rounded-2xl font-bold text-white text-base transition-all disabled:opacity-40 ${theme.bg}`}
-          style={{ color: theme.contrastText }}
-        >
-          {isEditing ? 'Save' : (activateOnSave ? 'Save & Activate' : 'Save')}
-        </button>
+        </div>
         {!canSave && saveHint && (
           <div className="text-center text-xs text-c-muted mt-2">{saveHint}</div>
         )}
@@ -658,6 +687,11 @@ function SectionHeader({ label, expanded, onToggle, extraRight = null }) {
   )
 }
 
+// Batch 18c — compact WorkoutCard. The up/down chevron column is gone; reorder
+// folds into the ⋯ menu (Move Up / Move Down, disabled for first/last). A
+// decorative DragHandle glyph on the left signals the row is reorderable —
+// real drag-and-drop lands later. Preview text is now a calm "N exercises"
+// count instead of the first-3-names list that was interesting but noisy.
 function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, onMoveUp, onMoveDown }) {
   const [showMenu, setShowMenu] = useState(false)
 
@@ -666,41 +700,23 @@ function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, 
       (s.exercises || []).map(ex => typeof ex === 'string' ? ex : ex.name).filter(Boolean)
     )
     if (all.length === 0) return 'No exercises yet'
-    const top = all.slice(0, 3).join(' · ')
-    return all.length > 3 ? `${top} · +${all.length - 3} more` : top
+    return `${all.length} exercise${all.length === 1 ? '' : 's'}`
   }, [workout.sections])
 
   return (
-    <div className="bg-card rounded-xl border border-subtle p-3 flex items-center gap-3">
-      <div className="flex flex-col gap-0.5 shrink-0">
-        <button
-          type="button"
-          onClick={onMoveUp}
-          disabled={isFirst}
-          aria-label="Move workout up"
-          className="p-1 text-c-muted disabled:opacity-20"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
-        </button>
-        <button
-          type="button"
-          onClick={onMoveDown}
-          disabled={isLast}
-          aria-label="Move workout down"
-          className="p-1 text-c-muted disabled:opacity-20"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-        </button>
-      </div>
+    <div className="bg-card rounded-2xl border border-subtle p-4 flex items-center gap-3">
+      <DragHandle />
       <button
         type="button"
         onClick={onEdit}
         className="flex-1 min-w-0 text-left flex items-center gap-3"
       >
-        <span className="text-2xl shrink-0">{workout.emoji}</span>
+        <div className="w-10 h-10 rounded-xl bg-item flex items-center justify-center text-2xl shrink-0">
+          {workout.emoji}
+        </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate">{workout.name}</p>
-          <p className="text-xs text-c-muted truncate">{previewText}</p>
+          <p className="font-bold text-base text-c-primary leading-tight truncate">{workout.name}</p>
+          <p className="text-xs text-c-muted mt-0.5 truncate">{previewText}</p>
         </div>
       </button>
       <div className="relative shrink-0">
@@ -710,10 +726,10 @@ function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, 
           aria-label={`More actions for ${workout.name}`}
           aria-haspopup="menu"
           aria-expanded={showMenu}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-c-muted hover:bg-item"
+          className="w-10 h-10 flex items-center justify-center rounded-xl text-c-muted hover:bg-item"
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-            <circle cx="12" cy="5" r="1.8" />
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+            <circle cx="12" cy="5"  r="1.8" />
             <circle cx="12" cy="12" r="1.8" />
             <circle cx="12" cy="19" r="1.8" />
           </svg>
@@ -722,6 +738,8 @@ function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, 
           <WorkoutCardMenu
             onEdit={() => { onEdit(); setShowMenu(false) }}
             onDuplicate={() => { onDuplicate(); setShowMenu(false) }}
+            onMoveUp={!isFirst ? () => { onMoveUp(); setShowMenu(false) } : null}
+            onMoveDown={!isLast ? () => { onMoveDown(); setShowMenu(false) } : null}
             onDelete={() => { onDelete(); setShowMenu(false) }}
             onClose={() => setShowMenu(false)}
           />
@@ -731,7 +749,7 @@ function WorkoutCard({ workout, isFirst, isLast, onEdit, onDuplicate, onDelete, 
   )
 }
 
-function WorkoutCardMenu({ onEdit, onDuplicate, onDelete, onClose }) {
+function WorkoutCardMenu({ onEdit, onDuplicate, onMoveUp, onMoveDown, onDelete, onClose }) {
   useEffect(() => {
     const onDocDown = (e) => { if (!e.target.closest('[data-workout-menu]')) onClose() }
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -748,15 +766,37 @@ function WorkoutCardMenu({ onEdit, onDuplicate, onDelete, onClose }) {
     }
   }, [onClose])
 
+  // Only render Move items when reordering is possible in that direction.
+  // `null` onSelect from the parent → item is hidden.
+  const items = [
+    { label: 'Edit',      onSelect: onEdit,      tone: 'primary' },
+    { label: 'Duplicate', onSelect: onDuplicate, tone: 'primary' },
+    { label: 'Move up',   onSelect: onMoveUp,    tone: 'primary' },
+    { label: 'Move down', onSelect: onMoveDown,  tone: 'primary' },
+    { label: 'Delete',    onSelect: onDelete,    tone: 'destructive' },
+  ].filter(it => typeof it.onSelect === 'function')
+
   return (
     <div
       data-workout-menu
       role="menu"
-      className="absolute right-0 top-9 bg-card border border-subtle rounded-xl p-1 shadow-xl z-20 min-w-[160px]"
+      className="absolute right-0 top-11 bg-card border border-subtle rounded-xl p-1 shadow-xl z-20 min-w-[160px]"
     >
-      <button type="button" role="menuitem" onClick={onEdit} className="w-full px-3 py-2.5 text-sm text-left text-c-primary rounded-lg hover:bg-item">Edit</button>
-      <button type="button" role="menuitem" onClick={onDuplicate} className="w-full px-3 py-2.5 text-sm text-left text-c-primary rounded-lg hover:bg-item">Duplicate</button>
-      <button type="button" role="menuitem" onClick={onDelete} className="w-full px-3 py-2.5 text-sm text-left text-red-400 rounded-lg hover:bg-red-500/10">Delete</button>
+      {items.map(it => (
+        <button
+          key={it.label}
+          type="button"
+          role="menuitem"
+          onClick={it.onSelect}
+          className={`w-full px-3 py-2.5 text-sm text-left rounded-lg ${
+            it.tone === 'destructive'
+              ? 'text-red-400 hover:bg-red-500/10'
+              : 'text-c-primary hover:bg-item'
+          }`}
+        >
+          {it.label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -854,9 +894,10 @@ function RotationWeekGrid({ rotation, workouts, onChipTap }) {
           return (
             <div
               key={`d-${idx}`}
-              className="aspect-square rounded-xl border border-dashed border-subtle flex items-center justify-center"
+              className="aspect-square rounded-xl border border-dashed border-subtle flex flex-col items-center justify-center gap-0.5"
             >
-              <span className="text-c-faint text-lg" aria-hidden="true">?</span>
+              <span className="text-c-faint text-lg" aria-hidden="true">+</span>
+              <span className="text-[9px] text-c-faint">Assign</span>
             </div>
           )
         }
