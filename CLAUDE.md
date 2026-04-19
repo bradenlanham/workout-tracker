@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17i+j+k — shared ExercisePicker + Skip-for-now + retire SplitBuilder)
+> Last updated: April 19, 2026 (Batch 18a — polish hotfix: exercise data loss + sheet scroll containment)
 
 ## Rules for Claude
 
@@ -70,6 +70,10 @@ src/
 │                              # predictExerciseMeta(name): Batch 17j — keyword-based best-effort
 │                              #   guess of {primaryMuscles, equipment} from an exercise name, or null
 │                              #   if nothing matches. Feeds CreateExerciseModal's auto-fill.
+│                              # normalizeExerciseEntry(ex): Batch 18a — lossless exercise-shape
+│                              #   normalizer used by SplitCanvas + WorkoutEditSheet. Accepts
+│                              #   string / {name} / {name, rec} / {exercise} and returns the
+│                              #   smallest renderable shape or null for truly nameless entries.
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -987,6 +991,22 @@ Steps 10 + 11 + 12 of the Split Builder redesign shipped together in a single wo
 260. **Step 12 — `src/pages/SplitBuilder.jsx` deleted.** The legacy 4-step wizard is retired. `App.jsx` drops the `import SplitBuilder from './pages/SplitBuilder'` line and rewrites the route comment to describe the post-retirement world. A handful of historical comment references to the word "SplitBuilder" in SplitCanvas / ChooseStartingPoint / WorkoutEditSheet / useStore are rewritten to point at SplitCanvas or "the legacy wizard" so `grep -R "SplitBuilder" src/` returns no hits — the strict Step 12 gate.
 
 261. **Build + live verification.** `npx vite build --outDir /tmp/test-build` passes (722.97 KB bundle, +5 KB gzipped vs 17h — accounted for by ExercisePicker extraction + predictExerciseMeta map + Skip path). Preview pass on mobile 375×812 covered: (a) `/splits/edit/split_bam` → open Push workout → add exercise → Recent tab front-loaded with 15 sibling-workout entries; (b) All tab with search "leg" returns 10 hits across muscle groups; (c) flipping "Search all muscles" OFF on the Chest tab with "leg" search returns 0 as expected; (d) typing "Cable Face Pull" in the modal auto-selects Shoulders + Cable after the debounce; (e) Skip-for-now creates a `needsTagging: true` library entry with `equipment: 'Other'` and empty muscles; (f) back-navigation through `/splits` and `/dashboard` produces zero console errors. `grep -R "SplitBuilder" src/` returns nothing.
+
+### Batch 18a (April 19, 2026) — Polish hotfix: exercise data loss + sheet scroll containment
+
+Step 1 of the Split Builder polish pass (see `split-builder-polish-handoff.md` Part 1). The visual redesign pipeline (18b–18e) is blocked on this hotfix — users editing a workout mid-flight could lose exercises silently if 18b–18e landed first. Ships alone.
+
+262. **`normalizeExerciseEntry(ex)` helper in `helpers.js`.** Lossless exercise-shape normalizer used by both `SplitCanvas.jsx` and `WorkoutEditSheet.jsx`. Accepts any legacy or current shape (string / `{name}` / `{name, rec}` / `{exercise}` legacy fallback / null / primitives) and returns the smallest renderable shape — bare string when no rec, `{name, rec}` when rec is non-empty, or `null` only for truly nameless entries. Dev-mode `console.warn` fires on any drop so a buggy migration can't hide behind silent filtering. 16/16 synthetic edge cases pass via `node -e`.
+
+263. **Root-cause fix for the disappearing-exercise bug.** Batch 17g's `WorkoutEditSheet.jsx:33–45` + `SplitCanvas.jsx:54–66` used `.filter(Boolean)` on a ternary that returned `null` for any entry not matching `typeof ex === 'string' || ex?.name`. That silently dropped any legacy `{exercise: '…'}` shape, any `{name, rec: <weird shape>}` that tripped the Batch 17h `formatRec` migration, and any malformed result of an auto-persist-to-split write path in `BbLogger.jsx`. User report: "Flat Bench Press missing from BamBam's Blueprint → Push → Primary even though the Canvas preview says it's there" traces exactly to this drop path. Both call sites now delegate to `normalizeExerciseEntry` and preserve every recoverable entry.
+
+264. **`migration-18a-sanity.mjs` at repo root.** Node ESM. Loads `debug-backup.json`, walks every split's workouts' sections' exercises, reports a per-shape histogram (158 entries: 128 strings + 30 `{name}` objects in the test backup — no malformed entries in the reference data), and asserts zero entries 18a drops that 17g preserved. Mirrors the existing `migration-sanity.mjs` / `migration-v3-sanity.mjs` / `anomaly-sanity.mjs` pattern.
+
+265. **iOS scroll containment on WorkoutEditSheet.** Scroll region (`flex-1 overflow-y-auto`) gets inline `overscrollBehavior: 'contain'` + `WebkitOverflowScrolling: 'touch'` so momentum scroll doesn't leak into the Canvas behind. Backdrop gets `touch-none` to prevent gesture-on-backdrop from scrolling the page beneath. Drag handle (the decorative `w-10 h-1` bar) gets `pointer-events-none` on its wrapper so a stray swipe doesn't hijack touches on the area below. No pull-to-close implementation yet — that stays a future pass per the spec.
+
+266. **Live preview verification.** Seeded BamBam's Blueprint → Push → Primary with 4 entries including a `{exercise: 'Legacy Decline Row'}` malformed shape that 17g would have dropped. All 4 entries render in the sheet (DOM positions captured at 290 / 328 / 366 / 404 px). Dev-mode `console.warn` is silent on clean data; fires correctly on synthetic nameless entries (`{rec: '3x10'}` and `{name: '', rec: '3x10'}` tests). Real-data backup shows 0 recovered entries (no malformation in the test dataset) and 0 regressions. Restored Primary to its canonical 3-entry state before commit.
+
+267. **Build.** `npx vite build --outDir /tmp/test-build` → 723.17 KB bundle (+0.2 KB vs 17k, all in the helper). Gzipped size unchanged at 194.88 KB.
 
 ---
 

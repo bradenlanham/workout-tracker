@@ -91,6 +91,51 @@ export function formatRec(rec) {
   return prefix || note || null
 }
 
+// Batch 18a — lossless exercise-entry normalizer.
+// Replaces the drop-on-unexpected-shape path that WorkoutEditSheet and
+// SplitCanvas's normalizeWorkouts used to ship (Batch 17g). Accepts any
+// legacy or current shape and returns either a string, a {name, rec}
+// object, or null for truly nameless input. Dev-mode console.warn fires
+// on any drop so a buggy migration can't hide behind silent filtering.
+//
+// Shape coverage:
+//   - string with content            → string (trimmed)
+//   - string "" / whitespace-only    → null  (no recoverable name)
+//   - {name}                         → name (bare string)
+//   - {name, rec}                    → {name, rec: ex.rec}   (preserves any shape)
+//   - {name: '', rec}                → null  (nameless, no recovery target)
+//   - {exercise, …}                  → exercise (fallback field)
+//   - null / undefined / number      → null
+//
+// Callers .filter(Boolean) the result since null is the only drop signal.
+export function normalizeExerciseEntry(ex) {
+  if (typeof ex === 'string') {
+    const s = ex.trim()
+    return s || null
+  }
+  if (!ex || typeof ex !== 'object') return null
+
+  // Prefer .name; fall back to .exercise (some legacy shapes), then any
+  // leading string value if those are missing. Coerce numbers/booleans via
+  // String() so a stored number doesn't trip the typeof check.
+  const rawName = ex.name ?? ex.exercise ?? null
+  const name = typeof rawName === 'string' ? rawName.trim() : (rawName != null ? String(rawName).trim() : '')
+
+  if (!name) {
+    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn('[normalizeExerciseEntry] Dropping exercise entry with no recoverable name:', ex)
+    }
+    return null
+  }
+
+  // Preserve any non-empty rec shape — formatRec handles the rendering.
+  if (ex.rec !== null && ex.rec !== undefined && ex.rec !== '') {
+    return { name, rec: ex.rec }
+  }
+  return name
+}
+
 // ── BB helpers ───────────────────────────────────────────────────────────────
 
 export function getNextBbWorkout(sessions, customSequence) {

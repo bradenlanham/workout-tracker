@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { generateId, formatTimeAgo, normalizeExerciseName } from '../utils/helpers'
+import { generateId, formatTimeAgo, normalizeExerciseName, normalizeExerciseEntry } from '../utils/helpers'
 import WorkoutEditSheet from '../components/WorkoutEditSheet'
 import EmojiPicker from '../components/EmojiPicker'
 import RestDayChip from '../components/RestDayChip'
@@ -51,17 +51,17 @@ export default function SplitCanvas() {
 
   // Normalize sections the way the legacy wizard did so we don't regress
   // Batch 13's rec-preservation when loading an existing split.
+  // Batch 18a — delegates to the lossless `normalizeExerciseEntry` helper.
+  // Previously, any entry whose shape didn't match `string | {name}` was
+  // silently filtered by `.filter(Boolean)` — root cause of the missing
+  // "Flat Bench Press" bug in BamBam's Blueprint → Push → Primary.
   const normalizeWorkouts = (ws) => (ws || []).map(w => ({
     ...w,
     name: w.name || 'Workout',
     emoji: w.emoji || '🏋️',
     sections: (w.sections || []).map(s => ({
       ...s,
-      exercises: (s.exercises || []).map(ex => {
-        if (typeof ex === 'string') return ex
-        if (ex?.name) return ex.rec ? { name: ex.name, rec: ex.rec } : ex.name
-        return null
-      }).filter(Boolean),
+      exercises: (s.exercises || []).map(normalizeExerciseEntry).filter(Boolean),
     })),
   }))
 

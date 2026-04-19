@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
+import { normalizeExerciseEntry } from '../utils/helpers'
 import EmojiPicker from './EmojiPicker'
 import RecPill from './RecPill'
 import RecEditor from './RecEditor'
@@ -28,6 +29,9 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
   // Normalize incoming sections so string/object exercises both work. We
   // preserve the original shape on save — strings stay strings unless the
   // user sets a rec on them (which promotes to {name, rec}).
+  // Batch 18a — normalization delegates to the lossless `normalizeExerciseEntry`
+  // helper so we stop silently dropping entries whose shape drifted from the
+  // Batch 17g string-or-`{name}` contract.
   const [name, setName] = useState(workout?.name || 'New Workout')
   const [emoji, setEmoji] = useState(workout?.emoji || '🏋️')
   const [sections, setSections] = useState(() =>
@@ -36,11 +40,7 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
       : [{ label: 'Exercises', exercises: [] }]
     ).map(s => ({
       label: s.label || 'Exercises',
-      exercises: (s.exercises || []).map(ex => {
-        if (typeof ex === 'string') return ex
-        if (ex?.name) return ex.rec ? { name: ex.name, rec: ex.rec } : ex.name
-        return null
-      }).filter(Boolean),
+      exercises: (s.exercises || []).map(normalizeExerciseEntry).filter(Boolean),
     }))
   )
   const [isDirty, setIsDirty] = useState(false)
@@ -153,15 +153,16 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
       className="fixed inset-0 flex items-end justify-center"
       style={{ zIndex: 270 }}
     >
-      <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
+      <div className="absolute inset-0 bg-black/50 touch-none" onClick={handleClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Edit workout"
         className="relative bg-card rounded-t-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden"
       >
-        {/* Drag handle + header */}
-        <div className="pt-2 pb-1 flex justify-center shrink-0">
+        {/* Drag handle + header — decorative only per Batch 18a. Gets
+            pointer-events:none so a stray swipe doesn't hijack the gesture. */}
+        <div className="pt-2 pb-1 flex justify-center shrink-0 pointer-events-none">
           <div className="w-10 h-1 rounded-full bg-white/20" aria-hidden="true" />
         </div>
         <div className="px-4 pb-3 flex items-center gap-2 border-b border-subtle shrink-0">
@@ -198,7 +199,10 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
         </div>
 
         {/* Scrollable sections */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+        <div
+          className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3"
+          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+        >
           {sections.map((sec, sIdx) => (
             <SectionBlock
               key={sIdx}
