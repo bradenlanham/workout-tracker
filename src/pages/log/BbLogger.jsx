@@ -15,6 +15,7 @@ import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
 import { RecommendationChip, RecommendationSheet, AnomalyBanner } from './Recommendation'
 import ReadinessCheckIn from './ReadinessCheckIn'
+import SessionGymPill from './SessionGymPill'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -2662,6 +2663,15 @@ export default function BbLogger() {
           </h1>
           {isResumed && (
             <p className="text-xs mt-0.5" style={{ opacity: 0.6 }}>Resumed from saved session</p>
+          )}
+          {sessionStarted && (
+            <div className="mt-1.5">
+              <SessionGymPill
+                gymId={gymId}
+                onChange={setGymId}
+                theme={theme}
+              />
+            </div>
           )}
         </div>
       </div>

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 20 — gym tagging data layer, AI coaching step 8 substep 1)
+> Last updated: April 19, 2026 (Batch 20a — session gym pill in BbLogger header, AI coaching step 8 substep 2)
 
 ## Rules for Claude
 
@@ -164,6 +164,13 @@ src/
         ├── ReadinessCheckIn.jsx # Batch 16n — three-tap pre-session overlay (§2.5): Energy /
         │                      # Sleep / Goal rows + gym chip. Goal→mode, Energy+Sleep→multiplier.
         │                      # Defaults OK/OK/Push = no-op (mult 1.0). Skip link + Go back.
+        ├── SessionGymPill.jsx # Batch 20a — compact in-session gym indicator shown
+        │                      # below the workout title in BbLogger. Hidden when
+        │                      # no gyms configured. Tap opens a portal popover
+        │                      # (z-240) with the gym list + add-new input + a
+        │                      # "Clear gym for this session" button. Makes the
+        │                      # gym-driven AI inferences (Machine chip auto-fill,
+        │                      # recommender history scoping) visible per user UX.
         ├── ShareCard.jsx      # Trading card share card: 5 tiers by streak, selfie, stats bar, JPEG export
         └── CameraCapture.jsx  # Selfie camera component for share card
 ```
@@ -1247,6 +1254,22 @@ Two quick follow-ups on 19b: user wanted the running-state scale back (it disamb
 
 333. **Build.** Same bundle size (one value flip + one transform wrapper — nothing measurable).
 
+### Batch 20a (April 19, 2026) — Session gym pill in BbLogger header (AI coaching step 8 substep 2)
+
+First visible UI surface from Step 8. Makes the gym-driven AI inferences (Machine chip auto-fill from Batch 19, incoming recommender-history scoping in 20b) visible to the user per their UX principle: "make AI inferences visible — don't hide auto-behavior." Hard requirement surfaced in the Step 8 briefing.
+
+346. **`SessionGymPill` component (`src/pages/log/SessionGymPill.jsx`).** Compact accent-tinted chip rendered below the workout title in BbLogger's sticky header. Two states: **set** — filled with `theme.hex` tint + border + color, building glyph + gym label + ▾; **empty** (gyms configured but session has no gymId) — dashed-border `bg-item` placeholder labeled "Set gym". **Hidden** (returns null) when `settings.gyms.length === 0` — nothing to pick from, don't pester users. Chip is aria-labeled `Change gym (currently {label})` / `Set gym` so screen readers announce its function.
+
+347. **Portal popover at z-240.** Tapping the chip opens a 260px-wide panel rendered via `createPortal` to `document.body` with `position: fixed`. Anchored to `chipRef.current.getBoundingClientRect()` at open time, 6px below, viewport-clamped at 8px from the horizontal edges. Outside-click (mousedown + touchstart with 0ms setTimeout attach) + Escape dismiss. z-index 240 — below RecommendationSheet (250), above page content. Panel content: heading `Where are you lifting?`, gym list with ✓ on the selected one, `Add a new gym…` input (40-char cap) + Add button, and `Clear gym for this session` link-style button when a gym is set.
+
+348. **Three store hooks + pass-through props.** Component subscribes to `settings.gyms`, `addGym`, `setDefaultGymId`. Receives `gymId`, `onChange(id | null)`, `theme` as props so the logger (or any future caller) owns the state. Selecting a gym calls `onChange(id)` + `setDefaultGymId(id)` so next session defaults to the same pick. Clear button calls `onChange(null)` without touching defaultGymId — session is explicitly gym-less for now, but next session still seeds to the last real pick. Add button auto-selects the newly-created gym and sets it as default.
+
+349. **BbLogger wiring (`src/pages/log/BbLogger.jsx`).** New import + usage below the h1 title, gated on `sessionStarted` — pre-start the ReadinessCheckIn overlay already owns gym selection, so the pill would be redundant chrome behind the overlay. `setGymId` is the existing state setter from Batch 16n; the existing `saveActiveSession` useEffect already writes `gymId` into localStorage under `activeSession`, so persistence rides on existing plumbing. Pill rendered on its own row beneath the title (not inline) to avoid the floating RestTimer circle overlapping the chip in the top-right corner.
+
+350. **Verified live in preview** (mobile 375×812, blue accent, fresh install). Eight scenarios pass: (a) no gyms configured → pill hidden, no chip in header; (b) two gyms + gymId='gym_vasa' → blue pill reading `🏢 VASA ▾` with 82×26px bounds, aria-label `Change gym (currently VASA)`; (c) tap pill → portal popover at top:134 / left:20 / 260×188, within the 375px viewport, contents `[VASA✓] [TR] [Add a new gym…] [Add] [Clear gym for this session]`; (d) tap TR in popover → pill flips to `TR`, `activeSession.gymId === 'gym_tr'`, `defaultGymId === 'gym_tr'`, popover auto-dismisses; (e) add-new flow: type "Home Gym" + Add → new gym in `settings.gyms`, gymId → new id, pill reads "Home Gym"; (f) Clear button → `activeSession.gymId = null`, defaultGymId preserved, pill reverts to dashed-border "Set gym" empty state with muted text; (g) reload mid-session preserves `gymId` via the existing `saveActiveSession` pipeline; (h) zero console errors across every scenario. Screenshot confirms chip sits cleanly below the workout title / "Resumed from saved session" line with no overlap with the scaled-up RestTimer circle.
+
+351. **Build.** `npx vite build --outDir /tmp/test-build` → 740.63 KB bundle / 199.72 KB gzipped (+4.3 KB vs Batch 20, all in the new component + the handful of wiring lines in BbLogger).
+
 ### Batch 20 (April 19, 2026) — Gym tagging data layer (AI coaching step 8 substep 1)
 
 First substep of Step 8 — the final v1 milestone. Spec §3.5 + §9.7. Additive data layer only; no UI surface lands yet. Paves the way for 20a (session gym pill in BbLogger header), 20b (Machine chip gym-scoped auto-fill + auto-tag-on-use prompt), 20c (picker filter), 20d (Settings UI for gym CRUD). `settings.gyms` + `session.gymId` already exist from Batch 16n; this batch adds the per-Exercise axis the spec calls for (§3.5.1 Level 1) plus the §3.5.6 history-scoping variants.
@@ -1287,12 +1310,11 @@ Three targeted fixes in the workout editor sheet after live-feedback on Batch 18
 
 Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped, step 7 equipment instance landed in Batch 19, and **Step 8 substep 1 (data layer)** landed in Batch 20. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, the coach surfaces plateau / regression / swing banners on the exercise card, per-machine trend-fit scoping ships with a smart fallback, and the gym-tagging data layer + §3.5 helpers are now wired up for the UI substeps to consume.
 
-**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer (Exercise.sessionGymTags + skipGymTagPrompt, four store actions, three helpers, getExerciseHistory + getInstancesForExercise gymId scoping, `gym-tags-sanity.mjs`). Remaining substeps:
+**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer (Exercise.sessionGymTags + skipGymTagPrompt, four store actions, three helpers, getExerciseHistory + getInstancesForExercise gymId scoping, `gym-tags-sanity.mjs`). Batch 20a added the session gym pill to the BbLogger header — the first visible UI surface from Step 8. Remaining substeps:
 
-- **20a — Session gym pill in BbLogger header.** Small "Gym: VASA ▾" pill at the top of the session logger, tap to change mid-session. Uses the existing `settings.gyms` slice from Batch 16n + session.gymId. **Hard requirement** per user UX: make AI inferences visible — the pill is what tells users that Machine chip auto-fills and recommender history are driven by the gym selection.
-- **20b — Machine chip gym-scoped auto-fill + auto-tag-on-use prompt.** Machine chip seeds from "most recent at THIS gym" (not just globally). When the user selects an exercise at a gym not in its sessionGymTags, show inline prompt "Tag as available at VASA? [Yes] [Not this time] [Always skip]". `shouldPromptGymTag` from Batch 20 gates the render; `addExerciseGymTag` / `addSkipGymTagPrompt` commit the answer.
+- **20b — Machine chip gym-scoped auto-fill + auto-tag-on-use prompt.** Machine chip seeds from "most recent at THIS gym" (not just globally). When the user selects an exercise at a gym not in its sessionGymTags, show inline prompt "Tag as available at VASA? [Yes] [Not this time] [Always skip]". `shouldPromptGymTag` from Batch 20 gates the render; `addExerciseGymTag` / `addSkipGymTagPrompt` commit the answer. Also: the recommender's `recHistory` in BbLogger should start using `getExerciseHistory(..., gymId)` with the <3-session fallback so trend fits scope to same-gym sessions.
 - **20c — Picker filter.** "Only available at VASA" toggle/chip on `ExercisePicker`. §9.7 Option A-style hard filter, default off so nothing's hidden until the user opts in. `isExerciseAvailableAtGym` from Batch 20 does the filter check.
-- **20d — Settings UI for gym CRUD.** HamburgerMenu → Settings (Profile Settings section) → "My Gyms" — add/rename/delete gyms. Guard deletion with a session-count warning. Currently gyms can only be added inline from the readiness overlay. Should also clean up orphan references: when a gym is deleted, strip it from every exercise's sessionGymTags / skipGymTagPrompt so no dangling IDs remain. (Sessions' historical gymId references are preserved — they're a record of past truth.)
+- **20d — Settings UI for gym CRUD.** HamburgerMenu → Settings (Profile Settings section) → "My Gyms" — add/rename/delete gyms. Guard deletion with a session-count warning. Currently gyms can only be added inline from the readiness overlay or the new 20a pill popover. Should also clean up orphan references: when a gym is deleted, strip it from every exercise's sessionGymTags / skipGymTagPrompt so no dangling IDs remain. (Sessions' historical gymId references are preserved — they're a record of past truth.)
 
 ### Post-v1 roadmap (explicitly deferred per plan Part 4)
 
