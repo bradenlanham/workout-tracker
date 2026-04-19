@@ -15,8 +15,17 @@ export default function HamburgerMenu({ open, setOpen }) {
   const [showStreakInfo, setShowStreakInfo] = useState(false)
   const [showCoachingInfo, setShowCoachingInfo] = useState(false)
 
-  const isLogging = loc.pathname.startsWith('/log/bb/')
-  if (isLogging) return null
+  // Batch 17b — mirror the BottomNav fullscreen-flow hide predicate. The
+  // HamburgerMenu opens via the Settings tab on the BottomNav, but its
+  // backdrop + sheet markup is rendered into the page root regardless — hide
+  // it explicitly on the wizard routes so a stray open() call from a stale
+  // state can't surface it mid-flow.
+  const path = loc.pathname
+  const isFullscreenFlow =
+    path.startsWith('/log/bb/') ||
+    path.startsWith('/splits/new') ||
+    path.startsWith('/splits/edit')
+  if (isFullscreenFlow) return null
 
   const close = () => { setOpen(false); setSubScreen(null); setShowDataSection(false); setShowTrackingInfo(false); setShowStreakInfo(false); setShowCoachingInfo(false) }
   const go = (path) => { navigate(path); close() }

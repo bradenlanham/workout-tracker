@@ -78,9 +78,17 @@ export default function BottomNav({ onMenuOpen, menuOpen }) {
   const theme = getTheme(settings.accentColor)
   const isDark = settings.backgroundTheme !== 'daylight'
 
-  const isLogging = location.pathname.startsWith('/log/bb/')
-  const isWelcome = location.pathname === '/welcome'
-  if (isLogging || isWelcome) return null
+  // Batch 17b — hide on any fullscreen wizard / logger flow. `/splits` list
+  // stays visible; only the actual builder surfaces hide the nav so an
+  // accidental tab brush can't kill an in-progress split. Works with Batch
+  // 17a's auto-save to eliminate the data-loss class entirely.
+  const path = location.pathname
+  const isFullscreenFlow =
+    path.startsWith('/log/bb/') ||
+    path.startsWith('/splits/new') ||       // covers /splits/new and /splits/new/start (Step 6)
+    path.startsWith('/splits/edit')         // covers /splits/edit/:id
+  const isWelcome = path === '/welcome'
+  if (isFullscreenFlow || isWelcome) return null
 
   const inactiveColor = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.35)'
   const pillBg = isDark ? 'rgba(18,18,22,0.92)' : 'rgba(255,255,255,0.92)'

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17a — split draft auto-save + persist v4 migration)
+> Last updated: April 19, 2026 (Batch 17b — hide bottom nav on split editor routes)
 
 ## Rules for Claude
 
@@ -468,7 +468,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 
 - The app uses `HashRouter` (not `BrowserRouter`) for Vercel SPA deployment compatibility.
 - Max width is constrained to `max-w-lg` (32rem / 512px) and centered — mobile-first design.
-- Bottom nav hides during logging sessions. Hamburger menu also hides during logging.
+- Bottom nav hides during logging sessions AND during the split builder / canvas routes (`/splits/new`, `/splits/new/start`, `/splits/edit/:id`). Hamburger menu mirrors the same fullscreen-flow hide predicate. The `/splits` list view still shows the nav.
 - The `SplitEditor` page is a legacy component for reordering the built-in split only. The `SplitBuilder` is the full-featured split creation/editing tool.
 - `customTemplates` is a legacy feature predating the splits system. Templates use `tpl_` prefixed IDs.
 - The exercise library (`exerciseLibrary.js`) has 140+ exercises organized by muscle group and is used by the SplitBuilder's exercise picker. The session logger's "Add Exercise" panel has its own smaller hardcoded suggestion list of 15 common exercises.
@@ -871,6 +871,14 @@ First step of the Split Builder redesign (see `split-builder-redesign-handoff.md
 212. **`formatTimeAgo(tsOrIso)` helper (`helpers.js`).** Accepts a ms epoch or an ISO string. Returns "just now", "Nm ago", "Nh ago", "yesterday", "Nd ago" (under 7 days), or `formatDate(...)` beyond. Handles clock-skew (negative diffs → "just now") and invalid inputs → empty string.
 213. **`draft-sanity.mjs` at worktree root.** Node ESM — exercises the v3→v4 additive migration on a stripped backup, a full roundtrip through JSON.stringify/parse of a representative draft (create + edit), the clear path, and the edge cases `formatTimeAgo` handles (1m / 2h / yesterday / just-now / future / 10 days). 20/20 assertions pass. Mirrors the existing `migration-sanity.mjs` / `migration-v3-sanity.mjs` / `recommender-sanity.mjs` / `fatigue-sanity.mjs` / `anomaly-sanity.mjs` pattern.
 214. **Verified live in preview** (mobile 375×812). Six scenarios all pass — (A) create new / leave / resume restores name+emoji+workouts; (B) edit-mode scoping — banner fires on `/splits/edit/split_bam` when the draft's originalId matches, silent on `/splits/edit/other_id`; (C) Discard button nulls the store slice + hides the banner; (D) completing the wizard and tapping Save Split nulls the draft and navigates to `/splits`; (E) manually aging `updatedAt` 8 days auto-clears on next mount; (F) orphaned-split draft (originalId pointing at a deleted split) auto-clears on mount. No console errors across all six flows. ✓
+
+### Batch 17b (April 19, 2026) — Hide bottom nav on split editor routes
+
+Step 2 of the Split Builder redesign (see `split-builder-redesign-handoff.md` Step 2). Closes the silent data-loss class where a mid-wizard tab brush killed the in-progress split. Works in concert with Batch 17a's auto-save: 17a makes the loss recoverable, 17b makes it rarer in the first place.
+
+215. **`BottomNav` hide predicate extended (`BottomNav.jsx`).** Was `isLogging || isWelcome`; now is `isFullscreenFlow || isWelcome` where `isFullscreenFlow` matches any of `/log/bb/*`, `/splits/new*`, `/splits/edit*`. The `/splits/new/start` future route for Step 6's ChooseStartingPoint is covered by the `/splits/new` prefix check — no separate branch needed, zero cost before Step 6 lands. `/splits` list view stays visible so users can tap cards and overflow actions without the nav disappearing.
+216. **`HamburgerMenu` mirrors the predicate (`HamburgerMenu.jsx`).** Same `isFullscreenFlow` check so a stale `open` state can't surface the slide-in menu mid-wizard. The menu also exits cleanly when the user enters a builder flow from the list view.
+217. **Verified live in preview** (mobile 375×812). Nav hidden on `/splits/new`, `/splits/new/start`, `/splits/edit/split_bam`; visible on `/splits`, `/dashboard`, `/log`, `/history`, `/progress`, `/cardio`, `/guide`, `/exercises`, `/backfill`. Transition check `/splits → /splits/new → /splits`: visible → hidden → visible. No console errors. ✓ (Welcome route still hides the nav when reachable; for onboarded users the route redirects to /dashboard, so the direct test reported Welcome nav as visible — that's the redirect result, not Welcome itself.)
 
 ---
 
