@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17b — hide bottom nav on split editor routes)
+> Last updated: April 19, 2026 (Batch 17c — SplitManager card-tap activation + overflow menu)
 
 ## Rules for Claude
 
@@ -879,6 +879,17 @@ Step 2 of the Split Builder redesign (see `split-builder-redesign-handoff.md` St
 215. **`BottomNav` hide predicate extended (`BottomNav.jsx`).** Was `isLogging || isWelcome`; now is `isFullscreenFlow || isWelcome` where `isFullscreenFlow` matches any of `/log/bb/*`, `/splits/new*`, `/splits/edit*`. The `/splits/new/start` future route for Step 6's ChooseStartingPoint is covered by the `/splits/new` prefix check — no separate branch needed, zero cost before Step 6 lands. `/splits` list view stays visible so users can tap cards and overflow actions without the nav disappearing.
 216. **`HamburgerMenu` mirrors the predicate (`HamburgerMenu.jsx`).** Same `isFullscreenFlow` check so a stale `open` state can't surface the slide-in menu mid-wizard. The menu also exits cleanly when the user enters a builder flow from the list view.
 217. **Verified live in preview** (mobile 375×812). Nav hidden on `/splits/new`, `/splits/new/start`, `/splits/edit/split_bam`; visible on `/splits`, `/dashboard`, `/log`, `/history`, `/progress`, `/cardio`, `/guide`, `/exercises`, `/backfill`. Transition check `/splits → /splits/new → /splits`: visible → hidden → visible. No console errors. ✓ (Welcome route still hides the nav when reachable; for onboarded users the route redirects to /dashboard, so the direct test reported Welcome nav as visible — that's the redirect result, not Welcome itself.)
+
+### Batch 17c (April 19, 2026) — SplitManager card-tap activation + overflow menu
+
+Step 3 of the Split Builder redesign (see `split-builder-redesign-handoff.md` Step 3, decision D4). Honors the "Tap a split to activate it" copy that was previously inert. Folds the five per-split actions (Set Active, Edit, Duplicate, Export, Delete) into a single ⋯ overflow menu so the card body is free to act as the primary activation affordance.
+
+218. **`SplitCard` root is now `role="button"` (`SplitManager.jsx`).** Card tap calls `setActiveSplit(split.id)` directly. `aria-pressed` reflects the active state; `aria-label` switches between `Activate {name}` and `{name}, currently active`. Keyboard path: Tab focuses the card with a ring-2 accent focus ring, Enter / Space activates. Already-active cards no-op on tap (no accidental re-activation toast or side effect).
+219. **Inline action buttons removed in favor of ⋯ overflow (`SplitManager.jsx`).** The old row of `[Set Active]` / `Edit` / Export / Delete buttons is gone; a single 36×36 ⋯ button in the top-right of each card opens a popover menu. Menu items are conditional: Set Active hidden when already active, Delete hidden for built-in splits. The ⋯ button `stopPropagation()`s on click so the card tap doesn't fire simultaneously.
+220. **`OverflowMenu` portal component (`SplitManager.jsx`).** Renders via `createPortal` into `document.body` at z-60 (above page content, below the already-established sheet/modal stack). Positioned with `getBoundingClientRect()` — right-edge aligned to the anchor, 6px below, with viewport-edge clamping at 8px. Dismisses on outside mousedown/touchstart (listener attached via 0ms setTimeout so the opening click doesn't immediately close it) OR Escape. Menu items carry inline SVG icons (star / pencil / copy / export / trash) for quick visual scan. Destructive action (Delete) renders in red.
+221. **Duplicate stays on the list (`handleDuplicate`).** `cloneSplit` fires and the new `"(Copy)"` entry appears in place; no auto-navigate to the builder. Users who want to edit the duplicate can open its own ⋯ menu and pick Edit — keeps the surface predictable, since a surprise redirect breaks the "I was just making a copy to reference" flow.
+222. **Copy updated (`SplitManager.jsx`).** The header instruction reads `Tap a split to activate it. Use ⋯ for more actions.` — matches the new model exactly. The old "Clone built-in splits to customise them" line is removed since Duplicate is now in the menu for every split.
+223. **Verified live in preview** (mobile 375×812). Six scenarios pass: (a) Tapping an inactive card sets it active, `aria-pressed` + accent border update, active-card aria-label becomes `{name}, currently active`; (b) Tapping an already-active card is a no-op; (c) ⋯ on an active built-in split shows `Edit / Duplicate / Export` (3 items); (d) ⋯ on a non-active non-built-in split shows `Set Active / Edit / Duplicate / Export / Delete` (5 items); (e) Duplicate adds `"(Copy)"` entry without navigating away, splits count +1, hash stays at `#/splits`; (f) Edit navigates to `/splits/edit/:id`. Outside-click + Escape both dismiss the menu; tapping the ⋯ button itself doesn't fire the card-tap. No console errors. ✓
 
 ---
 

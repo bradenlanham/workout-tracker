@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
@@ -63,13 +64,124 @@ function ImportError({ message, onDismiss }) {
   )
 }
 
-// ── Split card ─────────────────────────────────────────────────────────────────
+// ── Overflow menu ─────────────────────────────────────────────────────────────
+//
+// Batch 17c — portal-anchored popover below the ⋯ button. Items are conditional
+// on split type (Set Active hidden when already active; Delete hidden for
+// built-in splits). Dismiss on outside click or Esc. Same pattern the app
+// already uses for PlateConfigPopover — z-60 sits above the page but below
+// toast (Step 5 will claim z-290) and below every established sheet/modal.
 
-function SplitCard({ split, isActive, onActivate, onEdit, onDelete, onExport, theme }) {
+function OverflowMenu({ anchorRect, items, onClose }) {
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    // Close on outside mousedown / touchstart. Deferred to the next tick so
+    // the opening click itself doesn't immediately dismiss.
+    const timer = setTimeout(() => {
+      const onDocDown = (e) => {
+        if (menuRef.current && !menuRef.current.contains(e.target)) onClose()
+      }
+      document.addEventListener('mousedown', onDocDown)
+      document.addEventListener('touchstart', onDocDown)
+      menuRef.current._cleanup = () => {
+        document.removeEventListener('mousedown', onDocDown)
+        document.removeEventListener('touchstart', onDocDown)
+      }
+    }, 0)
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      clearTimeout(timer)
+      if (menuRef.current?._cleanup) menuRef.current._cleanup()
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  if (!anchorRect) return null
+
+  // Position: right-edge aligned to the anchor, below it, 6px gap. If it would
+  // overflow the viewport right edge, pin to the right with an 8px margin.
+  const MENU_W = 176
+  const GAP    = 6
+  let top  = anchorRect.bottom + GAP
+  let left = anchorRect.right - MENU_W
+  if (left < 8) left = 8
+  if (left + MENU_W > window.innerWidth - 8) left = window.innerWidth - MENU_W - 8
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label="Split actions"
+      className="fixed bg-card border border-subtle rounded-xl p-1 shadow-xl"
+      style={{ top, left, width: MENU_W, zIndex: 60 }}
+    >
+      {items.map((item, i) => (
+        <button
+          key={i}
+          role="menuitem"
+          type="button"
+          onClick={(e) => { e.stopPropagation(); item.onSelect(); onClose() }}
+          disabled={item.disabled}
+          className={`w-full px-3 py-2.5 text-sm text-left rounded-lg flex items-center gap-2 transition-colors disabled:opacity-40 ${
+            item.destructive
+              ? 'text-red-400 hover:bg-red-500/10'
+              : 'text-c-primary hover:bg-item'
+          }`}
+        >
+          {item.icon && <span aria-hidden="true" className="shrink-0 w-4 h-4 flex items-center justify-center">{item.icon}</span>}
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>,
+    document.body
+  )
+}
+
+// Tiny inline SVG icon set — no icon library needed for five items.
+const IconStar = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" strokeLinejoin="round" />
+  </svg>
+)
+const IconPencil = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" />
+  </svg>
+)
+const IconCopy = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+)
+const IconExport = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+  </svg>
+)
+const IconTrash = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+)
+
+// ── Split card ─────────────────────────────────────────────────────────────────
+//
+// Batch 17c — tap-anywhere-on-card activates the split (decision D4). The
+// previous inline "Set Active" / "Edit" / Export / Delete buttons are folded
+// into a single ⋯ overflow menu. Card root is a div+role="button" so the
+// nested ⋯ trigger remains valid HTML.
+
+function SplitCard({ split, isActive, onActivate, onEdit, onDuplicate, onDelete, onExport, theme }) {
   const workoutCount = split.workouts?.length || 0
   const rotationLength = split.rotation?.length || 0
 
-  // Build rotation preview: up to 5 emoji + "..." if longer
+  const [menuAnchor, setMenuAnchor] = useState(null)
+  const overflowBtnRef = useRef(null)
+
   const rotationPreview = split.rotation
     ? (() => {
         const preview = split.rotation.slice(0, 5).map(id => {
@@ -82,108 +194,112 @@ function SplitCard({ split, isActive, onActivate, onEdit, onDelete, onExport, th
       })()
     : []
 
+  const openMenu = (e) => {
+    e.stopPropagation()
+    const rect = overflowBtnRef.current?.getBoundingClientRect()
+    if (rect) setMenuAnchor({ top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right })
+  }
+
+  const handleCardActivate = () => { if (!isActive) onActivate() }
+  const handleKey = (e) => {
+    if (isActive) return
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate() }
+  }
+
+  const menuItems = [
+    ...(isActive ? [] : [{ label: 'Set Active', icon: IconStar,   onSelect: onActivate }]),
+    { label: 'Edit',       icon: IconPencil, onSelect: onEdit       },
+    { label: 'Duplicate',  icon: IconCopy,   onSelect: onDuplicate  },
+    { label: 'Export',     icon: IconExport, onSelect: onExport     },
+    ...(split.isBuiltIn ? [] : [{ label: 'Delete', icon: IconTrash, destructive: true, onSelect: onDelete }]),
+  ]
+
   return (
-    <div
-      className={`bg-card rounded-2xl p-4 transition-all overflow-hidden ${
-        isActive ? '' : 'active:bg-hover'
-      }`}
-      style={isActive ? { borderLeft: `4px solid ${theme.hex}` } : { borderLeft: '4px solid transparent' }}
-    >
-      {/* Header row */}
-      <div className="flex items-start gap-3 mb-3">
-        <span className="text-3xl leading-none mt-0.5">{split.emoji}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-bold text-base leading-tight">{split.name}</p>
-            {isActive && (
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${theme.bgSubtle} ${theme.text}`}>
-                Active
-              </span>
-            )}
-            {split.isBuiltIn && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-item text-c-dim">
-                Built-in
-              </span>
-            )}
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleCardActivate}
+        onKeyDown={handleKey}
+        aria-pressed={isActive}
+        aria-label={isActive ? `${split.name}, currently active` : `Activate ${split.name}`}
+        className={`bg-card rounded-2xl p-4 transition-all overflow-hidden cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 ${theme.ring} ${
+          isActive ? '' : 'active:bg-hover'
+        }`}
+        style={isActive ? { borderLeft: `4px solid ${theme.hex}` } : { borderLeft: '4px solid transparent' }}
+      >
+        {/* Header row with ⋯ overflow trigger */}
+        <div className="flex items-start gap-3 mb-3">
+          <span className="text-3xl leading-none mt-0.5">{split.emoji}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-bold text-base leading-tight">{split.name}</p>
+              {isActive && (
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${theme.bgSubtle} ${theme.text}`}>
+                  Active
+                </span>
+              )}
+              {split.isBuiltIn && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-item text-c-dim">
+                  Built-in
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-c-muted mt-1">
+              {workoutCount} workout{workoutCount !== 1 ? 's' : ''} · {rotationLength}-day rotation
+            </p>
           </div>
-          <p className="text-xs text-c-muted mt-1">
-            {workoutCount} workout{workoutCount !== 1 ? 's' : ''} · {rotationLength}-day rotation
-          </p>
-        </div>
-      </div>
 
-      {/* Rotation preview as emoji chips */}
-      {rotationPreview.length > 0 && (
-        <div className="flex items-center gap-1 mb-3">
-          {rotationPreview.map((em, i) => (
-            <span key={i} className="text-base leading-none">{em}</span>
-          ))}
-          {rotationPreview.length > 1 && (
-            <span className="text-xs text-c-faint ml-0.5">rotation</span>
-          )}
-        </div>
-      )}
-
-      {/* Workout chips */}
-      {split.workouts && split.workouts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {split.workouts.map(w => (
-            <span key={w.id} className="text-xs bg-item text-c-secondary px-2 py-1 rounded-lg">
-              {w.emoji} {w.name}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Action row */}
-      <div className="flex gap-2">
-        {!isActive && (
+          {/* Overflow trigger — stopPropagation so card tap doesn't fire */}
           <button
-            onClick={onActivate}
-            className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-colors ${theme.bg} text-white`}
-            style={{ color: theme.contrastText }}
+            ref={overflowBtnRef}
+            type="button"
+            onClick={openMenu}
+            aria-label={`More actions for ${split.name}`}
+            aria-haspopup="menu"
+            aria-expanded={!!menuAnchor}
+            className="shrink-0 w-9 h-9 -mt-1 -mr-1 flex items-center justify-center rounded-xl text-c-muted hover:bg-item transition-colors"
           >
-            Set Active
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <circle cx="12" cy="5" r="1.8" />
+              <circle cx="12" cy="12" r="1.8" />
+              <circle cx="12" cy="19" r="1.8" />
+            </svg>
           </button>
-        )}
+        </div>
 
-        {isActive && (
-          <div className={`flex-1 py-2.5 rounded-xl font-semibold text-sm text-center ${theme.bgSubtle} ${theme.text}`}>
-            Currently Active
+        {/* Rotation preview as emoji chips */}
+        {rotationPreview.length > 0 && (
+          <div className="flex items-center gap-1 mb-3">
+            {rotationPreview.map((em, i) => (
+              <span key={i} className="text-base leading-none">{em}</span>
+            ))}
+            {rotationPreview.length > 1 && (
+              <span className="text-xs text-c-faint ml-0.5">rotation</span>
+            )}
           </div>
         )}
 
-        <>
-          <button
-            onClick={onEdit}
-            className="px-4 py-2.5 rounded-xl font-semibold text-sm bg-item text-c-secondary transition-colors hover:bg-hover"
-          >
-            Edit
-          </button>
-          {!split.isBuiltIn && (
-            <button
-              onClick={onExport}
-              className="w-10 flex items-center justify-center rounded-xl bg-item text-c-secondary transition-colors hover:bg-hover"
-              title="Export split"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            </button>
-          )}
-          {!split.isBuiltIn && (
-            <button
-              onClick={onDelete}
-              className="w-10 flex items-center justify-center rounded-xl bg-item text-red-400 transition-colors hover:bg-red-500/10"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          )}
-        </>
+        {/* Workout chips */}
+        {split.workouts && split.workouts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {split.workouts.map(w => (
+              <span key={w.id} className="text-xs bg-item text-c-secondary px-2 py-1 rounded-lg">
+                {w.emoji} {w.name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+
+      {menuAnchor && (
+        <OverflowMenu
+          anchorRect={menuAnchor}
+          items={menuItems}
+          onClose={() => setMenuAnchor(null)}
+        />
+      )}
+    </>
   )
 }
 
@@ -205,9 +321,11 @@ export default function SplitManager() {
     navigate(`/splits/edit/${split.id}`)
   }
 
-  const handleCloneAndEdit = (id) => {
-    const clone = cloneSplit(id)
-    if (clone) navigate(`/splits/edit/${clone.id}`)
+  // Duplicate stays on the list view — users see the new "(Copy)" entry appear
+  // in place rather than being yanked into the builder. If they want to edit
+  // it, that's a tap away via the overflow menu on the duplicate.
+  const handleDuplicate = (split) => {
+    cloneSplit(split.id)
   }
 
   const handleDeleteConfirm = () => {
@@ -228,7 +346,6 @@ export default function SplitManager() {
           setImportError('Invalid file — not a BamBam split export.')
           return
         }
-        // Strip the old ID so addSplit generates a fresh one
         const { id: _id, ...splitData } = data.split
         addSplit({ ...splitData, isBuiltIn: false })
       } catch {
@@ -258,7 +375,6 @@ export default function SplitManager() {
           </button>
           <h1 className="text-2xl font-bold">My Splits</h1>
 
-          {/* Import button */}
           <button
             onClick={() => importRef.current?.click()}
             className="ml-auto flex items-center gap-1.5 bg-item text-c-secondary text-sm font-semibold px-3 py-2 rounded-xl hover:bg-hover transition-colors"
@@ -277,8 +393,9 @@ export default function SplitManager() {
             onChange={handleImport}
           />
         </div>
+        {/* Batch 17c — copy updated to match the tap-activates / overflow-edits model. */}
         <p className="text-sm text-c-muted ml-12">
-          Tap a split to activate it. Clone built-in splits to customise them.
+          Tap a split to activate it. Use <span className="font-semibold text-c-secondary">⋯</span> for more actions.
         </p>
       </div>
 
@@ -291,7 +408,6 @@ export default function SplitManager() {
           </div>
         )}
 
-        {/* Hint when only the built-in split exists */}
         {splits.length === 1 && splits[0]?.isBuiltIn && (
           <div className="bg-card rounded-2xl px-4 py-4 text-sm text-c-muted flex items-start gap-3">
             <span className="text-xl leading-none mt-0.5">💡</span>
@@ -307,6 +423,7 @@ export default function SplitManager() {
             theme={theme}
             onActivate={() => setActiveSplit(split.id)}
             onEdit={() => handleEdit(split)}
+            onDuplicate={() => handleDuplicate(split)}
             onDelete={() => setConfirmDelete(split)}
             onExport={() => exportSplit(split)}
           />
