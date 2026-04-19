@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 17g — SplitCanvas + WorkoutEditSheet)
+> Last updated: April 19, 2026 (Batch 17h — structured REC rework)
 
 ## Rules for Claude
 
@@ -78,7 +78,9 @@ src/
 │   ├── Toast.jsx               # Batch 17e — event-bus undo toast; showToast({message, undo}) from anywhere
 │   ├── RestDayChip.jsx         # Batch 17f — shared dashed-circle "R" rest chip (D3); size prop
 │   ├── EmojiPicker.jsx         # Batch 17g — curated 32-emoji grid + OS fallback via paste input (D5)
-│   └── WorkoutEditSheet.jsx    # Batch 17g — bottom-sheet editor for a single workout; editable section labels, inline rec editor, nested ExercisePicker
+│   ├── WorkoutEditSheet.jsx    # Batch 17g — bottom-sheet editor for a single workout; editable section labels, structured rec editor (via RecPill + RecEditor as of 17h), nested ExercisePicker
+│   ├── RecPill.jsx             # Batch 17h — shared rec-display pill; renders formatRec(rec) in any supported shape
+│   └── RecEditor.jsx           # Batch 17h — structured rec editor sheet (sets / reps / note with live preview)
 │
 │
 └── pages/
@@ -948,6 +950,18 @@ Steps 7 + 8 of the Split Builder redesign (see `split-builder-redesign-handoff.m
 243. **`RestDayChip` reuse.** Used in the rotation strip (28px for cycle chips, 26px for week grid), in the RotationChipMenu's rest-day option, in the "Add rest" quick-add button (18px). Full D3 application to Dashboard's calendar stays in Batch 17f's follow-up slot.
 244. **Route wiring (`App.jsx`).** `/splits/new` and `/splits/edit/:id` now render SplitCanvas. SplitBuilder.jsx remains in the repo as a component for the 72h stability window Step 12 calls for, but no route points at it.
 245. **Verified live in preview** (mobile 375×812, debug-backup.json localStorage). `/splits/new` renders empty canvas with "New Split" heading, `Untitled split` placeholder, `WORKOUTS (0)` + "No workouts yet" empty state, YOUR WEEK section with Cycle default + Add rest quick chip, sticky footer with `Activate on save` toggle on + `Save & Activate` disabled with helper `Add a name · Add at least one workout · Add to rotation`. `/splits/edit/split_bam` loads BamBam's Blueprint with 💎 emoji + `BamBam's Blueprint` name + 5 workouts (Push, Quads, Pull, Shoulders & Arms, Hams — each showing top-3 exercise preview text) + 7 rotation chips. Tapping `+ Add workout` pushes a `New Workout` stub into the list AND opens WorkoutEditSheet with `Add workout` header and the stub's name pre-filled. Back arrow from a dirty state opens the DiscardUnsavedModal. No console errors.
+
+### Batch 17h (April 19, 2026) — Structured REC rework
+
+Step 9 of the Split Builder redesign (see `split-builder-redesign-handoff.md` Step 9, decision D7 — additive). Replaces free-text string RECs with the structured shape `{ sets?: number, reps?: string | number, note?: string }` while preserving full backwards compatibility with legacy strings. WorkoutEditSheet gets a proper sets/reps/note editor with live preview; BbLogger's in-session inline editor stays as a speed-first string input but displays via the shared formatter.
+
+246. **`formatRec(rec)` in `helpers.js`.** Canonical display formatter that accepts any supported shape: `null` / `undefined` / `''` → `null`; legacy string → trimmed passthrough; `{ sets, reps, note }` → `"{sets}×{reps}"` + optional `" · {note}"` separator, with fallbacks for partial data (`"{N} sets"` when reps missing, `"{reps} reps"` when sets missing, bare `note` when both are empty, singular `"1 set"` for sets=1). Non-positive sets + non-numeric-string + non-object input all bounce to `null`. Node sanity-check run: 8/8 cases match spec.
+247. **`RecPill.jsx` shared display component.** Renders `rec` via `formatRec` in all three call sites. Empty state: muted `📋 Rec` chip. Set state: filled blue `📋 {text}` pill with 10rem truncation. Sized via `size` prop (`sm` default, `xs` for tight rows). Replaces the in-file `RecPillButton` stub WorkoutEditSheet shipped with 17g and lives alongside BbLogger's existing inline pill (which gets `formatRec` integration but keeps its own inline-input editor path).
+248. **`RecEditor.jsx` structured editor (bottom sheet).** Opens at z-275 above WorkoutEditSheet. Two-column sets/reps grid + full-width note row + live preview line using `formatRec(buildRec())`. Save returns the compact object (only fields the user filled in); Clear returns `null`. Normalizes input so legacy strings passed in as `current` pre-fill `note` per D7 — no auto-parsing of `"3x10"` style strings into structured form. Esc + backdrop-click dismiss.
+249. **`WorkoutEditSheet` wired through the new editor.** The string-only inline stub from 17g is deleted. `editingRec` state simplifies to `{ sectionIdx, exIdx }` (no draft); the sheet reads the current rec from sections at render time and passes it into `RecEditor`. `updateExerciseRec` now accepts any shape `formatRec` understands — null clears (promotes exercise back to a bare string), anything non-empty passes through as-is. Old 20-char string cap dropped.
+250. **BbLogger display wired through `formatRec` (`BbLogger.jsx`).** The inline rec pill in the exercise card header now renders `formatRec(exercise.rec) || 'Rec'` instead of raw string access — so structured values set via Canvas render correctly mid-session. Empty / pill styling still keyed on `formatRec` truthy-ness. The in-session edit path stays string-based for speed: when the user taps the pill, the inline input pre-fills with `typeof rec === 'string' ? rec : formatRec(rec) || ''` so they see a coherent starting point, and save continues to write a trimmed string via the existing `onUpdate({...exercise, rec: val})` path. BbLogger never writes the structured shape itself — that's a future surface.
+251. **Backwards compatibility.** Per D7 there's no migration. Legacy strings stay strings in the store; new structured values get written side-by-side. `formatRec` + `RecPill` don't care which shape they're handed. `SplitBuilder`'s legacy `RecInline` component and auto-persist block still read/write strings verbatim — safe because `formatRec` handles both, and SplitBuilder isn't reachable via route after 17g.
+252. **Verified** via `node -e` sanity against `formatRec` for all 8 edge cases (null / empty / legacy / full structured / partial / sets-only / reps-only / sets=0). Build passes (`npx vite build` — 717.52 KB bundle, +3 KB for RecEditor + RecPill). Canvas-surface verification deferred to the upcoming user test — editor flow is a straight text-input surface with live preview, very low regression risk.
 
 ---
 

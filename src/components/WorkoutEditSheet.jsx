@@ -6,6 +6,8 @@ import { findSimilarExercises } from '../utils/helpers'
 import { EXERCISE_LIBRARY, MUSCLE_GROUPS } from '../data/exerciseLibrary'
 import EmojiPicker from './EmojiPicker'
 import CreateExerciseModal from './CreateExerciseModal'
+import RecPill from './RecPill'
+import RecEditor from './RecEditor'
 
 // Batch 17g — WorkoutEditSheet (Step 8 of the Split Builder redesign).
 // Bottom-sheet editor for a single workout — swaps out SplitBuilder's
@@ -47,7 +49,7 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
 
   const [showEmoji, setShowEmoji] = useState(false)
   const [pickerSectionIdx, setPickerSectionIdx] = useState(null)
-  const [editingRec, setEditingRec] = useState(null)   // { sectionIdx, exIdx, draft }
+  const [editingRec, setEditingRec] = useState(null)   // { sectionIdx, exIdx }
   const [showDiscard, setShowDiscard] = useState(false)
 
   const markDirty = () => setIsDirty(true)
@@ -108,6 +110,9 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
     }))
     markDirty()
   }
+  // Batch 17h — accepts any shape `formatRec` understands: null, string, or
+  // structured object. Null clears the rec and promotes the exercise back
+  // to a bare string so the exercises array stays small for unset recs.
   const updateExerciseRec = (sectionIdx, exIdx, recValue) => {
     setSections(prev => prev.map((s, i) => {
       if (i !== sectionIdx) return s
@@ -116,9 +121,11 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
         exercises: s.exercises.map((ex, ei) => {
           if (ei !== exIdx) return ex
           const nm = typeof ex === 'string' ? ex : ex.name
-          const trimmed = (recValue || '').trim().slice(0, 20)
-          if (!trimmed) return nm                        // clearing promotes back to string
-          return { name: nm, rec: trimmed }
+          if (recValue === null || recValue === undefined || recValue === '') return nm
+          // String values preserve legacy behavior; object values pass through
+          // as long as they produce a non-empty formatted output (the editor
+          // already collapses all-empty to null before calling this).
+          return { name: nm, rec: recValue }
         }),
       }
     }))
@@ -208,11 +215,7 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
               onAddExercise={() => setPickerSectionIdx(sIdx)}
               onRemoveExercise={(exIdx) => removeExercise(sIdx, exIdx)}
               onMoveExercise={(exIdx, dir) => moveExercise(sIdx, exIdx, dir)}
-              onEditRec={(exIdx) => {
-                const ex = sec.exercises[exIdx]
-                const currentRec = typeof ex === 'string' ? '' : (ex.rec || '')
-                setEditingRec({ sectionIdx: sIdx, exIdx, draft: typeof currentRec === 'string' ? currentRec : '' })
-              }}
+              onEditRec={(exIdx) => setEditingRec({ sectionIdx: sIdx, exIdx })}
             />
           ))}
           <button
@@ -257,18 +260,16 @@ export default function WorkoutEditSheet({ workout, onClose, onSave, isNew = fal
 
       {editingRec && (
         <RecEditor
-          draft={editingRec.draft}
-          onChange={(val) => setEditingRec(prev => prev ? { ...prev, draft: val } : prev)}
-          onSave={() => {
-            updateExerciseRec(editingRec.sectionIdx, editingRec.exIdx, editingRec.draft)
-            setEditingRec(null)
-          }}
-          onClear={() => {
-            updateExerciseRec(editingRec.sectionIdx, editingRec.exIdx, '')
+          current={(() => {
+            const ex = sections[editingRec.sectionIdx]?.exercises[editingRec.exIdx]
+            if (!ex || typeof ex === 'string') return null
+            return ex.rec ?? null
+          })()}
+          onSave={(nextRec) => {
+            updateExerciseRec(editingRec.sectionIdx, editingRec.exIdx, nextRec)
             setEditingRec(null)
           }}
           onClose={() => setEditingRec(null)}
-          theme={theme}
         />
       )}
 
@@ -375,7 +376,7 @@ function SectionBlock({
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                 </button>
                 <span className="flex-1 text-sm text-c-primary truncate min-w-0">{nm}</span>
-                <RecPillButton rec={rec} onTap={() => onEditRec(exIdx)} />
+                <RecPill rec={rec} onTap={() => onEditRec(exIdx)} />
                 <button
                   type="button"
                   onClick={() => onRemoveExercise(exIdx)}
@@ -399,76 +400,6 @@ function SectionBlock({
         </div>
       )}
     </div>
-  )
-}
-
-// ── RecPillButton ───────────────────────────────────────────────────────────
-
-function RecPillButton({ rec, onTap }) {
-  const hasRec = rec && (typeof rec === 'string' ? rec.trim().length > 0 : true)
-  const display = typeof rec === 'string' ? rec : (rec?.reps || '')   // structured rec gets proper format in Step 9
-  return (
-    <button
-      type="button"
-      onClick={onTap}
-      className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold max-w-[8rem] ${
-        hasRec
-          ? 'bg-blue-500/15 border border-blue-500/40 text-blue-300'
-          : 'bg-base text-c-faint'
-      }`}
-      title="Prescription (tap to edit)"
-    >
-      <span aria-hidden="true">📋</span>
-      <span className="truncate">{hasRec ? display : 'Rec'}</span>
-    </button>
-  )
-}
-
-// ── RecEditor (string-only for Step 7; Step 9 ships structured editor) ──────
-
-function RecEditor({ draft, onChange, onSave, onClear, onClose, theme }) {
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-end justify-center"
-      style={{ zIndex: 275 }}
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-      <div
-        className="relative bg-card rounded-t-2xl w-full max-w-lg p-5"
-        onClick={e => e.stopPropagation()}
-      >
-        <p className="text-sm font-bold mb-2">Coach's prescription</p>
-        <p className="text-xs text-c-muted mb-3">e.g. "3x20 (warmup)" or "4x10-10-10 drop". Up to 20 chars.</p>
-        <input
-          type="text"
-          value={draft}
-          onChange={e => onChange(e.target.value.slice(0, 20))}
-          maxLength={20}
-          placeholder="3x10"
-          autoFocus
-          className="w-full bg-base rounded-lg px-3 py-2.5 text-base outline-none border border-subtle mb-3"
-        />
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onClear}
-            className="flex-1 py-2.5 rounded-lg bg-item text-c-secondary font-semibold text-sm"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            className={`flex-1 py-2.5 rounded-lg text-white font-semibold text-sm ${theme.bg}`}
-            style={{ color: theme.contrastText }}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
   )
 }
 

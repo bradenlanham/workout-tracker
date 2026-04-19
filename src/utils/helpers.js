@@ -57,6 +57,40 @@ export function formatTimeAgo(tsOrIso) {
   return formatDate(new Date(ts).toISOString())
 }
 
+// Batch 17h — Rec (coach's prescription) formatting per Step 9.
+// Exercise.rec can be any of:
+//   - null / undefined
+//   - '' (empty string — treat as null)
+//   - legacy string like '3x20 (warmup)' or '4×10-10-10 drop'
+//   - structured { sets?: number, reps?: string | number, note?: string }
+//
+// `formatRec` produces the canonical human-readable string for display, or
+// null when there's nothing to render. The WorkoutEditSheet's RecEditor and
+// BbLogger's RecInline both render via this helper so display stays
+// consistent regardless of which shape happens to be stored.
+export function formatRec(rec) {
+  if (!rec) return null
+  if (typeof rec === 'string') {
+    const s = rec.trim()
+    return s || null
+  }
+  if (typeof rec !== 'object') return null
+
+  const sets = Number.isFinite(rec.sets) && rec.sets > 0 ? rec.sets : null
+  const reps = typeof rec.reps === 'string'
+    ? rec.reps.trim()
+    : (Number.isFinite(rec.reps) ? String(rec.reps) : null)
+  const note = typeof rec.note === 'string' ? rec.note.trim() : null
+
+  let prefix = null
+  if (sets && reps) prefix = `${sets}×${reps}`
+  else if (sets)   prefix = `${sets} set${sets === 1 ? '' : 's'}`
+  else if (reps)   prefix = `${reps} reps`
+
+  if (prefix && note) return `${prefix} · ${note}`
+  return prefix || note || null
+}
+
 // ── BB helpers ───────────────────────────────────────────────────────────────
 
 export function getNextBbWorkout(sessions, customSequence) {

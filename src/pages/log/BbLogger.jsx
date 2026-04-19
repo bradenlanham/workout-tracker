@@ -7,7 +7,7 @@ import {
   getLastBbSession, getExercisePRs, isSetPR, getWorkoutStreak, perSideLoad,
   findSimilarExercises, normalizeExerciseName,
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
-  detectAnomalies,
+  detectAnomalies, formatRec,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -856,18 +856,25 @@ function ExerciseItem({
                     type="button"
                     onClick={e => {
                       e.stopPropagation()
-                      setRecDraft(exercise.rec || '')
+                      // Batch 17h — in-session rec edits stay as strings for
+                      // speed. If the value is structured (set via Canvas /
+                      // WorkoutEditSheet), pre-fill with the formatted display
+                      // so the user sees the full prescription and can tweak.
+                      const seed = typeof exercise.rec === 'string'
+                        ? exercise.rec
+                        : (formatRec(exercise.rec) || '')
+                      setRecDraft(seed)
                       setEditingRec(true)
                     }}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0 max-w-[14rem] ${
-                      exercise.rec
+                      formatRec(exercise.rec)
                         ? 'bg-blue-500/15 border border-blue-500/40 text-blue-300'
                         : 'bg-item text-c-faint'
                     }`}
                     title="Coach's recommendation (tap to edit)"
                   >
                     <span>📋</span>
-                    <span className="truncate">{exercise.rec ? exercise.rec : 'Rec'}</span>
+                    <span className="truncate">{formatRec(exercise.rec) || 'Rec'}</span>
                   </button>
                 )
               )}
