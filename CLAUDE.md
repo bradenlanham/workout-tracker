@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 20b — gym-scoped recommender + auto-tag prompt, AI coaching step 8 substep 3)
+> Last updated: April 19, 2026 (Batch 20c — picker gym filter, AI coaching step 8 substep 4)
 
 ## Rules for Claude
 
@@ -1279,6 +1279,26 @@ Second visible UI surface from Step 8, plus the engine wiring that Step 7 left o
 
 359. **Build.** `npx vite build --outDir /tmp/test-build` → 743.18 KB bundle / 200.39 KB gzipped (+2.6 KB vs 20a, accounted for by the GymTagPrompt component + the progressive-fallback recHistory + gym-preferring seed pass).
 
+### Batch 20c (April 19, 2026) — Picker gym filter (AI coaching step 8 substep 4)
+
+Third visible UI surface for Step 8 per spec §9.7 (Option A) + §3.5.3. Adds an opt-in "Only available at {gym}" toggle to the session's Add Exercise panel. Hard filter, default OFF so nothing is hidden until the user opts in. Untagged library entries pass through as universally available per §3.5.3 ("empty or missing sessionGymTags = available everywhere"). Scoped to the in-session picker surface only — `ExercisePicker` (WorkoutEditSheet / SplitCanvas edit flow) is intentionally untouched because there is no gym context there. Adding the toggle to a surface without a gymId would be dead code.
+
+360. **`isExerciseAvailableAtGym` import in BbLogger (`BbLogger.jsx`).** Appended to the existing multi-import from `../../utils/helpers`. No other consumers yet — ExercisePicker (the shared component) stays gym-agnostic.
+
+361. **`AddExercisePanel` signature extended** (`BbLogger.jsx`). Two new props with defaults: `currentGymId = null`, `currentGymLabel = null`. Backwards compatible — any caller that doesn't thread them gets a null → toggle hidden → pre-Batch-20c behavior.
+
+362. **Suggestions useMemo returns `{suggestions, hiddenCount}`** (`BbLogger.jsx`). Candidates are first built via the existing starter-12 / fuzzy-match logic (unchanged), then — only when toggle ON AND a gymId is set — filtered via `isExerciseAvailableAtGym`. `hiddenCount = candidates.length - filtered.length`. No-op when either gate is false, so the untouched path preserves the old perf/memory shape exactly.
+
+363. **Toggle chip row below search input** (`BbLogger.jsx`). Rendered only when `currentGymId` is non-null so a gym-less session doesn't see a dead checkbox. Checkbox bound to `onlyThisGym` useState (default false per spec §9.7 Option A). Label copy: `Only available at {currentGymLabel || 'this gym'}` with the gym name wrapped in `<strong>` for emphasis. A right-aligned `{hiddenCount} hidden` counter appears only when toggle ON AND at least one candidate was filtered out — muted text + tabular-nums so counts jump without layout shift. `accentColor: theme.hex` inline style on the checkbox so it matches the user's palette.
+
+364. **Create path ("+ Add [typed]") is NOT filtered** (`BbLogger.jsx`). Left the `{query.trim() && <button>+ Add "{query}"</button>}` branch outside the memo so tapping it continues to hit `handleAddTyped` regardless of filter state. The filter is a picker filter, not a create filter — new names never resolve against sessionGymTags.
+
+365. **Render-site prop threading** (`BbLogger.jsx`). The single `<AddExercisePanel ... />` call site at the panels-and-modals block now passes `currentGymId={gymId}` + `currentGymLabel={currentGymLabel}`. Both values already existed on the parent scope from Batch 16n / 20b — no new computation needed.
+
+366. **Verified live in preview** (mobile 375×812, fresh install seeded with VASA/TR gyms + Pec Dec tagged gym_vasa + Tricep Pushdown tagged gym_tr + Nordic Curl tagged gym_tr). Six scenarios pass with zero console errors: (a) no gym set → toggle hidden entirely (Add Exercise panel children are `H3 / INPUT / DIV / BUTTON` only, no `<label>`); (b) gym VASA set + toggle OFF → all 11 starter suggestions visible with `"Only available at VASA"` label + unchecked checkbox; (c) toggle ON with current tags → 10 results (Tricep Pushdown drops off) + `"1 hidden"` counter appears; (d) Pec Dec (tagged VASA) stays visible while Tricep Pushdown (tagged TR only) disappears — confirms §3.5.3 rule; (e) search "curl" + toggle ON → 7 of 8 results (Nordic Curl tagged TR drops off), `"1 hidden"` counter visible, `+ Add "curl"` create button still present above the suggestion list; (f) create path verified untouched — the query-driven `+ Add` button never filters. Screenshot confirms clean layout with the new label row sitting between the search input and the suggestion list.
+
+367. **Build.** `npx vite build --outDir /tmp/test-build` → 744.15 KB bundle / 200.73 KB gzipped (+0.97 KB vs 20b, all in the filter branch + label JSX).
+
 ### Batch 20a (April 19, 2026) — Session gym pill in BbLogger header (AI coaching step 8 substep 2)
 
 First visible UI surface from Step 8. Makes the gym-driven AI inferences (Machine chip auto-fill from Batch 19, incoming recommender-history scoping in 20b) visible to the user per their UX principle: "make AI inferences visible — don't hide auto-behavior." Hard requirement surfaced in the Step 8 briefing.
@@ -1335,9 +1355,8 @@ Three targeted fixes in the workout editor sheet after live-feedback on Batch 18
 
 Core v1 engine work is DONE. Steps 1–6 + §3.8 + step 9 anomaly UI all shipped, step 7 equipment instance landed in Batch 19, and **Step 8 substep 1 (data layer)** landed in Batch 20. The recommender has every §2 + §4 input wired (e1RM history, readiness, goal mode, progression rate, grade, cardio, rest, gap), §3.8 auto-classify fills the last small engine item, the coach surfaces plateau / regression / swing banners on the exercise card, per-machine trend-fit scoping ships with a smart fallback, and the gym-tagging data layer + §3.5 helpers are now wired up for the UI substeps to consume.
 
-**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer. Batch 20a added the session gym pill. Batch 20b wired gym-scoped recommender history + gym-preferring Machine chip seed + the auto-tag-on-use prompt with Yes / Not this time / Always skip. Remaining substeps:
+**Step 8 — Gym tagging full loop (§3.5, §9.7) — IN PROGRESS.** Batch 20 shipped the data layer. Batch 20a added the session gym pill. Batch 20b wired gym-scoped recommender history + gym-preferring Machine chip seed + the auto-tag-on-use prompt. Batch 20c added the opt-in "Only available at {gym}" filter to the session Add Exercise panel. Remaining substep:
 
-- **20c — Picker filter.** "Only available at VASA" toggle/chip on `ExercisePicker`. §9.7 Option A-style hard filter, default off so nothing's hidden until the user opts in. `isExerciseAvailableAtGym` from Batch 20 does the filter check.
 - **20d — Settings UI for gym CRUD.** HamburgerMenu → Settings (Profile Settings section) → "My Gyms" — add/rename/delete gyms. Guard deletion with a session-count warning. Currently gyms can only be added inline from the readiness overlay or the 20a pill popover. Should also clean up orphan references: when a gym is deleted, strip it from every exercise's sessionGymTags / skipGymTagPrompt so no dangling IDs remain. (Sessions' historical gymId references are preserved — they're a record of past truth.)
 
 ### Post-v1 roadmap (explicitly deferred per plan Part 4)

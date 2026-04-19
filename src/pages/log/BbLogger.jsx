@@ -8,7 +8,7 @@ import {
   findSimilarExercises, normalizeExerciseName,
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
   detectAnomalies, formatRec, getInstancesForExercise,
-  shouldPromptGymTag,
+  shouldPromptGymTag, isExerciseAvailableAtGym,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -1441,31 +1441,42 @@ function GroupLabel({ label, isCompleted }) {
 
 // ── Add exercise panel ─────────────────────────────────────────────────────────
 
-function AddExercisePanel({ onAdd, onClose, theme }) {
+function AddExercisePanel({ onAdd, onClose, theme, currentGymId = null, currentGymLabel = null }) {
   const exerciseLibrary     = useStore(s => s.exerciseLibrary)
   const addExerciseToLibrary = useStore(s => s.addExerciseToLibrary)
   const [query, setQuery] = useState('')
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [pendingName, setPendingName] = useState('')
+  // Batch 20c (§9.7 Option A): opt-in hard filter, default off. Hidden when
+  // no gym is set on the session; untagged entries count as universally
+  // available per §3.5.3 so they always pass through.
+  const [onlyThisGym, setOnlyThisGym] = useState(false)
 
   // Suggestions: fuzzy-match when typing, otherwise show a starter set of
   // common compound/isolation exercises from the library.
-  const suggestions = useMemo(() => {
+  const { suggestions, hiddenCount } = useMemo(() => {
+    let candidates
     if (!query.trim()) {
       const starterNames = [
         'Barbell Row', 'Pull-ups', 'Face Pulls', 'Tricep Pushdown',
         'Preacher Curl', 'Lat Pulldown', 'Cable Row', 'Chest Fly',
         'Arnold Press', 'Cable Curls', 'Bench Press', 'Pec Dec',
       ]
-      return starterNames
+      candidates = starterNames
         .map(n => exerciseLibrary.find(e => e.name === n))
         .filter(Boolean)
+    } else {
+      candidates = findSimilarExercises(query, exerciseLibrary, {
+        suggestThreshold: 0.25,  // lower bar — inline suggestion list, not auto-apply
+        max:              10,
+      }).map(m => m.exercise)
     }
-    return findSimilarExercises(query, exerciseLibrary, {
-      suggestThreshold: 0.25,  // lower bar — inline suggestion list, not auto-apply
-      max:              10,
-    }).map(m => m.exercise)
-  }, [query, exerciseLibrary])
+    if (!onlyThisGym || !currentGymId) {
+      return { suggestions: candidates, hiddenCount: 0 }
+    }
+    const filtered = candidates.filter(ex => isExerciseAvailableAtGym(ex, currentGymId))
+    return { suggestions: filtered, hiddenCount: candidates.length - filtered.length }
+  }, [query, exerciseLibrary, onlyThisGym, currentGymId])
 
   // Handle "Add [typed]" button: if there's a high-similarity match in the
   // library, use it directly (the dedup win). Otherwise open the creation
@@ -1513,6 +1524,23 @@ function AddExercisePanel({ onAdd, onClose, theme }) {
             className="w-full bg-item text-c-primary rounded-xl px-4 py-3 text-base mb-3"
             onKeyDown={e => { if (e.key === 'Enter' && query.trim()) handleAddTyped() }}
           />
+          {currentGymId && (
+            <label className="flex items-center gap-2 mb-3 px-1 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={onlyThisGym}
+                onChange={e => setOnlyThisGym(e.target.checked)}
+                className="w-3.5 h-3.5 accent-current"
+                style={{ accentColor: theme.hex }}
+              />
+              <span className="text-c-secondary">
+                Only available at <strong className="text-c-primary">{currentGymLabel || 'this gym'}</strong>
+              </span>
+              {onlyThisGym && hiddenCount > 0 && (
+                <span className="ml-auto text-c-muted tabular-nums">{hiddenCount} hidden</span>
+              )}
+            </label>
+          )}
           <div className="space-y-1 max-h-64 overflow-y-auto">
             {query.trim() && (
               <button
@@ -2887,6 +2915,8 @@ export default function BbLogger() {
           onAdd={addExercise}
           onClose={() => setShowAddPanel(false)}
           theme={theme}
+          currentGymId={gymId}
+          currentGymLabel={currentGymLabel}
         />
       )}
 
