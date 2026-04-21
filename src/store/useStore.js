@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3 } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5 } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -771,8 +771,12 @@ const useStore = create(
         try {
           const data = JSON.parse(json)
           if (data.sessions && Array.isArray(data.sessions)) {
+            // Run the v5 bundling migration on imported sessions so a backup
+            // from a pre-v5 install lands in the current schema. Idempotent
+            // on already-bundled data, so re-imports + v5 backups are safe.
+            const migratedSessions = migrateSessionsToV5(data.sessions)
             set({
-              sessions: data.sessions,
+              sessions: migratedSessions,
               settings: data.settings || get().settings,
               customTemplates: data.customTemplates || [],
               workoutSequence: data.workoutSequence || null,
@@ -793,7 +797,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 4,
+      version: 5,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -805,6 +809,11 @@ const useStore = create(
       //   V3→V4 (Batch 17a): additive — ensure the splitDraft slot exists
       //   (null is a valid value). Pre-v4 users simply don't have a draft,
       //   which is the correct initial state.
+      //   V4→V5 (Batch 22): bundle flat drop-set entries into their
+      //   preceding working set's drops[] array. PR flags recomputed
+      //   chronologically under the new "working-primaries-only" rule
+      //   (drop stages no longer qualify). Orphan drops (before any
+      //   working in the same exercise) are promoted to working.
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -824,6 +833,9 @@ const useStore = create(
         }
         if (version < 4) {
           persistedState.splitDraft = persistedState.splitDraft ?? null
+        }
+        if (version < 5 && Array.isArray(persistedState.sessions)) {
+          persistedState.sessions = migrateSessionsToV5(persistedState.sessions)
         }
         return persistedState
       },

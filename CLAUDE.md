@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 21 — auto-classify of set type reverted, spec §3.8 retracted)
+> Last updated: April 21, 2026 (Batch 22 — drop-set bundling data layer + v5 migration)
 
 ## Rules for Claude
 
@@ -1391,6 +1391,33 @@ Rationale for full removal (both branches, not just the demotion):
 376. **Build.** `npx vite build --outDir /tmp/test-build` → 748.25 KB bundle / 201.99 KB gzipped (−0.36 KB vs 20d, all in the deleted block + ref + comments).
 
 Post-v1 roadmap follow-up per user: **drop-set bundling.** User observed that drop sets should be modeled as continuations of the preceding working set, not standalone rows. A working set at 185×10 followed by two drops to 135×8 and 95×6 is conceptually ONE logical set with two drop stages, not three. Significant data-model change affecting storage shape, BbLogger UI, volume / PR calculations (`getExercisePRs`, `isSetPR`, `perSideLoad`), history display, session comparison, share card, recommender input (`getExerciseHistory` top-set logic), and a new persist migration. Deserves its own plan pass — added to the Post-v1 roadmap below.
+
+### Batch 22 (April 21, 2026) — Drop-set bundling data layer + v5 migration
+
+First of three batches implementing drop-set bundling (see `drop-set-bundling.md` plan). Data layer only — no UI changes yet. Under the new model, a working set at 185×10 followed by drops to 135×8 and 95×6 stores as ONE top-level `{type:'working', weight:185, reps:10, drops:[{weight:135, reps:8}, {weight:95, reps:6}]}` entry, not three separate `sets[]` rows. Batches 23 + 24 land in the same feature branch and ship together so users never see intermediate-state inconsistency.
+
+User-locked decisions for this change:
+1. Set count = 1 per bundled group (drops don't inflate set counts).
+2. Drops contribute to volume (recomputed from the nested shape).
+3. PRs key off the working primary only — drop stages never qualify as PRs.
+4. "+ Drop stage" button lives only inside an existing working-set card (no orphan drops via UI).
+5. Retype-with-drops blocked — the Warm/Work/Drop cycler disables when `drops.length > 0`.
+
+377. **`migrateSessionsToV5(sessions)` in `helpers.js`.** Two-pass migration. Pass 1 walks each exercise's flat `sets[]` left-to-right: working sets push to output and become the new parent; `type:'drop'` entries have their `type` + `isNewPR` fields stripped and attach to the preceding working's `drops[]` array; warmups push unchanged and reset the parent pointer (drops after a warmup start a new group and get promoted). Orphan drops (no preceding working in the same exercise) are **promoted** to `type:'working'` and become their own parent. Pass 2 recomputes `isNewPR` chronologically keyed by `exerciseId || name`, walking **only** working primaries under the new decision 3. Warmups with stale `isNewPR` from pre-v3 chronological walks get cleared. Idempotent: re-running on bundled data is a no-op because the walk only matches `type:'drop'` entries at the top level (bundled drops are nested and invisible to the walk).
+
+378. **`calcSessionVolume` updated (`helpers.js`).** Walks `set.weight * set.reps` for the primary, then adds `Σ drop.weight * drop.reps` across `set.drops[]` when present. For pre-bundled / pre-Batch-22 data with no `drops` field, the inner reducer returns 0, so volume totals match the flat-shape calc exactly (decision 2 verified by sanity script).
+
+379. **`getExercisePRs` skips non-working sets (`helpers.js`).** New `if (set.type !== 'working') return` guard early-exits warmups and (under the bundled shape) never enters drop stages anyway since they're nested. Matches decision 3 — PRs are working-primary-only.
+
+380. **`getExerciseHistory` iterates working sets only (`helpers.js`).** The pre-Batch-22 `type === 'working' || type === 'drop'` filter is now just `type === 'working'`. Drop stages live inside `set.drops[]` under the bundled shape and never compete for top-e1RM. Under the new model, the recommender's trend fits on strength data only; drops are fatigue work and correctly excluded.
+
+381. **Persist version bumped `4 → 5` (`useStore.js`).** New migrate block calls `migrateSessionsToV5(persistedState.sessions)` when `version < 5`. Chain runs v1→v2→v3→v4→v5 for pre-v5 stores; no-op on fresh installs (default version is 5). `importData` also runs the v5 migration on imported sessions so pre-v5 backups land in the current schema.
+
+382. **`migration-v5-sanity.mjs` at worktree root.** 10/10 pass against `debug-backup.json` (24 sessions, 353 working sets, 31 drop entries). Reports: (a) all 31 flat drops bundled into 21 parent working sets; (b) 0 top-level drops remain; (c) 0 orphan promotions (user's real data has no drop-first sequences); (d) aggregate volume preserved to the lb-rep (471,755 before and after — decision 2 verified); (e) total `isNewPR` flags drop 134 → 110, representing 24 pre-v3 warmup PR flags being correctly cleared under the stricter working-only rule; (f) idempotency proven via re-run; (g) synthetic 5-set test case (`drop → drop → warmup → working → drop`) correctly produces 3 top-level entries: one promoted working (bundling the orphan drop chain), one warmup, one working with one drop nested. Mirrors the existing `migration-sanity.mjs` / `migration-v3-sanity.mjs` / `migration-18a-sanity.mjs` / `readiness-sanity.mjs` / `anomaly-sanity.mjs` / `gym-tags-sanity.mjs` pattern.
+
+383. **No UI changes this batch.** BbLogger still renders flat rows, ghost rows stay flat, History/ShareCard/Progress still show flat drops. Sessions saved post-Batch-22 through the pre-update BbLogger would continue to write flat drops until Batch 23's buildExerciseData rewrite. This is why Batches 22 + 23 + 24 ship as one merge — the intermediate state where persisted data is bundled but new writes are flat would create visible drift. Feature branch `claude/drop-set-bundling` holds all three commits for a single fast-forward merge.
+
+384. **Build.** `npx vite build --outDir /tmp/test-build` → 749.82 KB bundle / 202.36 KB gzipped (+1.57 KB / +0.25 KB vs Batch 21 — all in the new migration function).
 
 ---
 

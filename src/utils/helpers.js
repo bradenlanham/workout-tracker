@@ -261,6 +261,11 @@ export function getExercisePRs(sessions, exerciseName) {
       const ex = s.data?.exercises?.find(e => e.name === exerciseName)
       if (!ex) return
       ex.sets.forEach(set => {
+        // PRs are keyed off working primaries only (Batch 22 decision 3).
+        // Warmups and (under the bundled shape) any non-working entry are
+        // excluded; drop stages are nested inside set.drops[] and never
+        // participate in PR tracking.
+        if (set.type !== 'working') return
         const w = Number(perSideLoad(set)) || 0
         const r = Number(set.reps)         || 0
         if (w <= 0 || r <= 0) return
@@ -299,7 +304,14 @@ export function isPR(sessions, exerciseName, weight, reps) {
 export function calcSessionVolume(exercises) {
   return exercises.reduce((total, ex) => {
     return total + ex.sets.reduce((s, set) => {
-      return s + (set.reps || 0) * (set.weight || 0)
+      const primary = (set.reps || 0) * (set.weight || 0)
+      // Drop stages (Batch 22 decision 2): walk nested drops and add their
+      // volume contribution. For pre-bundled data, set.drops is undefined
+      // and the reducer returns 0, so the total matches flat-shape volume.
+      const drops = Array.isArray(set.drops)
+        ? set.drops.reduce((d, dst) => d + (dst.reps || 0) * (dst.weight || 0), 0)
+        : 0
+      return s + primary + drops
     }, 0)
   }, 0)
 }
@@ -721,6 +733,114 @@ export function migrateSessionsToV3({ sessions, library } = {}) {
   return { sessions: finalSessions, library: libOut }
 }
 
+// ── V4 → V5 persist migration (Batch 22) ────────────────────────────────────
+// Drop-set bundling: drop entries in the flat ex.sets[] array are nested
+// inside the preceding working set's new `drops[]` field. A working at 185×10
+// followed by drops to 135×8 and 95×6 becomes ONE top-level entry with
+// `drops: [{weight:135, reps:8, …}, {weight:95, reps:6, …}]` — not three.
+//
+// Decisions locked for this migration (see drop-set-bundling.md):
+//   1. Drop stages stay in volume (calcSessionVolume walks working+drops).
+//   2. Drops never qualify as PRs — only working primaries do.
+//   3. Orphan drops (no preceding working in the same exercise) are promoted
+//      to working and become their own parent. Warmups between sets break
+//      the drop chain; a drop after a warmup with no prior working is
+//      similarly promoted.
+//
+// Idempotency: re-running on already-bundled sets is a no-op. The walk sees
+// only 'working' and 'warmup' entries at the top level; bundled drops live
+// inside working.drops[] and never match the `type === 'drop'` branch.
+export function migrateSessionsToV5(sessions) {
+  if (!Array.isArray(sessions) || !sessions.length) return sessions
+
+  // Pass 1 — bundle consecutive drops into their preceding working set.
+  const bundled = sessions.map(s => {
+    if (!s?.data?.exercises) return s
+    return {
+      ...s,
+      data: {
+        ...s.data,
+        exercises: s.data.exercises.map(ex => {
+          if (!Array.isArray(ex.sets) || !ex.sets.length) return ex
+          const out = []
+          let parentIdx = -1  // index in `out` of the most recent working set
+          for (const set of ex.sets) {
+            const t = set?.type
+            if (t === 'drop') {
+              // Strip fields drops don't carry in the bundled shape.
+              const { type: _t, isNewPR: _p, ...dropShape } = set
+              if (parentIdx >= 0) {
+                const parent = out[parentIdx]
+                const drops = Array.isArray(parent.drops)
+                  ? [...parent.drops, dropShape]
+                  : [dropShape]
+                out[parentIdx] = { ...parent, drops }
+              } else {
+                // Orphan drop — promote to working and make it the parent.
+                out.push({ ...set, type: 'working', isNewPR: false })
+                parentIdx = out.length - 1
+              }
+            } else if (t === 'warmup') {
+              out.push(set)
+              parentIdx = -1  // warmup breaks the drop chain
+            } else {
+              // 'working' or any other non-drop type (defensive).
+              out.push(set)
+              parentIdx = out.length - 1
+            }
+          }
+          return { ...ex, sets: out }
+        }),
+      },
+    }
+  })
+
+  // Pass 2 — recompute isNewPR chronologically, keyed off working primaries
+  // only. Drops no longer compete for PR status (decision 3). Warmups never
+  // have did (defensive clear in case a pre-migration warmup carried one).
+  const prTracker = new Map()
+  const updatesIdx = new Map()
+  const ordered = bundled
+    .map((s, i) => ({ s, i, t: new Date(s.date).getTime() }))
+    .filter(x => x.s?.mode === 'bb' && x.s?.data?.exercises && !isNaN(x.t))
+    .sort((a, b) => a.t - b.t)
+
+  for (const { s, i } of ordered) {
+    const updatedExes = s.data.exercises.map(ex => {
+      const key = ex.exerciseId || ex.name
+      let run = prTracker.get(key) || { maxWeight: 0, maxRepsAtMaxWeight: 0 }
+      const updatedSets = (ex.sets || []).map(set => {
+        if (set?.type !== 'working') {
+          // Warmups (and any defensive stragglers) never have isNewPR set.
+          if (set?.isNewPR) return { ...set, isNewPR: false }
+          return set
+        }
+        const w = Number(perSideLoad(set)) || 0
+        const r = Number(set.reps)         || 0
+        if (w <= 0 || r <= 0) return { ...set, isNewPR: false }
+        let isNewPR = false
+        if (run.maxWeight === 0 || w > run.maxWeight) {
+          isNewPR = true
+          run = { maxWeight: w, maxRepsAtMaxWeight: r }
+        } else if (w === run.maxWeight && r > run.maxRepsAtMaxWeight) {
+          isNewPR = true
+          run = { ...run, maxRepsAtMaxWeight: r }
+        }
+        return { ...set, isNewPR }
+      })
+      prTracker.set(key, run)
+      return { ...ex, sets: updatedSets }
+    })
+    updatesIdx.set(i, updatedExes)
+  }
+
+  return bundled.map((s, i) =>
+    updatesIdx.has(i)
+      ? { ...s, data: { ...s.data, exercises: updatesIdx.get(i) } }
+      : s
+  )
+}
+
 // ── Recommendation engine ──────────────────────────────────────────────────
 //
 // Per-exercise, per-session load recommender. The spec (§2 of
@@ -859,8 +979,11 @@ export function getExerciseHistory(sessions, exerciseId, exerciseName = null, eq
     const exInstRaw = typeof ex.equipmentInstance === 'string' ? ex.equipmentInstance.trim() : ''
     const exInstKey = exInstRaw.toLowerCase()
     if (scopeByInstance && exInstKey !== instNeedle) continue
+    // Top-set selection walks working primaries only (Batch 22 decision 3).
+    // Drop stages are nested inside set.drops[] under the bundled model and
+    // never compete for top-e1RM — they're fatigue work, not strength data.
     const working = (ex.sets || []).filter(st =>
-      (st.type === 'working' || st.type === 'drop') &&
+      st.type === 'working' &&
       (perSideLoad(st) > 0) &&
       (Number(st.reps) > 0)
     )
