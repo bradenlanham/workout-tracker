@@ -9,6 +9,7 @@ import {
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
   detectAnomalies, formatRec, getInstancesForExercise,
   shouldPromptGymTag, isExerciseAvailableAtGym,
+  toLocalDateStr,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -2854,7 +2855,7 @@ export default function BbLogger() {
         minHR:              inlineCardio.minHR,
         maxHR:              inlineCardio.maxHR,
         notes:              inlineCardio.notes,
-        date:               new Date().toISOString().split('T')[0],
+        date:               toLocalDateStr(),
         attachedToSessionId: savedSess.id,
       })
     }
@@ -2947,8 +2948,11 @@ export default function BbLogger() {
 
   // ── Today's unattached cardio (for Finish modal Scenario A) ───────────────
 
-  const todayStr    = new Date().toISOString().split('T')[0]
-  const todayCardio = cardioSessions.filter(s => s.date === todayStr && !s.attachedToSessionId)
+  // Batch 25 timezone-fix: use LOCAL date so evening entries west of UTC
+  // don't count under tomorrow's date. cardio.date is stored as a local
+  // YYYY-MM-DD string (Batch 25), so this compares apples to apples.
+  const todayStr    = toLocalDateStr()
+  const todayCardio = cardioSessions.filter(s => (s.date || '').slice(0, 10) === todayStr && !s.attachedToSessionId)
 
   // ── Render helpers ───────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 24 — drop-set bundling complete across display surfaces)
+> Last updated: April 21, 2026 (Batch 25 — timezone fix: evening entries no longer roll to the next day)
 
 ## Rules for Claude
 
@@ -1489,6 +1489,32 @@ Third and final drop-set-bundling batch. Every read-only surface that renders pa
 403. **Post-v1 roadmap — drop-set bundling shipped.** Updated Post-v1 list below — the "Drop-set bundling (flagged Batch 21)" entry is removed from pending since it's live.
 
 404. **Build.** `npx vite build --outDir /tmp/test-build` → 755.57 KB bundle / 203.77 KB gzipped (+1.12 KB / +0.32 KB vs Batch 23, all in the five display-surface walkers descending into drops).
+
+### Batch 25 (April 21, 2026) — Timezone fix: evening entries stay on the local day
+
+User report from North America users: logging a workout at 5 PM (paraphrase — the actual symptom triggers at ~7-8 PM Eastern when UTC rolls over) was being counted toward the next day in cardio-attachment checks, Progress heatmap + week filters + PR timeline, and split "Created" dates. Batch 16k fixed this pattern on the Dashboard calendar strip (via a private `isoToLocalDateStr` helper), but BbLogger, CardioLogger, Progress, and useStore.js never got the same treatment — they continued to call `new Date().toISOString().split('T')[0]` to derive "today's date," which returns the UTC date. For any browser west of UTC logging past ~7-8 PM local, UTC has already rolled over and the returned date is tomorrow.
+
+User suggested "set the default time zone to Central" as a fallback. That would have been a partial fix at best: a Pacific user's 5 PM would be interpreted as Central's 7 PM (still correct); an Eastern user's 11 PM would be interpreted as Central's midnight (still wrong). The app already has access to each user's real local timezone via the browser's `Date` API — it just wasn't using it consistently. So the correct fix is to replace every `toISOString().split('T')[0]` with a helper that derives the date from `getFullYear()/getMonth()/getDate()` (all of which return LOCAL values). That works for every US timezone and every timezone worldwide with no need for a hardcoded fallback.
+
+405. **`toLocalDateStr(input)` exported from `helpers.js`.** Flexible-signature canonical "what local date is this?" helper. Accepts a `Date` object, an ISO string, a date-only `YYYY-MM-DD` string, or `undefined` (defaults to right now). Returns `YYYY-MM-DD` in the browser's LOCAL timezone, or `null` for unparseable input. Date-only strings are normalized through `'T00:00:00'` so they parse as local midnight (avoiding the UTC-midnight drift `new Date('2026-04-07')` introduces in negative-UTC offsets). Replaces the pre-Batch-25 private `toLocalDateStr(d)` — same name, now exported with a richer signature. Sanity-checked via 7/7 node cases covering every input shape + the headline case (a Date at 8:30 PM local in UTC-5 returns the local date, not the UTC-tomorrow date).
+
+406. **BbLogger.jsx — 2 sites updated.** `new Date().toISOString().split('T')[0]` → `toLocalDateStr()`:
+    - Inline-cardio save path (the "Log Now" flow from the Finish modal): `cardio.date` is now a LOCAL date string.
+    - `todayStr` / `todayCardio` filter used by the Finish modal to find today's unattached cardio — now uses local date, and the comparison is robust to either flat date strings OR full ISO via `(s.date || '').slice(0, 10)`.
+
+407. **CardioLogger.jsx — 5 sites updated.** Cardio save path writes `date: toLocalDateStr()`. The two "check for today's workout" paths (`handleConfirm` auto-attach check + `getTodayWorkoutName` display) both compare via `toLocalDateStr(s.date)` so attach logic finds same-day workouts regardless of which timezone the user is in. The `cardio.date` storage format remains a date-only `YYYY-MM-DD` string (unchanged from pre-Batch-25), just now derived locally.
+
+408. **Progress.jsx — 4 sites updated.** Weekly-load-chart session filter (`getWeekBounds` comparison), PR-timeline grouping key (`${exerciseName}|${localDate}`), and consistency-heatmap byDate bucket all switched from UTC-derived to local-derived date strings. Private `toDateStr(d)` helper at `:27` now delegates to the shared `toLocalDateStr` so Progress and helpers stay in sync.
+
+409. **useStore.js — 3 sites updated.** Split `createdAt` writes in `cloneSplit`, `duplicateSplit`, and `addSplit` paths all use `toLocalDateStr()` instead of `toISOString().split('T')[0]`. Previously a split created at 10 PM Pacific on April 21 would show `Created April 22, 2026` on the SplitManager card; post-fix it correctly reads `Created April 21, 2026`.
+
+410. **What was deliberately not touched.** Export backup filename (`workout-backup-YYYY-MM-DD.json` at `useStore.js:761`) keeps its UTC-derived filename — changing it would alter users' backup-file naming conventions without meaningful benefit (export is a snapshot, not a user-facing day-grouping). `activeSession.date` + `session.date` keep their full-ISO `toISOString()` storage format for sessions — that's the canonical timestamp, and reader code now converts via `toLocalDateStr(s.date)` at display / grouping time. Dashboard.jsx's private `isoToLocalDateStr(iso)` helper from Batch 16k is left alone (does the same thing as the shared helper for ISO inputs; refactor-only change, not a behavior fix).
+
+411. **Note on existing historical data.** Cardio sessions + splits created pre-Batch-25 with a `createdAt`/`date` that's a UTC date string (evening entry in US timezone → tomorrow's date) remain as-is. The fix corrects ONLY new writes going forward. No data migration — the legacy dates are ambiguous (we don't know the user's timezone at the moment of save), so any post-hoc correction would be guessing. Users can delete + re-log if a specific entry is visibly on the wrong day; otherwise the inconsistency just ages out naturally.
+
+412. **Sanity.** `node -e` test of `toLocalDateStr`: 7/7 pass. Cases: `undefined` → today; `null` → today; Date at 8:30 PM local (UTC-5) → local date (not UTC-tomorrow); ISO string → correct local date; date-only string → same string; invalid string → null; number → null.
+
+413. **Build.** `npx vite build --outDir /tmp/test-build` → 755.33 KB bundle / 203.79 KB gzipped (−0.24 KB / +0.02 KB vs Batch 24 — helper replaces inline string ops, roughly a wash).
 
 ---
 

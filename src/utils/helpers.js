@@ -359,10 +359,35 @@ export function getRotationItemOnDate(dateStr, sessions, rotation) {
   return rotation[((anchorIdx + daysDiff) % rotation.length + rotation.length) % rotation.length]
 }
 
-// Use LOCAL date methods to avoid UTC-midnight vs local-midnight mismatch.
-// new Date('2026-04-07') parses as UTC midnight; in UTC-5 that's local Apr 6 19:00,
-// so .getDate() would return 6 instead of 7. Using 'T00:00:00' forces local midnight.
-function toLocalDateStr(d) {
+// Canonical "what local date is this?" helper. Returns YYYY-MM-DD using the
+// BROWSER'S LOCAL timezone (via getFullYear/getMonth/getDate) — NOT UTC. Replaces
+// the `.toISOString().split('T')[0]` anti-pattern that caused evening entries in
+// western timezones to land on the next day (Batch 25 timezone-fix).
+//
+// Accepts: a Date object, an ISO string, a date-only 'YYYY-MM-DD' string, or
+// `undefined` (defaults to right now). Returns null for unparseable input.
+//
+// Background: `new Date('2026-04-07')` parses as UTC midnight; in UTC-5 that's
+// local Apr 6 at 19:00, so a naive getDate would return 6 instead of 7. Passing
+// an ISO timestamp works correctly because Date's getters return local values.
+// Date-only strings (like '2026-04-07' with no time) get normalized through
+// 'T00:00:00' so they land as local midnight.
+export function toLocalDateStr(input) {
+  let d
+  if (input === undefined || input === null) {
+    d = new Date()
+  } else if (input instanceof Date) {
+    d = input
+  } else if (typeof input === 'string') {
+    // Date-only 'YYYY-MM-DD' → append T00:00:00 so it parses as local midnight.
+    // Full ISO strings (with T) parse correctly on their own — .getDate etc.
+    // return local-timezone values from any parsed Date.
+    const s = /^\d{4}-\d{2}-\d{2}$/.test(input) ? `${input}T00:00:00` : input
+    d = new Date(s)
+  } else {
+    return null
+  }
+  if (isNaN(d.getTime())) return null
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 

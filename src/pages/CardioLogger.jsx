@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { BB_WORKOUT_NAMES } from '../data/exercises'
+import { toLocalDateStr } from '../utils/helpers'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -638,7 +639,9 @@ export default function CardioLogger() {
       minHR: minH ? parseInt(minH) : null,
       maxHR: maxH ? parseInt(maxH) : null,
       notes: n,
-      date: new Date().toISOString().split('T')[0],
+      // Batch 25 timezone-fix: store LOCAL date so an 8 PM entry on the east
+      // coast lands on today, not tomorrow (UTC rolls over at 7-8 PM ET).
+      date: toLocalDateStr(),
     })
     setScreen('confirm')
   }
@@ -650,10 +653,10 @@ export default function CardioLogger() {
       return
     }
 
-    // Check if a workout was logged today
-    const todayStr = new Date().toISOString().split('T')[0]
+    // Check if a workout was logged today (local date — Batch 25).
+    const todayStr = toLocalDateStr()
     const todayWorkouts = sessions.filter(s => {
-      const d = s.date ? s.date.split('T')[0] : null
+      const d = toLocalDateStr(s.date)
       return d === todayStr && s.mode === 'bb'
     })
     if (todayWorkouts.length > 0) {
@@ -680,9 +683,11 @@ export default function CardioLogger() {
   }
 
   const getTodayWorkoutName = () => {
-    const todayStr = new Date().toISOString().split('T')[0]
+    // Batch 25 timezone-fix: compare via local date so the "attach to today's
+    // workout" flow works correctly for users west of UTC logging in evening.
+    const todayStr = toLocalDateStr()
     const todayWorkout = sessions.find(s => {
-      const d = s.date ? s.date.split('T')[0] : null
+      const d = toLocalDateStr(s.date)
       return d === todayStr && s.mode === 'bb'
     })
     if (!todayWorkout) return null

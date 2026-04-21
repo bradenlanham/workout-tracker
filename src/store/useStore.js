@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5 } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, toLocalDateStr } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -354,7 +354,7 @@ const useStore = create(
       setActiveSplit: (id) => set({ activeSplitId: id }),
 
       addSplit: (split) => {
-        const newSplit = { ...split, id: generateId(), createdAt: new Date().toISOString().split('T')[0] }
+        const newSplit = { ...split, id: generateId(), createdAt: toLocalDateStr() }
         set(state => ({ splits: [...state.splits, newSplit] }))
         return newSplit
       },
@@ -384,7 +384,7 @@ const useStore = create(
           id: generateId(),
           name: `${original.name} (Copy)`,
           isBuiltIn: false,
-          createdAt: new Date().toISOString().split('T')[0],
+          createdAt: toLocalDateStr(),
         }
         set(prev => ({ splits: [...prev.splits, clone] }))
         return clone
@@ -435,7 +435,7 @@ const useStore = create(
           isBuiltIn: false,
           workouts: newWorkouts,
           rotation: newRotation,
-          createdAt: new Date().toISOString().split('T')[0],
+          createdAt: toLocalDateStr(),
         }
         set(prev => ({ splits: [...prev.splits, dup] }))
         return dup

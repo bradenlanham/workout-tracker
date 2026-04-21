@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getWorkoutStreak, getBestStreak } from '../utils/helpers'
+import { getWorkoutStreak, getBestStreak, toLocalDateStr } from '../utils/helpers'
 
 // ── Muscle group mapping ──────────────────────────────────────────────────────
 
@@ -24,8 +24,10 @@ function getMuscleGroup(name) {
 
 // ── Utility helpers ───────────────────────────────────────────────────────────
 
+// Local wrapper — delegates to the shared toLocalDateStr helper so Progress
+// groups sessions by the user's LOCAL date, not UTC (Batch 25 timezone-fix).
 function toDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return toLocalDateStr(d)
 }
 
 function getWeekBounds(weeksAgo) {
@@ -116,7 +118,7 @@ function WeeklyLoadChart({ sessions, splits, accentHex }) {
   const bbSessions = sessions.filter(s => s.mode === 'bb')
   const weeks = [0, 1, 2].map(ago => ({ ago, bounds: getWeekBounds(ago) }))
   const weekSessions = weeks.map(w =>
-    bbSessions.filter(s => { const d = s.date.split('T')[0]; return d >= w.bounds.start && d <= w.bounds.end })
+    bbSessions.filter(s => { const d = toLocalDateStr(s.date); return d >= w.bounds.start && d <= w.bounds.end })
   )
   const allTypes = [...new Set(weekSessions.flat().map(s => s.type))]
   if (!allTypes.length) return <Empty />
@@ -373,9 +375,12 @@ function PRTimeline({ sessions, accentHex }) {
       (s.data?.exercises || []).forEach(ex =>
         ex.sets.forEach(set => {
           if (set.isNewPR) {
-            const key = `${ex.name}|${s.date.split('T')[0]}`
+            // Batch 25 timezone-fix: group PRs by LOCAL date so an evening
+            // PR on the east coast isn't filed under tomorrow.
+            const localDate = toLocalDateStr(s.date)
+            const key = `${ex.name}|${localDate}`
             if (!prMap[key] || (set.weight || 0) > prMap[key].weight) {
-              prMap[key] = { exercise: ex.name, date: s.date.split('T')[0], weight: set.weight || 0, reps: set.reps || 0 }
+              prMap[key] = { exercise: ex.name, date: localDate, weight: set.weight || 0, reps: set.reps || 0 }
             }
           }
         })
@@ -443,7 +448,8 @@ function PRTimeline({ sessions, accentHex }) {
 function ConsistencyHeatmap({ sessions, streak, bestStreak, accentHex }) {
   const byDate = {}
   sessions.filter(s => s.mode === 'bb').forEach(s => {
-    const d = s.date.split('T')[0]
+    // Batch 25 timezone-fix: heatmap groups by LOCAL date, not UTC.
+    const d = toLocalDateStr(s.date)
     byDate[d] = (byDate[d] || 0) + sessionSetCount(s)
   })
   const maxSets = Math.max(...Object.values(byDate), 1)
