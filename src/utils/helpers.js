@@ -965,6 +965,37 @@ export function shouldPromptGymTag(exercise, gymId) {
   return true
 }
 
+// Batch 27: "is this equipment a machine?" test that covers both the
+// specific types (Selectorized Machine / Plate-loaded Machine) AND the
+// legacy 'Machine' value (for pre-v6 library entries that somehow slip
+// through the migration, and for defensive use in any edge case).
+// Used by BbLogger's Machine-chip visibility gate.
+export function isMachineEquipment(equip) {
+  return equip === 'Selectorized Machine'
+    || equip === 'Plate-loaded Machine'
+    || equip === 'Machine'
+}
+
+// Batch 27 v5 → v6 library migration: rewrite any legacy `equipment: 'Machine'`
+// entries to `'Selectorized Machine'` as the safer default (selectorized is
+// the more common machine type at commercial gyms). Plate-loaded specifics
+// are caught on the built-in raw data side (see data/exerciseLibrary.js);
+// this handles user-created entries + pre-Batch-27 built-in copies that
+// persisted before the raw-data update. Idempotent — re-running on a v6
+// library finds no 'Machine' values and returns the input unchanged.
+export function migrateLibraryToV6(library) {
+  if (!Array.isArray(library)) return library
+  let changed = 0
+  const out = library.map(e => {
+    if (e && e.equipment === 'Machine') {
+      changed++
+      return { ...e, equipment: 'Selectorized Machine' }
+    }
+    return e
+  })
+  return changed > 0 ? out : library
+}
+
 // Per-session top set for an exercise — the working set with the highest
 // e1RM. Skips warmups; drop sets count (same per-side load as the parent
 // working set is fine for fit purposes). Returns chronological ascending.
@@ -1580,22 +1611,22 @@ export function detectAnomalies(history) {
 // override the prediction and stop future auto-fills on the same edit.
 const EXERCISE_KEYWORD_MAP = [
   // ── Specific compound terms first ──
-  { kw: 'leg press',          muscles: ['Quads'],       equipment: 'Machine' },
-  { kw: 'hack squat',         muscles: ['Quads'],       equipment: 'Machine' },
-  { kw: 'leg extension',      muscles: ['Quads'],       equipment: 'Machine' },
-  { kw: 'leg curl',           muscles: ['Hamstrings'],  equipment: 'Machine' },
+  { kw: 'leg press',          muscles: ['Quads'],       equipment: 'Plate-loaded Machine' },
+  { kw: 'hack squat',         muscles: ['Quads'],       equipment: 'Plate-loaded Machine' },
+  { kw: 'leg extension',      muscles: ['Quads'],       equipment: 'Selectorized Machine' },
+  { kw: 'leg curl',           muscles: ['Hamstrings'],  equipment: 'Selectorized Machine' },
   { kw: 'romanian deadlift',  muscles: ['Hamstrings'],  equipment: 'Barbell' },
   { kw: 'rdl',                muscles: ['Hamstrings'],  equipment: 'Barbell' },
   { kw: 'deadlift',           muscles: ['Back'],        equipment: 'Barbell' },
   { kw: 'good morning',       muscles: ['Hamstrings'],  equipment: 'Barbell' },
-  { kw: 'calf raise',         muscles: ['Calves'],      equipment: 'Machine' },
+  { kw: 'calf raise',         muscles: ['Calves'],      equipment: 'Selectorized Machine' },
   { kw: 'hip thrust',         muscles: ['Glutes'],      equipment: 'Barbell' },
   { kw: 'glute bridge',       muscles: ['Glutes'],      equipment: 'Bodyweight' },
   { kw: 'bench press',        muscles: ['Chest'],       equipment: 'Barbell' },
-  { kw: 'chest press',        muscles: ['Chest'],       equipment: 'Machine' },
+  { kw: 'chest press',        muscles: ['Chest'],       equipment: 'Selectorized Machine' },
   { kw: 'chest fly',          muscles: ['Chest'],       equipment: 'Cable' },
-  { kw: 'pec dec',            muscles: ['Chest'],       equipment: 'Machine' },
-  { kw: 'pec deck',           muscles: ['Chest'],       equipment: 'Machine' },
+  { kw: 'pec dec',            muscles: ['Chest'],       equipment: 'Selectorized Machine' },
+  { kw: 'pec deck',           muscles: ['Chest'],       equipment: 'Selectorized Machine' },
   { kw: 'dips',               muscles: ['Chest'],       equipment: 'Bodyweight' },
   { kw: 'push-up',            muscles: ['Chest'],       equipment: 'Bodyweight' },
   { kw: 'pushup',             muscles: ['Chest'],       equipment: 'Bodyweight' },
@@ -1610,7 +1641,7 @@ const EXERCISE_KEYWORD_MAP = [
   { kw: 'face pull',          muscles: ['Shoulders'],   equipment: 'Cable' },
   { kw: 'lateral raise',      muscles: ['Shoulders'],   equipment: 'Dumbbell' },
   { kw: 'front raise',        muscles: ['Shoulders'],   equipment: 'Dumbbell' },
-  { kw: 'rear delt',          muscles: ['Shoulders'],   equipment: 'Machine' },
+  { kw: 'rear delt',          muscles: ['Shoulders'],   equipment: 'Selectorized Machine' },
   { kw: 'overhead press',     muscles: ['Shoulders'],   equipment: 'Barbell' },
   { kw: 'military press',     muscles: ['Shoulders'],   equipment: 'Barbell' },
   { kw: 'shoulder press',     muscles: ['Shoulders'],   equipment: 'Dumbbell' },

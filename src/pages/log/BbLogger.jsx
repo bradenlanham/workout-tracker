@@ -9,7 +9,7 @@ import {
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
   detectAnomalies, formatRec, getInstancesForExercise,
   shouldPromptGymTag, isExerciseAvailableAtGym,
-  toLocalDateStr,
+  toLocalDateStr, isMachineEquipment,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -1129,7 +1129,9 @@ function ExerciseItem({
   // waste space on an irrelevant prompt. Users who want the chip on an
   // exercise currently classified otherwise can edit the library entry
   // in My Exercises.
-  const showMachineChip = libraryEntry?.equipment === 'Machine'
+  // Batch 27: Machine chip shows for Selectorized Machine + Plate-loaded
+  // Machine + legacy 'Machine' (defensive; pre-v6 migration fallback).
+  const showMachineChip = isMachineEquipment(libraryEntry?.equipment)
 
   // Recommendation: mode derives from the readiness "goal" answer (Batch 16n,
   // spec §2.5). Defaults to 'push' when no readiness data is present — same

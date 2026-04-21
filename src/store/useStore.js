@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, toLocalDateStr } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateLibraryToV6, toLocalDateStr } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -797,7 +797,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 5,
+      version: 6,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -814,6 +814,11 @@ const useStore = create(
       //   chronologically under the new "working-primaries-only" rule
       //   (drop stages no longer qualify). Orphan drops (before any
       //   working in the same exercise) are promoted to working.
+      //   V5→V6 (Batch 27): rewrite legacy `equipment: 'Machine'` library
+      //   entries to `'Selectorized Machine'` (the safer default at
+      //   commercial gyms). Plate-loaded machines users own will need
+      //   one-tap re-tagging via /exercises. User-created custom machine
+      //   entries and persisted built-ins both sweep.
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -836,6 +841,9 @@ const useStore = create(
         }
         if (version < 5 && Array.isArray(persistedState.sessions)) {
           persistedState.sessions = migrateSessionsToV5(persistedState.sessions)
+        }
+        if (version < 6 && Array.isArray(persistedState.exerciseLibrary)) {
+          persistedState.exerciseLibrary = migrateLibraryToV6(persistedState.exerciseLibrary)
         }
         return persistedState
       },

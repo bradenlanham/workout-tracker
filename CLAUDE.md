@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 26 — Traps + Abs added to MUSCLE_GROUPS)
+> Last updated: April 21, 2026 (Batch 27 — Machine split into Selectorized / Plate-loaded + v6 library migration)
 
 ## Rules for Claude
 
@@ -1525,6 +1525,31 @@ User-requested tiny addition. Previously 12 muscle groups; now 14.
 415. **Bonus fix: `predictExerciseMeta` "shrug" prediction now validates.** The keyword map at `helpers.js:1617` already predicted `['Traps']` for exercises matching "shrug", but Traps wasn't in `MUSCLE_GROUPS` — so `addExerciseToLibrary`'s §3.2.1 validation silently rejected the prediction and the user ended up manually picking a different group. With Traps now valid, the auto-fill chip actually sticks on save. `predictExerciseMeta`'s "crunch / sit-up / leg raise / plank / russian twist / ab wheel" predictions continue to map to `'Core'` — not changed this batch; users who want those tagged as `Abs` can switch manually.
 
 416. **No code changes beyond the array.** No build-size change (+0 KB — the strings are tiny). Existing library entries that currently use `muscleGroup: 'Back'` for trap-adjacent exercises (e.g., shrugs) stay as-is; users can re-tag via `/exercises` if they want the finer distinction. No migration needed.
+
+### Batch 27 (April 21, 2026) — Machine split into Selectorized / Plate-loaded + v6 library migration
+
+User request: "have selectorized machine and plate-loaded machine as the two machine options." Previously a single `'Machine'` equipment type covered both Hoist / Cybex selectorized stacks AND Hammer Strength / Smith / hack-squat plate-loaded rigs, which tangled the Machine-instance data together (recommender couldn't tell apart a selectorized Pec Dec at VASA from a plate-loaded one at TR even when they were physically different machines). Split into two specifics with a v5→v6 persist migration that remaps legacy `'Machine'` to `'Selectorized Machine'` (safer default at commercial gyms). Built-in library updated in place with best-guess specifics; user-specific adjustments via `/exercises`.
+
+417. **`EQUIPMENT_TYPES` (`src/data/exerciseLibrary.js`).** Replaced `'Machine'` with `'Selectorized Machine'` + `'Plate-loaded Machine'`. Full list now: `Barbell, Dumbbell, Selectorized Machine, Plate-loaded Machine, Cable, Bodyweight, Kettlebell, Other`. Single source of truth, so the four pickers that consume it (Backfill, ExerciseEditSheet, ExercisePicker, CreateExerciseModal) all pick up the split automatically.
+
+418. **Built-in library entries updated** (`data/exerciseLibrary.js`). 27 `equipment: 'Machine'` entries repartitioned:
+    - **Plate-loaded** (6): Incline Smith Machine Press, Any Plate-loaded Press, Squats or Smith Machine Squat, Hack Squats, Leg Press, Belt Squat, Donkey Calf Raise. Rationale: Smith machines load plates; most hack-squat / leg-press / belt-squat rigs at commercial gyms are Hammer Strength–style plate-loaded.
+    - **Selectorized** (21): Pec Dec, Chest Supported Wide Row, Reverse Pec Dec, Leg Extensions, Leg Curls, Seated Leg Curl, Lying Leg Curl, Adductors, Abductors, Calf Raises, Standing Calf Raise, Seated Calf Raise. Default for isolation / support machines — Hoist / Cybex / Life Fitness style pin-select stacks.
+    Users whose gym has the opposite style (e.g., plate-loaded Pec Dec at a Hammer Strength gym) can re-tag in `/exercises` → open → pick the other option. One-tap fix.
+
+419. **`predictExerciseMeta` keyword map updates** (`helpers.js`). Auto-fill predictions for machine-family keywords now use specific types: `leg press / hack squat` → Plate-loaded Machine; `leg extension / leg curl / chest press / pec dec / pec deck / rear delt / calf raise` → Selectorized Machine. Users typing a new machine exercise into the Create modal get the specific chip pre-selected after the 300ms debounce — no dead legacy `'Machine'` values leaking through to the strict §3.2.1 addExerciseToLibrary validator.
+
+420. **`isMachineEquipment(equip)` helper (`helpers.js`).** Pure predicate returning true for `'Selectorized Machine'`, `'Plate-loaded Machine'`, or the legacy `'Machine'`. Used by the BbLogger Machine-chip visibility gate (Batch 19a) so the chip surfaces on all three. Keeps the legacy branch for defensive correctness even though v6 migration clears it on load — if a session's cached library entry somehow has `'Machine'`, the chip still renders instead of silently hiding.
+
+421. **`migrateLibraryToV6(library)` helper (`helpers.js`).** Walks each exercise entry, rewrites `equipment: 'Machine'` → `equipment: 'Selectorized Machine'` (safer default — selectorized is more common at commercial gyms than plate-loaded). Returns same reference when nothing changed (O(1) idempotency marker). No-op on non-array inputs. Sanity-checked via 14/14 node cases: `isMachineEquipment` across 7 value shapes; migration correctly rewrites legacy, preserves specifics + non-machine equipment, returns same ref when idempotent, and handles null/empty defensively.
+
+422. **Persist version bumped `5 → 6` (`useStore.js`).** New migrate block calls `migrateLibraryToV6(persistedState.exerciseLibrary)` when `version < 6`. Additive — doesn't touch sessions or settings. Pre-v6 users' libraries (including the 27 built-in machine entries that persisted from a prior install) all shift from `'Machine'` → `'Selectorized Machine'` on first v6 load. Users adjust plate-loaded entries manually via `/exercises`.
+
+423. **BbLogger Machine-chip gate updated (`BbLogger.jsx:1132`).** Pre-Batch-27: `libraryEntry?.equipment === 'Machine'` (fails for new specific values). Post-Batch-27: `isMachineEquipment(libraryEntry?.equipment)` (works for both new values + legacy). Chip-visibility behavior end-to-end: a Hoist Pec Dec (Selectorized) + Plate-loaded Leg Press both show the Machine chip; Barbells / Dumbbells / Bodyweights still hide it. Cable still deliberately excluded (Batch 19a rationale).
+
+424. **What was deliberately not touched.** Historical session data (`session.data.exercises[].equipmentInstance`) stays as user-typed free-text — that's a per-session machine-name tag ("Hoist" / "Cybex"), which is orthogonal to the library's equipment-type classification. `settings.*` unchanged. Sessions array unchanged. No migration-sanity script for this batch — the migration is a one-line string swap with full 14/14 node test coverage.
+
+425. **Build.** `npx vite build --outDir /tmp/test-build` → 755.56 KB bundle / 203.82 KB gzipped (negligible +0 KB change — two helpers + one enum split + 27 raw-data string replacements all net to a wash).
 
 ---
 

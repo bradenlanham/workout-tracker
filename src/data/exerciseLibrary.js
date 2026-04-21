@@ -3,8 +3,16 @@ export const MUSCLE_GROUPS = [
   'Biceps', 'Triceps', 'Abs', 'Core', 'Calves', 'Forearms', 'Full Body',
 ]
 
+// Batch 27: replaced generic 'Machine' with two specifics so users can
+// distinguish selectorized (pin-select weight stack) from plate-loaded
+// (Hammer-Strength / Smith / hack-squat style). Legacy 'Machine' values on
+// existing library entries migrate to 'Selectorized Machine' via the v5→v6
+// persist migration (see useStore.js). Picker UIs (Backfill, ExerciseEditSheet,
+// ExercisePicker, CreateExerciseModal) all consume this array as the single
+// source of truth so they pick up the split automatically.
 export const EQUIPMENT_TYPES = [
-  'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell', 'Other',
+  'Barbell', 'Dumbbell', 'Selectorized Machine', 'Plate-loaded Machine',
+  'Cable', 'Bodyweight', 'Kettlebell', 'Other',
 ]
 
 export const EXERCISE_LIBRARY = [
@@ -15,9 +23,9 @@ export const EXERCISE_LIBRARY = [
   { name: 'Decline Bench Press',          muscleGroup: 'Chest',      equipment: 'Barbell'    },
   { name: 'Incline DB Press',             muscleGroup: 'Chest',      equipment: 'Dumbbell'   },
   { name: 'Incline Dumbbell Press',       muscleGroup: 'Chest',      equipment: 'Dumbbell'   },
-  { name: 'Incline Smith Machine Press',  muscleGroup: 'Chest',      equipment: 'Machine'    },
-  { name: 'Any Plate-loaded Press',       muscleGroup: 'Chest',      equipment: 'Machine'    },
-  { name: 'Pec Dec',                      muscleGroup: 'Chest',      equipment: 'Machine'    },
+  { name: 'Incline Smith Machine Press',  muscleGroup: 'Chest',      equipment: 'Plate-loaded Machine' },
+  { name: 'Any Plate-loaded Press',       muscleGroup: 'Chest',      equipment: 'Plate-loaded Machine' },
+  { name: 'Pec Dec',                      muscleGroup: 'Chest',      equipment: 'Selectorized Machine' },
   { name: 'Cable Fly',                    muscleGroup: 'Chest',      equipment: 'Cable'      },
   { name: 'Chest Fly',                    muscleGroup: 'Chest',      equipment: 'Dumbbell'   },
   { name: 'Dips',                         muscleGroup: 'Chest',      equipment: 'Bodyweight' },
@@ -30,9 +38,9 @@ export const EXERCISE_LIBRARY = [
   { name: 'Single Arm Lat Pulldown',      muscleGroup: 'Back',       equipment: 'Cable'      },
   { name: 'Lat Pulldown',                 muscleGroup: 'Back',       equipment: 'Cable'      },
   { name: 'Cable Row',                    muscleGroup: 'Back',       equipment: 'Cable'      },
-  { name: 'Chest Supported Wide Row',     muscleGroup: 'Back',       equipment: 'Machine'    },
+  { name: 'Chest Supported Wide Row',     muscleGroup: 'Back',       equipment: 'Selectorized Machine' },
   { name: 'Straight Arm Cable Pulldown',  muscleGroup: 'Back',       equipment: 'Cable'      },
-  { name: 'Reverse Pec Dec',              muscleGroup: 'Back',       equipment: 'Machine'    },
+  { name: 'Reverse Pec Dec',              muscleGroup: 'Back',       equipment: 'Selectorized Machine' },
   { name: 'Face Pulls',                   muscleGroup: 'Back',       equipment: 'Cable'      },
   { name: 'T-Bar Row',                    muscleGroup: 'Back',       equipment: 'Barbell'    },
 
@@ -49,17 +57,17 @@ export const EXERCISE_LIBRARY = [
 
   // Quads
   { name: 'Squat',                        muscleGroup: 'Quads',      equipment: 'Barbell'    },
-  { name: 'Squats or Smith Machine Squat',muscleGroup: 'Quads',      equipment: 'Machine'    },
-  { name: 'Hack Squats',                  muscleGroup: 'Quads',      equipment: 'Machine'    },
-  { name: 'Leg Press',                    muscleGroup: 'Quads',      equipment: 'Machine'    },
-  { name: 'Belt Squat',                   muscleGroup: 'Quads',      equipment: 'Machine'    },
-  { name: 'Leg Extensions',               muscleGroup: 'Quads',      equipment: 'Machine'    },
+  { name: 'Squats or Smith Machine Squat',muscleGroup: 'Quads',      equipment: 'Plate-loaded Machine' },
+  { name: 'Hack Squats',                  muscleGroup: 'Quads',      equipment: 'Plate-loaded Machine' },
+  { name: 'Leg Press',                    muscleGroup: 'Quads',      equipment: 'Plate-loaded Machine' },
+  { name: 'Belt Squat',                   muscleGroup: 'Quads',      equipment: 'Plate-loaded Machine' },
+  { name: 'Leg Extensions',               muscleGroup: 'Quads',      equipment: 'Selectorized Machine' },
   { name: 'Lunges',                       muscleGroup: 'Quads',      equipment: 'Dumbbell'   },
 
   // Hamstrings
-  { name: 'Leg Curls',                    muscleGroup: 'Hamstrings', equipment: 'Machine'    },
-  { name: 'Seated Leg Curl',              muscleGroup: 'Hamstrings', equipment: 'Machine'    },
-  { name: 'Lying Leg Curl',               muscleGroup: 'Hamstrings', equipment: 'Machine'    },
+  { name: 'Leg Curls',                    muscleGroup: 'Hamstrings', equipment: 'Selectorized Machine' },
+  { name: 'Seated Leg Curl',              muscleGroup: 'Hamstrings', equipment: 'Selectorized Machine' },
+  { name: 'Lying Leg Curl',               muscleGroup: 'Hamstrings', equipment: 'Selectorized Machine' },
   { name: 'DB Romanian Deadlifts',        muscleGroup: 'Hamstrings', equipment: 'Dumbbell'   },
   { name: 'Romanian Deadlift',            muscleGroup: 'Hamstrings', equipment: 'Barbell'    },
   { name: 'Sumo Deadlift',                muscleGroup: 'Hamstrings', equipment: 'Barbell'    },
@@ -70,8 +78,8 @@ export const EXERCISE_LIBRARY = [
   { name: 'Glute Bridge',                 muscleGroup: 'Glutes',     equipment: 'Bodyweight' },
   { name: 'Cable Kickbacks',              muscleGroup: 'Glutes',     equipment: 'Cable'      },
   { name: 'Bulgarian Split Squat',        muscleGroup: 'Glutes',     equipment: 'Dumbbell'   },
-  { name: 'Adductors',                    muscleGroup: 'Glutes',     equipment: 'Machine'    },
-  { name: 'Abductors',                    muscleGroup: 'Glutes',     equipment: 'Machine'    },
+  { name: 'Adductors',                    muscleGroup: 'Glutes',     equipment: 'Selectorized Machine' },
+  { name: 'Abductors',                    muscleGroup: 'Glutes',     equipment: 'Selectorized Machine' },
   { name: 'Step-ups',                     muscleGroup: 'Glutes',     equipment: 'Dumbbell'   },
 
   // Biceps
@@ -105,10 +113,10 @@ export const EXERCISE_LIBRARY = [
   { name: 'Russian Twist',                muscleGroup: 'Core',       equipment: 'Other'      },
 
   // Calves
-  { name: 'Calf Raises',                  muscleGroup: 'Calves',     equipment: 'Machine'    },
-  { name: 'Standing Calf Raise',          muscleGroup: 'Calves',     equipment: 'Machine'    },
-  { name: 'Seated Calf Raise',            muscleGroup: 'Calves',     equipment: 'Machine'    },
-  { name: 'Donkey Calf Raise',            muscleGroup: 'Calves',     equipment: 'Machine'    },
+  { name: 'Calf Raises',                  muscleGroup: 'Calves',     equipment: 'Selectorized Machine' },
+  { name: 'Standing Calf Raise',          muscleGroup: 'Calves',     equipment: 'Selectorized Machine' },
+  { name: 'Seated Calf Raise',            muscleGroup: 'Calves',     equipment: 'Selectorized Machine' },
+  { name: 'Donkey Calf Raise',            muscleGroup: 'Calves',     equipment: 'Plate-loaded Machine' },
 
   // Forearms
   { name: 'Wrist Curls',                  muscleGroup: 'Forearms',   equipment: 'Barbell'    },
