@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 19, 2026 (Batch 20d — gym CRUD Settings UI, AI coaching step 8 complete, v1 RELEASED)
+> Last updated: April 21, 2026 (Batch 21 — auto-classify of set type reverted, spec §3.8 retracted)
 
 ## Rules for Claude
 
@@ -1375,6 +1375,23 @@ Three targeted fixes in the workout editor sheet after live-feedback on Batch 18
 
 338. **Build.** `npx vite build --outDir /tmp/test-build` → tiny bump for the new modal component + moveExerciseToSection helper.
 
+### Batch 21 (April 21, 2026) — Revert auto-classify of set type (spec §3.8 retracted)
+
+User report: with `Default first set = Working`, set 1 correctly opens as "Work" but subsequent sets silently appear as "Warm". The setting read path (`firstSetType` at `BbLogger.jsx:784`) and `addSet` logic are correct — set 2 is born with `type: 'working'`. Root cause was the auto-classify block shipped in Batch 16p (#195, spec §3.8), which silently reclassified any non-drop set's type on weight entry: `<60% of recent top e1RM → warmup`, `>80% → working`, middle band kept the current type. Spec §3.8 is retracted after user review.
+
+Rationale for full removal (both branches, not just the demotion):
+
+1. **Warmups are temporal, not weight-based.** A lower-weight set following a working set is a back-off, AMRAP finisher, or deload — never a warmup. Warmups come first. The auto-classify judged each weight entry in isolation and ignored training structure.
+2. **It poisoned the recommender.** `getExerciseHistory` in `helpers.js` deliberately excludes warmups when computing the per-session top set. A set that should have been 'working' but got silently demoted to 'warmup' was then silently removed from the recommender's e1RM history, skewing the trend fit, the confidence %, and the prescription.
+3. **Silent override violates the "make AI inferences visible" principle.** Users got no toast, no highlight, no undo affordance.
+
+373. **Removed auto-classify block entirely** (`src/pages/log/BbLogger.jsx`, previously at lines 839–852). Both directions — `<60% → warmup` demotion AND `>80% → working` promotion. `updateSet` now mutates only the drop-set branch; a set's type only ever changes via explicit Warm/Work/Drop tap or the first-set `firstSetType` seed at creation time.
+374. **Removed `recHistoryRef` + its assignment** (`src/pages/log/BbLogger.jsx`). The ref was introduced in 16p solely to let `updateSet`'s closure read the latest `recHistory` without a TDZ error. With the auto-classify block gone, nothing consumed the ref. Three call sites deleted (declaration at `:791`, the auto-classify block, and the assignment at `:970`). `recHistory` itself still powers the RecommendationSheet / AnomalyBanner / sparkline paths unchanged — only the closure-read pathway is gone.
+375. **No schema, migration, or settings changes.** Zustand persist version stays at 4. `settings.defaultFirstSetType` keeps its first-set-only semantic (the setting's name accurately reflects its scope — `addSet` at `:808–827` hardcodes `'working'` for set 2+). Historical sessions' saved `type` values are untouched; only new weight entries no longer silently reclassify.
+376. **Build.** `npx vite build --outDir /tmp/test-build` → 748.25 KB bundle / 201.99 KB gzipped (−0.36 KB vs 20d, all in the deleted block + ref + comments).
+
+Post-v1 roadmap follow-up per user: **drop-set bundling.** User observed that drop sets should be modeled as continuations of the preceding working set, not standalone rows. A working set at 185×10 followed by two drops to 135×8 and 95×6 is conceptually ONE logical set with two drop stages, not three. Significant data-model change affecting storage shape, BbLogger UI, volume / PR calculations (`getExercisePRs`, `isSetPR`, `perSideLoad`), history display, session comparison, share card, recommender input (`getExerciseHistory` top-set logic), and a new persist migration. Deserves its own plan pass — added to the Post-v1 roadmap below.
+
 ---
 
 ## Where to Go From Here
@@ -1388,6 +1405,7 @@ All 8 steps of the AI Coaching Recommender v1 plan plus §3.8 auto-classify plus
 - **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI. Trivial engine work, interesting UI work.
 - **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in.
 - **Anomaly detector refinements**: the three v1 detectors use conservative thresholds. Possible tunings once we have real usage signal: (a) per-exercise threshold (compound vs isolation expect different variance), (b) grade-aware plateau (a flat trend with consistent A grades is different from a flat trend with consistent C grades), (c) tighter swing-detector integration with Batch 19's equipment instance — scoping already naturally suppresses cross-machine swings once enough data accumulates, but an explicit "just switched machines" reasoning pass could be layered on.
+- **Drop-set bundling** (flagged Batch 21): model drop sets as continuations of the preceding working set rather than standalone rows. Ripples across session storage, logger UI, volume / PR / recommender calcs, history display, and a persist migration. Next planned investigation.
 - **§8.x tracks** (visual goals, coaching commentary, coach marketplace, macro/nutrition, learned readiness model): out of v1 scope entirely.
 
 ### Recommended sequencing
