@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 22 — drop-set bundling data layer + v5 migration)
+> Last updated: April 21, 2026 (Batch 23 — BbLogger bundled-set rendering + handlers)
 
 ## Rules for Claude
 
@@ -1418,6 +1418,43 @@ User-locked decisions for this change:
 383. **No UI changes this batch.** BbLogger still renders flat rows, ghost rows stay flat, History/ShareCard/Progress still show flat drops. Sessions saved post-Batch-22 through the pre-update BbLogger would continue to write flat drops until Batch 23's buildExerciseData rewrite. This is why Batches 22 + 23 + 24 ship as one merge — the intermediate state where persisted data is bundled but new writes are flat would create visible drift. Feature branch `claude/drop-set-bundling` holds all three commits for a single fast-forward merge.
 
 384. **Build.** `npx vite build --outDir /tmp/test-build` → 749.82 KB bundle / 202.36 KB gzipped (+1.57 KB / +0.25 KB vs Batch 21 — all in the new migration function).
+
+### Batch 23 (April 21, 2026) — BbLogger bundled-set rendering + handlers
+
+Second of three drop-set-bundling batches. The session logger now renders the bundled data shape end-to-end: each top-level `warmup` or `working` set is the primary row, and any working set's `drops[]` renders as compact orange-tinted indented stages beneath, with a "+ Drop stage" CTA that creates a new drop inside the parent. Still in feature branch `claude/drop-set-bundling` alongside Batch 22 + the upcoming Batch 24 — the three commit as one merge to main so users never see a mid-refactor state.
+
+385. **Row-level type cycler drops the 'drop' option** (`BbLogger.jsx` `SET_TYPES` + `SetTypeBtn`). The cycler now steps warmup ↔ working only. Drop is no longer a type the user can produce via the chip — it's an action (+ Drop stage), not a state. Legacy `type:'drop'` values still render defensively as orange "Drop" chips and cycle back to working so a user can escape the state, but post-v5-migration no top-level set has that type anyway. New `disabled` prop on `SetTypeBtn` greys the button with a "Remove drop stages to change type" tooltip (decision 5 — retype-with-drops is blocked).
+
+386. **`DropStageRow` component (`BbLogger.jsx`, below `SetRow`).** Compact weight/reps row for each drop stage nested inside a working's `drops[]`. "↳ Drop" label on the left (orange-tinted, same `w-14` as `SetTypeBtn` so column widths align with the primary). Weight input (`w-20`) + reps input (`w-16`) + × remove button. No type cycler, no PR trophy (decision 3), no plate-mode path (decision — drops are direct-weight entries even when the parent is plate-loaded). Numpad integration uses `weight-drop-{ex}-{i}-{j}` / `reps-drop-{ex}-{i}-{j}` field keys so focus state doesn't collide with primary row fields.
+
+387. **Drop-stage handlers (`BbLogger.jsx`).** Three new actions on `ExerciseItem`:
+    - `addDropStage(parentIdx)` — appends `{reps:'', weight:''}` to `parent.drops[]`. No-op unless parent is a working set.
+    - `updateDropStage(parentIdx, dropIdx, newDrop)` — strips any `type` / `isNewPR` / `plates` / `barWeight` / `plateMultiplier` fields the caller sends (defensive — drops don't carry those).
+    - `deleteDropStage(parentIdx, dropIdx)` — removes the stage; if the parent's `drops[]` empties out, the field is deleted entirely so the serialized shape stays minimal.
+    `deleteSet` also gets a native-confirm guard: deleting a working primary with ≥1 drop stage prompts `"Delete this set and its N drop stage(s)?"` to prevent silent data loss. Warmups and empty workings delete silently.
+
+388. **`addSet` semantics cleaned up** (`BbLogger.jsx`). The pre-Batch-23 branch `lastSet?.type === 'drop' ? 'drop' : …` is gone — `addSet` now creates only warmup or working primaries, never drops. If the previous set was a warmup, the new set is also a warmup (user is still in their warmup sequence); otherwise it's working. Maintains the existing "first set honors `settings.defaultFirstSetType`" behavior from Batch 1.
+
+389. **`updateSet` simplified.** The drop-set plate-clearing branch (previously `if (newSet.type === 'drop' && oldSet.type !== 'drop')`) is removed. Under the bundled model, you never cycle into 'drop' via the type button (drops come from the "+ Drop stage" CTA, which creates a plateless nested entry directly). Clean straight-through updater now.
+
+390. **Exercise set rendering loop rewritten** (`BbLogger.jsx` ExerciseItem). Replaces the flat `.map(set, i)` with a per-set block that renders:
+    - Primary row via `SetRow` / `PlateSetRow` (for warmup or working).
+    - If the primary is working + has `drops[]`: an indented block (`ml-3 pl-3 border-l-2 border-orange-500/40`) of `DropStageRow`s beneath.
+    - If the primary is working AND has weight + reps filled: a dashed-border `+ Drop stage` button (indented to match the drop block).
+    The CTA gate prevents orphan drops attached to blank parents (decision 4). `cyclerDisabled` prop is threaded into `SetRow` / `PlateSetRow` when the working has drops, so the Warm/Work chip can't flip while drops are attached (decision 5).
+
+391. **`buildExerciseData` emits the bundled shape** (`BbLogger.jsx`). Serializes each top-level set with `type` / `reps` / `weight` / `rawWeight` / `isNewPR` as before, plus a new `drops: [...]` array when the working has nested stages. Each saved drop stage carries `reps` + `weight` + `rawWeight` (unilateral exercises correctly double the per-side drop load too, matching primary behavior) — but NO `type`, NO `isNewPR`, NO `plates`. `isNewPR` on primaries is gated to `type === 'working'` only (decision 3); warmups and any legacy drops never light up as PRs.
+
+392. **Aggregation updates inside BbLogger.**
+    - Session-comparison per-exercise volume (`exerciseVolume`) descends into `set.drops[]` alongside the primary (decision 2).
+    - Share card `totalVolume` walks primary + nested drops.
+    - Share card `totalSets` filters to `type === 'working'` (decision 1).
+    - Finish-modal `loggedSets` counter tracks only filled working primaries.
+    - `hasPR` / per-set trophy guards (`SetRow`, `PlateSetRow`) require `type === 'working'` before calling `isSetPR` (decision 3) — previously a warmup with a heavy weight could trip the trophy on first-ever logs (`maxWeight===0 → return true` branch in `isSetPR`).
+
+393. **Ghost rows still render flat.** `PrevSetRow` in BbLogger (the "Last Time" block) and History / Share Card / Dashboard preview still iterate past sessions' top-level `sets[]` only — drop stages from prior sessions are invisible until Batch 24 rewrites those render paths. Batch 24 adds the condensed `185×10 → 135×8 → 95×6` chain format to `PrevSetRow` + the bundled rendering in History session detail + Share Card's exercise list. All three batches merge together so the user never sees this gap on main.
+
+394. **Build.** `npx vite build --outDir /tmp/test-build` → 754.45 KB bundle / 203.45 KB gzipped (+4.63 KB / +1.09 KB vs Batch 22 — all in the `DropStageRow` component, drop-stage handlers, bundled rendering loop, and the `cyclerDisabled` / `drops` serialization paths).
 
 ---
 

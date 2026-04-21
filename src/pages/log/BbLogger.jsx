@@ -72,16 +72,25 @@ function ClipGraphic() {
 }
 
 // ── Set type toggle ────────────────────────────────────────────────────────────
-
+// Batch 23: cycler produces only 'warmup' and 'working'. Drop is no longer a
+// user-selectable type at the row level — drops are added via "+ Drop stage"
+// inside a working set's bundled card (decision 4). Legacy 'drop' values
+// still render defensively as orange "Drop" chips but can't be cycled to from
+// the UI; post-v5-migration no top-level set.type is 'drop' anyway.
 const SET_TYPES = [
   { id: 'working', label: 'Work' },
-  { id: 'drop',    label: 'Drop' },
   { id: 'warmup',  label: 'Warm' },
 ]
 
-function SetTypeBtn({ value, onChange, theme }) {
-  const current = SET_TYPES.find(t => t.id === value) || SET_TYPES[0]
-  const next    = SET_TYPES[(SET_TYPES.indexOf(current) + 1) % SET_TYPES.length]
+function SetTypeBtn({ value, onChange, theme, disabled = false }) {
+  const legacyDrop = value === 'drop'
+  const current = legacyDrop
+    ? { id: 'drop', label: 'Drop' }
+    : (SET_TYPES.find(t => t.id === value) || SET_TYPES[0])
+  // Cycler steps through SET_TYPES (warmup ↔ working). Legacy drops cycle
+  // back to working so a user can escape the defensive state.
+  const currentIdx = legacyDrop ? 0 : SET_TYPES.indexOf(current)
+  const next    = SET_TYPES[(currentIdx + 1) % SET_TYPES.length]
   const color      = current.id === 'working' ? `${theme.bg} text-white`
                    : current.id === 'warmup'  ? 'bg-amber-500 text-white'
                    : 'bg-orange-500 text-white'
@@ -89,8 +98,10 @@ function SetTypeBtn({ value, onChange, theme }) {
   return (
     <button
       type="button"
-      onClick={() => onChange(next.id)}
-      className={`w-14 h-10 rounded-lg text-xs font-bold shrink-0 transition-colors ${color}`}
+      onClick={() => { if (!disabled) onChange(next.id) }}
+      disabled={disabled}
+      title={disabled ? 'Remove drop stages to change type' : undefined}
+      className={`w-14 h-10 rounded-lg text-xs font-bold shrink-0 transition-colors ${color} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       style={colorStyle}
     >
       {current.label}
@@ -396,14 +407,15 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false }) {
   const numpadCtx = useContext(NumpadContext)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
   const mult      = plateMultiplier || 2
   const total     = calcTotal(plates, barWeight, mult)
   const r         = parseInt(set.reps) || 0
-  const isPR      = isSetPR(allSessions, exerciseName, total, r)
+  // Batch 23 decision 3: only working primaries can light up the trophy.
+  const isPR      = set.type === 'working' && isSetPR(allSessions, exerciseName, total, r)
 
   // Always-fresh refs so stable callbacks never hold stale closures
   const setRef       = useRef(set)
@@ -459,7 +471,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} />
+        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} />
         <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-sm font-bold min-w-0">
           <span className="text-c-muted text-xs font-normal">Total</span>
           <span>{total} lbs</span>
@@ -575,7 +587,7 @@ function PlatePicker({ plates, addPlate, removePlate, theme }) {
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false }) {
   const numpadCtx    = useContext(NumpadContext)
   const localRepsRef = useRef(null)
 
@@ -659,13 +671,15 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         onAdvance={onAdvance}
         onDone={onDone}
         setIndex={setIndex}
+        cyclerDisabled={cyclerDisabled}
       />
     )
   }
 
   const w    = parseFloat(set.weight) || 0
   const r    = parseInt(set.reps)     || 0
-  const isPR = isSetPR(allSessions, exerciseName, w, r)
+  // Batch 23 decision 3: only working primaries can light up the trophy.
+  const isPR = set.type === 'working' && isSetPR(allSessions, exerciseName, w, r)
 
   const weightFieldKey = `weight-${exerciseName}-${setIndex}`
   const repsFieldKey   = `reps-${exerciseName}-${setIndex}`
@@ -674,7 +688,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
 
   return (
     <div className="flex items-center gap-2">
-      <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} />
+      <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} />
       {/* Weight FIRST */}
       <input
         ref={weightRef}
@@ -723,6 +737,107 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
       <button
         type="button"
         onClick={onDelete}
+        className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+// ── Drop stage row (Batch 23) ──────────────────────────────────────────────
+// Compact weight/reps row for a drop stage nested inside a working set's
+// drops[] array. Differs from SetRow: no type cycler (type is implied by
+// nesting), no PR trophy (decision 3 — drops never qualify as PRs), no
+// plate-mode path (decision — drops are direct-weight entries even when the
+// parent working is plate-loaded). Uses "↳ Drop" as the leading label in
+// place of SetTypeBtn so column widths stay aligned with the primary row.
+
+function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exerciseName }) {
+  const numpadCtx = useContext(NumpadContext)
+
+  const dropRef    = useRef(drop)
+  const onChgRef   = useRef(onChange)
+  dropRef.current  = drop
+  onChgRef.current = onChange
+
+  const handleWeightChange = useCallback((v) => {
+    onChgRef.current({ ...dropRef.current, weight: v })
+  }, [])
+  const handleRepsChange = useCallback((v) => {
+    onChgRef.current({ ...dropRef.current, reps: v })
+  }, [])
+
+  const weightFieldKey = `weight-drop-${exerciseName}-${parentIdx}-${dropIdx}`
+  const repsFieldKey   = `reps-drop-${exerciseName}-${parentIdx}-${dropIdx}`
+  const isWeightActive = numpadCtx?.numpadConfig?.fieldKey === weightFieldKey
+  const isRepsActive   = numpadCtx?.numpadConfig?.fieldKey === repsFieldKey
+
+  const handleFocusReps = useCallback(() => {
+    numpadCtx?.openNumpad({
+      fieldKey: repsFieldKey,
+      label: 'Reps',
+      isDecimalAllowed: false,
+      initialValue: dropRef.current.reps,
+      onChange: handleRepsChange,
+      themeHex: theme.hex,
+      themeContrastText: theme.contrastText,
+    })
+    // eslint-disable-next-line
+  }, [repsFieldKey, handleRepsChange, theme.hex, theme.contrastText])
+
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="w-14 h-10 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[11px] font-semibold shrink-0 flex items-center justify-center"
+        aria-label="Drop stage"
+      >
+        ↳ Drop
+      </div>
+      <input
+        type="text"
+        inputMode="none"
+        value={drop.weight}
+        onChange={e => onChange({ ...drop, weight: e.target.value })}
+        onFocus={() => numpadCtx?.openNumpad({
+          fieldKey: weightFieldKey,
+          label: 'Weight (lbs)',
+          isDecimalAllowed: true,
+          initialValue: drop.weight,
+          onChange: handleWeightChange,
+          onNext: handleFocusReps,
+          themeHex: theme.hex,
+          themeContrastText: theme.contrastText,
+        })}
+        placeholder="lbs"
+        className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
+        style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
+      />
+      <input
+        type="text"
+        inputMode="none"
+        value={drop.reps}
+        onChange={e => onChange({ ...drop, reps: e.target.value })}
+        onFocus={() => numpadCtx?.openNumpad({
+          fieldKey: repsFieldKey,
+          label: 'Reps',
+          isDecimalAllowed: false,
+          initialValue: drop.reps,
+          onChange: handleRepsChange,
+          themeHex: theme.hex,
+          themeContrastText: theme.contrastText,
+        })}
+        placeholder="reps"
+        className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
+        style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
+      />
+      <span className="flex-1" />
+      <button
+        type="button"
+        onClick={onDelete}
+        aria-label="Remove drop stage"
         className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -802,10 +917,14 @@ function ExerciseItem({
   }, [exercise.sets.length, exercise.plateLoaded])
 
   const addSet = (autoFocus = false) => {
+    // Batch 23: addSet only creates warmup or working primaries — drops are
+    // added per-working via addDropStage. Inherit type from the last set
+    // (typically 'working' after user is past warmups) unless this is the
+    // first set, in which case honor the settings default.
     const lastSet = exercise.sets[exercise.sets.length - 1]
     const prevSet = lastSessionEx?.sets?.[exercise.sets.length]
     const isFirstSet = exercise.sets.length === 0
-    const newType = lastSet?.type === 'drop' ? 'drop' : (isFirstSet ? firstSetType : 'working')
+    const newType = isFirstSet ? firstSetType : (lastSet?.type === 'warmup' ? 'warmup' : 'working')
     const newSet = {
       type:       newType,
       reps:       '',
@@ -824,14 +943,6 @@ function ExerciseItem({
 
   const updateSet = (i, newSet) => {
     const sets = [...exercise.sets]
-    const oldSet = sets[i]
-    if (newSet.type === 'drop' && oldSet.type !== 'drop') {
-      if (exercise.plateLoaded) {
-        // Plate-loaded drop: clear plates, carry barDefault
-        const barWeight = exercise.barDefault ?? 45
-        newSet = { ...newSet, plates: emptyPlates(), barWeight, weight: '' }
-      }
-    }
     sets[i] = newSet
     // Sync barDefault when barWeight changes on a plate-loaded set (avoids stale closure from separate onBarChange call)
     const patch = { ...exercise, sets }
@@ -842,8 +953,57 @@ function ExerciseItem({
   }
 
   const deleteSet = (i) => {
+    const target = exercise.sets[i]
+    const dropCount = Array.isArray(target?.drops) ? target.drops.length : 0
+    // Batch 23 decision 4: if a working set has drop stages attached, confirm
+    // before wiping the whole bundled group. Warmups / empty working delete silently.
+    if (dropCount > 0) {
+      const label = dropCount === 1 ? '1 drop stage' : `${dropCount} drop stages`
+      const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm(`Delete this set and its ${label}?`)
+        : true
+      if (!ok) return
+    }
     const sets = exercise.sets.filter((_, idx) => idx !== i)
     onUpdate({ ...exercise, sets: sets.length ? sets : [{ type: firstSetType, reps: '', weight: '' }] })
+  }
+
+  // Batch 23: drop-stage handlers. Drop stages live inside a working set's
+  // `drops[]` array under the bundled data model. They never carry plates
+  // (decision: drops are direct-weight entries even under plate mode).
+  const addDropStage = (parentIdx) => {
+    const parent = exercise.sets[parentIdx]
+    if (!parent || parent.type !== 'working') return
+    const drops = Array.isArray(parent.drops) ? [...parent.drops] : []
+    drops.push({ reps: '', weight: '' })
+    const sets = [...exercise.sets]
+    sets[parentIdx] = { ...parent, drops }
+    onUpdate({ ...exercise, sets })
+  }
+
+  const updateDropStage = (parentIdx, dropIdx, newDrop) => {
+    const parent = exercise.sets[parentIdx]
+    if (!parent || !Array.isArray(parent.drops)) return
+    const drops = [...parent.drops]
+    // Drops don't carry type / isNewPR / plates — strip anything the caller
+    // might send that doesn't belong on a drop stage.
+    const { type: _t, isNewPR: _p, plates: _pl, barWeight: _bw, plateMultiplier: _pm, ...clean } = newDrop
+    drops[dropIdx] = clean
+    const sets = [...exercise.sets]
+    sets[parentIdx] = { ...parent, drops }
+    onUpdate({ ...exercise, sets })
+  }
+
+  const deleteDropStage = (parentIdx, dropIdx) => {
+    const parent = exercise.sets[parentIdx]
+    if (!parent || !Array.isArray(parent.drops)) return
+    const drops = parent.drops.filter((_, j) => j !== dropIdx)
+    const sets = [...exercise.sets]
+    sets[parentIdx] = drops.length > 0
+      ? { ...parent, drops }
+      // Drop array empty → strip the field entirely so serialized shape stays minimal.
+      : (() => { const { drops: _d, ...rest } = parent; return rest })()
+    onUpdate({ ...exercise, sets })
   }
 
   const markDone = () => {
@@ -868,7 +1028,11 @@ function ExerciseItem({
   }, [])
 
   const exercisePR = getExercisePRs(scopedSessions, exercise.name)
+  // Batch 23 decision 3: PR trophy only lights up for working primaries.
+  // Warmups and drop stages never qualify as PRs even if their weight
+  // numerically beats history.
   const hasPR = scopedSessions.length > 0 && exercise.sets.some(s =>
+    s.type === 'working' &&
     isSetPR(scopedSessions, exercise.name, parseFloat(s.weight) || 0, parseInt(s.reps) || 0)
   )
 
@@ -1320,35 +1484,84 @@ function ExerciseItem({
             </>
           )}
 
-          {/* Active set rows */}
-          {exercise.sets.map((set, i) => (
-            <div key={i} className={set.type === 'drop' ? 'pl-2 border-l-2 border-orange-500/50 rounded-sm' : ''}>
-              <SetRow
-                set={set}
-                exerciseName={exercise.name}
-                allSessions={scopedSessions}
-                onChange={newSet => updateSet(i, newSet)}
-                onDelete={() => deleteSet(i)}
-                theme={theme}
-                plateLoaded={exercise.plateLoaded}
-                plateMultiplier={exercise.plateMultiplier || 2}
-                onToggleMultiplier={() => {
-                  const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
-                  const updatedSets = exercise.sets.map(s => {
-                    if (!s.plates) return s
-                    const newTotal = calcTotal(s.plates, s.barWeight ?? 45, newMult)
-                    return { ...s, weight: String(newTotal), plateMultiplier: newMult }
-                  })
-                  onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
-                }}
-                weightRef={el => { setWeightRefs.current[i] = el }}
-                repsRef={el => { setRepsRefs.current[i] = el }}
-                onAdvance={() => addSet(true)}
-                onDone={stableMarkDone}
-                setIndex={i}
-              />
-            </div>
-          ))}
+          {/* Active set rows (Batch 23 bundled shape) —
+              Each top-level entry is a warmup or working primary. Working
+              primaries with drops[] render their drop stages indented
+              beneath, separated by a subtle orange left border. "+ Drop
+              stage" CTA appears on the working card once the primary has
+              both weight + reps filled in. */}
+          {exercise.sets.map((set, i) => {
+            const isWorking    = set.type === 'working'
+            const drops        = isWorking && Array.isArray(set.drops) ? set.drops : []
+            const hasDrops     = drops.length > 0
+            const primaryW     = parseFloat(set.weight) || 0
+            const primaryR     = parseInt(set.reps)     || 0
+            const primaryReady = isWorking && primaryW > 0 && primaryR > 0
+            const cyclerDisabled = isWorking && hasDrops
+            return (
+              <div key={i} className="space-y-1.5">
+                <SetRow
+                  set={set}
+                  exerciseName={exercise.name}
+                  allSessions={scopedSessions}
+                  onChange={newSet => updateSet(i, newSet)}
+                  onDelete={() => deleteSet(i)}
+                  theme={theme}
+                  plateLoaded={exercise.plateLoaded}
+                  plateMultiplier={exercise.plateMultiplier || 2}
+                  cyclerDisabled={cyclerDisabled}
+                  onToggleMultiplier={() => {
+                    const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
+                    // Batch 23: plate remap only applies to working/warmup
+                    // primaries — drop stages never carry plates.
+                    const updatedSets = exercise.sets.map(s => {
+                      if (!s.plates) return s
+                      const newTotal = calcTotal(s.plates, s.barWeight ?? 45, newMult)
+                      return { ...s, weight: String(newTotal), plateMultiplier: newMult }
+                    })
+                    onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
+                  }}
+                  weightRef={el => { setWeightRefs.current[i] = el }}
+                  repsRef={el => { setRepsRefs.current[i] = el }}
+                  onAdvance={() => addSet(true)}
+                  onDone={stableMarkDone}
+                  setIndex={i}
+                />
+
+                {/* Nested drop stages beneath a working primary. Subtle
+                    vertical accent + indent conveys bundling. */}
+                {isWorking && hasDrops && (
+                  <div className="ml-3 pl-3 border-l-2 border-orange-500/40 space-y-1.5">
+                    {drops.map((drop, j) => (
+                      <DropStageRow
+                        key={j}
+                        drop={drop}
+                        parentIdx={i}
+                        dropIdx={j}
+                        exerciseName={exercise.name}
+                        onChange={d => updateDropStage(i, j, d)}
+                        onDelete={() => deleteDropStage(i, j)}
+                        theme={theme}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* "+ Drop stage" CTA — only on a working set whose primary
+                    has weight + reps filled. Keeps users from creating
+                    orphan drops attached to a blank parent. */}
+                {isWorking && primaryReady && (
+                  <button
+                    type="button"
+                    onClick={() => addDropStage(i)}
+                    className="ml-3 pl-3 py-1.5 text-xs text-orange-400 font-semibold flex items-center gap-1 border-l-2 border-orange-500/40 border-dashed"
+                  >
+                    <span className="text-sm leading-none">+</span> Drop stage
+                  </button>
+                )}
+              </div>
+            )
+          })}
 
           <button
             type="button"
@@ -1627,13 +1840,24 @@ function SessionComparison({ currentExercises, lastSession, theme, onContinue })
   const lastExMap = {}
   lastSession.data.exercises.forEach(ex => { lastExMap[ex.name] = ex })
 
+  // Batch 23: volume walker descends into set.drops[] under the bundled shape
+  // (decision 2 — drop stages contribute to volume). For pre-bundled data the
+  // inner reducer returns 0 and the total matches the flat-shape calc.
+  const exerciseVolume = (ex) =>
+    (ex.sets || []).reduce((t, s) => {
+      const primary = (s.weight || 0) * (s.reps || 0)
+      const drops = Array.isArray(s.drops)
+        ? s.drops.reduce((d, dst) => d + (dst.weight || 0) * (dst.reps || 0), 0)
+        : 0
+      return t + primary + drops
+    }, 0)
   const comparisons = currentExercises
     .filter(ex => ex.sets?.some(s => s.weight > 0 || s.reps > 0))
     .map(ex => {
       const prev = lastExMap[ex.name]
-      const curVol = ex.sets.reduce((t, s) => t + (s.weight || 0) * (s.reps || 0), 0)
+      const curVol = exerciseVolume(ex)
       if (!prev) return { name: ex.name, curVol, prevVol: 0, isNew: true }
-      const prevVol = prev.sets.reduce((t, s) => t + (s.weight || 0) * (s.reps || 0), 0)
+      const prevVol = exerciseVolume(prev)
       return { name: ex.name, curVol, prevVol }
     })
     .filter(c => c.curVol > 0 || c.prevVol > 0)
@@ -2423,10 +2647,35 @@ export default function BbLogger() {
             const rawW = parseFloat(s.weight) || 0
             const w = uni ? rawW * 2 : rawW
             const r = parseInt(s.reps)     || 0
+
+            // Batch 23: serialize nested drop stages under the bundled shape.
+            // Drop stages inherit the exercise's unilateral flag (decision —
+            // a unilateral exercise is unilateral for all its phases), carry
+            // rawWeight + doubled weight just like the primary, but never
+            // have type / isNewPR / plates (decision 3 — drops don't compete
+            // for PRs; spec — drops are direct-weight entries even under
+            // plate mode on the parent).
+            const rawDrops = Array.isArray(s.drops) ? s.drops : []
+            const savedDrops = rawDrops
+              .filter(d => d && (d.reps || d.weight))
+              .map(d => {
+                const dRawW = parseFloat(d.weight) || 0
+                const dW    = uni ? dRawW * 2 : dRawW
+                const dR    = parseInt(d.reps) || 0
+                return { reps: dR, weight: dW, rawWeight: dRawW }
+              })
+
+            // PRs key off working primaries only (decision 3). Warmups
+            // and any legacy top-level 'drop' values never qualify.
+            const isNewPR = s.type === 'working'
+              ? isSetPR(scopedSessions, ex.name, rawW, r)
+              : false
+
             return {
               type: s.type, reps: r, weight: w, rawWeight: rawW,
-              isNewPR: isSetPR(scopedSessions, ex.name, rawW, r),
+              isNewPR,
               ...(s.plates ? { plates: s.plates, barWeight: s.barWeight } : {}),
+              ...(savedDrops.length ? { drops: savedDrops } : {}),
             }
           }),
         }
@@ -2591,11 +2840,24 @@ export default function BbLogger() {
       })
     }
 
-    // Build share card summary
+    // Build share card summary.
+    // Batch 23 decisions:
+    //   (1) Set count = working primaries only — drops are nested and don't
+    //       inflate the count.
+    //   (2) Volume walks primary + nested drops.
+    //   (3) PRs key off working primaries only — drops never carry isNewPR.
     const totalVolume = exerciseData.reduce((t, ex) =>
-      t + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0), 0)
-    const totalSets = exerciseData.reduce((t, ex) => t + ex.sets.length, 0)
-    const totalPRs  = exerciseData.reduce((t, ex) => t + ex.sets.filter(s => s.isNewPR).length, 0)
+      t + ex.sets.reduce((s, set) => {
+        const primary = set.reps * set.weight
+        const drops = Array.isArray(set.drops)
+          ? set.drops.reduce((d, dst) => d + (dst.reps || 0) * (dst.weight || 0), 0)
+          : 0
+        return s + primary + drops
+      }, 0), 0)
+    const totalSets = exerciseData.reduce((t, ex) =>
+      t + ex.sets.filter(s => s.type === 'working').length, 0)
+    const totalPRs  = exerciseData.reduce((t, ex) =>
+      t + ex.sets.filter(s => s.isNewPR).length, 0)
     const exerciseSummary = [...exerciseData]
       .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0))
       .map(ex => ({
@@ -2671,7 +2933,10 @@ export default function BbLogger() {
 
   // ── Render helpers ───────────────────────────────────────────────────────
 
-  const loggedSets    = exercises.reduce((t, ex) => t + ex.sets.filter(s => s.reps || s.weight).length, 0)
+  // Batch 23 decision 1: logged-sets count tracks working primaries only
+  // (warmups and nested drops don't inflate the visible count).
+  const loggedSets    = exercises.reduce((t, ex) =>
+    t + ex.sets.filter(s => s.type === 'working' && (s.reps || s.weight)).length, 0)
   const completedExes = exercises.filter(ex => ex.done).sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0))
   const pendingExes   = exercises.filter(ex => !ex.done)
 
