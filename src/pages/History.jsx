@@ -160,10 +160,19 @@ function CalendarHeatmap({ sessions, onSelectSession, themeHex, backgroundTheme 
 
 function buildShareData(session, settings, theme, splits, attachedCardio, sessions, activeSplitId, cardioSessions, restDaySessions) {
   const exercises = session.data?.exercises || []
+  // Batch 24 decisions: volume includes drops (decision 2), set count is
+  // working primaries only (decision 1), PRs already working-only since
+  // drops don't carry isNewPR under the bundled shape (decision 3).
   const totalVolume = exercises.reduce((t, ex) =>
-    t + ex.sets.reduce((s, set) => s + (set.reps || 0) * (set.weight || 0), 0), 0)
+    t + ex.sets.reduce((s, set) => {
+      const primary = (set.reps || 0) * (set.weight || 0)
+      const drops = Array.isArray(set.drops)
+        ? set.drops.reduce((d, dst) => d + (dst.reps || 0) * (dst.weight || 0), 0)
+        : 0
+      return s + primary + drops
+    }, 0), 0)
   const totalSets = exercises.reduce((t, ex) =>
-    t + ex.sets.filter(s => s.reps || s.weight).length, 0)
+    t + ex.sets.filter(s => s.type === 'working' && (s.reps || s.weight)).length, 0)
   const totalPRs = exercises.reduce((t, ex) =>
     t + ex.sets.filter(s => s.isNewPR).length, 0)
   const exerciseSummary = [...exercises]
@@ -317,19 +326,32 @@ function SessionDetail({ session, onClose, onDelete }) {
                 <div key={i} className="bg-item-dim rounded-2xl p-3">
                   <p className="font-semibold mb-2">{ex.name}</p>
                   <div className="space-y-1">
-                    {ex.sets.map((s, si) => (
-                      <div key={si} className="flex items-center gap-2 text-sm text-c-secondary">
-                        <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                          s.type === 'warmup' ? 'bg-amber-500/30 text-amber-400'
-                          : s.type === 'drop' ? 'bg-orange-500/30 text-orange-400'
-                          : 'bg-blue-500/30 text-blue-400'
-                        }`}>
-                          {s.type === 'warmup' ? 'Warm' : s.type === 'drop' ? 'Drop' : 'Work'}
-                        </span>
-                        <span>{s.reps} reps × {s.weight} lbs</span>
-                        {s.isNewPR && <span className="text-amber-400 text-xs">🏆 PR</span>}
-                      </div>
-                    ))}
+                    {ex.sets.map((s, si) => {
+                      // Batch 24: render bundled drops as an indented chain
+                      // beneath the working primary so the "one logical set"
+                      // framing reads clearly in historical detail.
+                      const drops = Array.isArray(s.drops) ? s.drops : []
+                      return (
+                        <div key={si}>
+                          <div className="flex items-center gap-2 text-sm text-c-secondary">
+                            <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
+                              s.type === 'warmup' ? 'bg-amber-500/30 text-amber-400'
+                              : s.type === 'drop' ? 'bg-orange-500/30 text-orange-400'
+                              : 'bg-blue-500/30 text-blue-400'
+                            }`}>
+                              {s.type === 'warmup' ? 'Warm' : s.type === 'drop' ? 'Drop' : 'Work'}
+                            </span>
+                            <span>{s.reps} reps × {s.weight} lbs</span>
+                            {s.isNewPR && <span className="text-amber-400 text-xs">🏆 PR</span>}
+                          </div>
+                          {drops.length > 0 && (
+                            <div className="ml-[54px] mt-0.5 text-xs text-orange-400/80 font-semibold">
+                              ↳ {drops.map(d => `${d.weight}×${d.reps}`).join(' → ')}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                   {ex.notes && <p className="text-xs text-c-muted mt-2 italic">{ex.notes}</p>}
                 </div>
@@ -490,7 +512,9 @@ function SessionCard({ session, onClick, splits }) {
   const d    = session.data || {}
   const name  = resolveWorkoutName(session.type, splits)
   const emoji = resolveWorkoutEmoji(session.type, splits)
-  const setCount = d.exercises?.reduce((t, e) => t + e.sets.filter(s => s.reps).length, 0) || 0
+  // Batch 24 decision 1: session-card set count is working primaries only.
+  const setCount = d.exercises?.reduce((t, e) =>
+    t + e.sets.filter(s => s.type === 'working' && s.reps).length, 0) || 0
   const hasPR = d.exercises?.some(e => e.sets.some(s => s.isNewPR))
   const dateLabel = new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 

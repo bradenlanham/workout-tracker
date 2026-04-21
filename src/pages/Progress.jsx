@@ -40,12 +40,24 @@ function getWeekBounds(weeksAgo) {
 }
 
 function sessionVolume(s) {
+  // Batch 24 decision 2: walk primary + set.drops[] so bundled-shape volume
+  // matches pre-bundling totals. For pre-v5 data, set.drops is undefined and
+  // the inner reducer returns 0 (same number either way).
   return (s.data?.exercises || []).reduce((t, ex) =>
-    t + ex.sets.reduce((st, set) => st + (set.reps || 0) * (set.weight || 0), 0), 0)
+    t + ex.sets.reduce((st, set) => {
+      const primary = (set.reps || 0) * (set.weight || 0)
+      const drops = Array.isArray(set.drops)
+        ? set.drops.reduce((d, dst) => d + (dst.reps || 0) * (dst.weight || 0), 0)
+        : 0
+      return st + primary + drops
+    }, 0), 0)
 }
 
 function sessionSetCount(s) {
-  return (s.data?.exercises || []).reduce((t, ex) => t + ex.sets.length, 0)
+  // Batch 24 decision 1: working primaries only — warmups and nested drops
+  // don't inflate the count.
+  return (s.data?.exercises || []).reduce((t, ex) =>
+    t + (ex.sets || []).filter(st => st.type === 'working').length, 0)
 }
 
 function getTypeName(type, splits) {
@@ -260,7 +272,14 @@ function RadarChart({ sessions, accentHex }) {
       (s.data?.exercises || []).forEach(ex => {
         const g = getMuscleGroup(ex.name)
         if (g in vols) {
-          vols[g] += ex.sets.reduce((t, set) => t + (set.reps || 0) * (set.weight || 0), 0)
+          // Batch 24 decision 2: drops contribute to muscle-group volume.
+          vols[g] += ex.sets.reduce((t, set) => {
+            const primary = (set.reps || 0) * (set.weight || 0)
+            const drops = Array.isArray(set.drops)
+              ? set.drops.reduce((d, dst) => d + (dst.reps || 0) * (dst.weight || 0), 0)
+              : 0
+            return t + primary + drops
+          }, 0)
         }
       })
     )

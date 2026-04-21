@@ -309,7 +309,12 @@ export default function Dashboard() {
       .reduce((total, s) => {
         return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
           return exTotal + (ex.sets || []).reduce((setTotal, set) => {
-            return setTotal + ((set.weight || 0) * (set.reps || 0))
+            // Batch 24 decision 2: include nested drop stages in volume.
+            const primary = (set.weight || 0) * (set.reps || 0)
+            const drops = Array.isArray(set.drops)
+              ? set.drops.reduce((d, dst) => d + (dst.weight || 0) * (dst.reps || 0), 0)
+              : 0
+            return setTotal + primary + drops
           }, 0)
         }, 0)
       }, 0)
@@ -355,7 +360,12 @@ export default function Dashboard() {
   const totalVolume = sessions.reduce((total, s) => {
     return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
       return exTotal + (ex.sets || []).reduce((setTotal, set) => {
-        return setTotal + ((set.weight || 0) * (set.reps || 0))
+        // Batch 24 decision 2: include nested drop stages in total volume.
+        const primary = (set.weight || 0) * (set.reps || 0)
+        const drops = Array.isArray(set.drops)
+          ? set.drops.reduce((d, dst) => d + (dst.weight || 0) * (dst.reps || 0), 0)
+          : 0
+        return setTotal + primary + drops
       }, 0)
     }, 0)
   }, 0)

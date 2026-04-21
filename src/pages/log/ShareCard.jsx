@@ -364,9 +364,11 @@ export default function ShareCard({ data, onDone, sessionId, onUpdateSession, in
   }))
   const overflow = (exerciseSummary?.length || 0) - MAX_EX
 
-  // Total working + drop sets for the stat bar
+  // Batch 24 decision 1: share card "SETS" stat counts working primaries
+  // only. Drop stages are nested inside working.drops[] and don't inflate
+  // the count.
   const workingSetCount = (exerciseSummary || []).reduce(
-    (sum, ex) => sum + (ex.sets || []).filter(s => s.type === 'working' || s.type === 'drop').length,
+    (sum, ex) => sum + (ex.sets || []).filter(s => s.type === 'working').length,
     0,
   )
 

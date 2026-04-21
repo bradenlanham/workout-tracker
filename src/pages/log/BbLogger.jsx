@@ -378,29 +378,48 @@ function EquipmentInstancePopover({
 
 function PrevSetRow({ set }) {
   const plateText = set.plates ? formatPlateBreakdown(set.plates) : null
+  // Batch 24: render a bundled working set's drop stages as a condensed
+  // `↳ 135×8 → 95×6` chain beneath the primary row. Working-without-drops
+  // and warmups render as before. Legacy `type:'drop'` top-level entries
+  // (shouldn't exist post-v5 migration) still get a defensive "Drop" label.
+  const drops = set.type === 'working' && Array.isArray(set.drops) ? set.drops : []
+  const dropChain = drops
+    .map(d => {
+      const w = d.rawWeight ?? d.weight ?? ''
+      const r = d.reps ?? ''
+      return `${w}×${r}`
+    })
+    .join(' → ')
   return (
-    <div className="flex items-center gap-2 opacity-35 pointer-events-none select-none">
-      <div className="w-14 h-9 rounded-lg bg-item text-c-dim text-xs font-bold flex items-center justify-center shrink-0">
-        {set.type === 'warmup' ? 'Warm' : set.type === 'drop' ? 'Drop' : 'Work'}
-      </div>
-      {plateText ? (
-        <div className="flex-1 h-9 rounded-lg bg-item text-c-dim text-xs font-semibold flex items-center justify-center gap-1 px-2">
-          <span>{plateText}</span>
-          <span className="opacity-50">=</span>
-          <span>{set.rawWeight ?? set.weight}</span>
+    <div className="opacity-35 pointer-events-none select-none">
+      <div className="flex items-center gap-2">
+        <div className="w-14 h-9 rounded-lg bg-item text-c-dim text-xs font-bold flex items-center justify-center shrink-0">
+          {set.type === 'warmup' ? 'Warm' : set.type === 'drop' ? 'Drop' : 'Work'}
         </div>
-      ) : (
-        <div className="w-20 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
-          {(set.rawWeight ?? set.weight) ? `${set.rawWeight ?? set.weight}` : '—'}
+        {plateText ? (
+          <div className="flex-1 h-9 rounded-lg bg-item text-c-dim text-xs font-semibold flex items-center justify-center gap-1 px-2">
+            <span>{plateText}</span>
+            <span className="opacity-50">=</span>
+            <span>{set.rawWeight ?? set.weight}</span>
+          </div>
+        ) : (
+          <div className="w-20 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center">
+            {(set.rawWeight ?? set.weight) ? `${set.rawWeight ?? set.weight}` : '—'}
+          </div>
+        )}
+        <div className="w-16 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center shrink-0">
+          {set.reps || '—'}
+        </div>
+        <div className="flex-1 text-center text-sm">
+          {set.isNewPR ? '🏆' : ''}
+        </div>
+        <div className="w-8 shrink-0" />
+      </div>
+      {dropChain && (
+        <div className="ml-[64px] mt-0.5 text-[11px] text-orange-400 font-semibold truncate">
+          ↳ {dropChain}
         </div>
       )}
-      <div className="w-16 h-9 rounded-lg bg-item text-c-dim text-sm font-semibold flex items-center justify-center shrink-0">
-        {set.reps || '—'}
-      </div>
-      <div className="flex-1 text-center text-sm">
-        {set.isNewPR ? '🏆' : ''}
-      </div>
-      <div className="w-8 shrink-0" />
     </div>
   )
 }

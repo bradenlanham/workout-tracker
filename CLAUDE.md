@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 23 — BbLogger bundled-set rendering + handlers)
+> Last updated: April 21, 2026 (Batch 24 — drop-set bundling complete across display surfaces)
 
 ## Rules for Claude
 
@@ -1456,6 +1456,40 @@ Second of three drop-set-bundling batches. The session logger now renders the bu
 
 394. **Build.** `npx vite build --outDir /tmp/test-build` → 754.45 KB bundle / 203.45 KB gzipped (+4.63 KB / +1.09 KB vs Batch 22 — all in the `DropStageRow` component, drop-stage handlers, bundled rendering loop, and the `cyclerDisabled` / `drops` serialization paths).
 
+### Batch 24 (April 21, 2026) — Drop-set bundling: display surfaces (ghost rows, History, ShareCard, Progress, Dashboard)
+
+Third and final drop-set-bundling batch. Every read-only surface that renders past-session data now understands the bundled shape: the BbLogger "Last Time" ghost row shows drops as a condensed `→`-chained line beneath the primary, History's session-detail modal indents drop stages under each working set, and Share Card / Progress / Dashboard aggregates walk nested drops for volume while counting working primaries only for set displays. All three batches land as a single fast-forward merge to main so users never see a pre-Batch-24 intermediate where persisted data is bundled but display surfaces still expect flat shape.
+
+395. **`PrevSetRow` chain format (`BbLogger.jsx`).** Ghost row now renders the bundled shape natively: the primary row layout is unchanged, but a working-with-drops entry gets a second line beneath — `↳ 135×8 → 95×6` in orange, indented to align with the weight column, truncated at viewport edge. Drops use `rawWeight ?? weight` so unilateral exercises display per-side numbers. Warmups and working-without-drops render as before. Legacy `type:'drop'` top-level entries (defensive — shouldn't exist post-migration) still get a "Drop" chip and no chain.
+
+396. **History session-detail bundled rendering (`History.jsx`).** The per-exercise set list at `:320` now renders each top-level set as today (type chip + `N reps × W lbs` + PR trophy), but adds an indented `↳ {w}×{r} → {w}×{r}` chain in orange beneath any working set with drops. `ml-[54px]` aligns the chain with the reps column so primary + drops read as one logical group. Empty `drops[]` falls through to nothing rendered — pre-bundled sessions look identical to before.
+
+397. **`buildShareData` aggregations (`History.jsx`).** `totalVolume` walks primary + nested drops (decision 2). `totalSets` filters to `type === 'working' && (reps || weight)` (decision 1). `totalPRs` is unchanged since drops don't carry `isNewPR` under the bundled shape (decision 3 — naturally working-only via the data model). Session-card `setCount` at `:493` similarly filters to working primaries.
+
+398. **ShareCard `workingSetCount` (`ShareCard.jsx:368`).** Old filter was `type === 'working' || type === 'drop'` (flat-shape counting). New filter is `type === 'working'` — drops nested inside primaries don't contribute to the stat bar's SETS tile. `getTopSet` at `:121` was already working-only from pre-Batch-22; no change needed.
+
+399. **Progress aggregations (`Progress.jsx`).**
+    - `sessionVolume` descends into `set.drops[]` for the bar chart.
+    - `sessionSetCount` filters to `type === 'working'` (previously `ex.sets.length` — which under bundled shape correctly excludes drops since they're nested, but also counted warmups; working-only matches the decision 1 rule).
+    - Radar-chart muscle-group volume at `:263` includes drops.
+    - `PRTimeline` walker at `:355` unchanged — iterates top-level sets and filters `set.isNewPR`, which under bundled shape is always on a working primary.
+
+400. **Dashboard volume calcs (`Dashboard.jsx`).** Both `getWeekVolume` (weekly stat card) and `totalVolume` (all-time total volume stat card) descend into `set.drops[]` so pre-migration volume totals are preserved exactly (decision 2). `lastWorking` lookup at `:417` was already `type === 'working'` — no change. Weekly/monthly calendar preview at `:1546` uses `setsToShow` which filters `weight || reps`; under bundled shape that correctly iterates primaries only.
+
+401. **Centralized helpers already updated in Batch 22.** `calcSessionVolume` / `getExercisePRs` / `getExerciseHistory` / `getAchievements` were rewritten in Batch 22 and needed no further Batch 24 changes. The per-page aggregations touched this batch are the ones that don't go through those helpers.
+
+402. **Verification — end-to-end consistency at the bundle boundary.** After the three-batch merge:
+    - (a) Pre-existing sessions migrate on load: flat `type:'drop'` entries bundle into their parent working's `drops[]`.
+    - (b) New sessions logged post-merge emit the bundled shape directly (Batch 23's `buildExerciseData`).
+    - (c) Every display surface (logger ghost rows, history detail, share card, progress chart, dashboard stats) reads the bundled shape consistently.
+    - (d) Volume numbers are preserved (decision 2 — Batch 22 sanity script confirmed 471,755 lb-reps before and after on `debug-backup.json`).
+    - (e) Share card SETS and History session-card counts drop for users who drop-set (decision 1 — "one logical set per bundled group"); working-only counts are the new source of truth.
+    - (f) PR flags on drop rows are gone from History — the migration cleared 24 stale warmup-flagged PRs as a bonus cleanup (Batch 22 sanity).
+
+403. **Post-v1 roadmap — drop-set bundling shipped.** Updated Post-v1 list below — the "Drop-set bundling (flagged Batch 21)" entry is removed from pending since it's live.
+
+404. **Build.** `npx vite build --outDir /tmp/test-build` → 755.57 KB bundle / 203.77 KB gzipped (+1.12 KB / +0.32 KB vs Batch 23, all in the five display-surface walkers descending into drops).
+
 ---
 
 ## Where to Go From Here
@@ -1469,7 +1503,6 @@ All 8 steps of the AI Coaching Recommender v1 plan plus §3.8 auto-classify plus
 - **Back-off sets**: v1 prescribes the top working set only. Top-set labeling already primes the UI. Trivial engine work, interesting UI work.
 - **RPE re-introduction**: engine plumbing is alive (16c→16d revert). User observation: "most sets go to failure" — re-enabling needs smart defaults (auto-infer RPE from reps vs target) or a clear opt-in.
 - **Anomaly detector refinements**: the three v1 detectors use conservative thresholds. Possible tunings once we have real usage signal: (a) per-exercise threshold (compound vs isolation expect different variance), (b) grade-aware plateau (a flat trend with consistent A grades is different from a flat trend with consistent C grades), (c) tighter swing-detector integration with Batch 19's equipment instance — scoping already naturally suppresses cross-machine swings once enough data accumulates, but an explicit "just switched machines" reasoning pass could be layered on.
-- **Drop-set bundling** (flagged Batch 21): model drop sets as continuations of the preceding working set rather than standalone rows. Ripples across session storage, logger UI, volume / PR / recommender calcs, history display, and a persist migration. Next planned investigation.
 - **§8.x tracks** (visual goals, coaching commentary, coach marketplace, macro/nutrition, learned readiness model): out of v1 scope entirely.
 
 ### Recommended sequencing
