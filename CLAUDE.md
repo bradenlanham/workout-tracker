@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 25 — timezone fix: evening entries no longer roll to the next day)
+> Last updated: April 21, 2026 (Batch 26 — Traps + Abs added to MUSCLE_GROUPS)
 
 ## Rules for Claude
 
@@ -1515,6 +1515,16 @@ User suggested "set the default time zone to Central" as a fallback. That would 
 412. **Sanity.** `node -e` test of `toLocalDateStr`: 7/7 pass. Cases: `undefined` → today; `null` → today; Date at 8:30 PM local (UTC-5) → local date (not UTC-tomorrow); ISO string → correct local date; date-only string → same string; invalid string → null; number → null.
 
 413. **Build.** `npx vite build --outDir /tmp/test-build` → 755.33 KB bundle / 203.79 KB gzipped (−0.24 KB / +0.02 KB vs Batch 24 — helper replaces inline string ops, roughly a wash).
+
+### Batch 26 (April 21, 2026) — Traps + Abs added to MUSCLE_GROUPS
+
+User-requested tiny addition. Previously 12 muscle groups; now 14.
+
+414. **`MUSCLE_GROUPS` in `src/data/exerciseLibrary.js`.** Added `'Traps'` (after `'Back'`) and `'Abs'` (before `'Core'`). Full list now: `Chest, Back, Traps, Shoulders, Quads, Hamstrings, Glutes, Biceps, Triceps, Abs, Core, Calves, Forearms, Full Body`. `Core` stays as the broader category (obliques + stabilizers + lower back); `Abs` is the narrower abdominal-specific tag for crunches, leg raises, etc. — users can now tag the distinction. Single source of truth, so the four pickers that consume it (`Backfill.jsx`, `ExerciseEditSheet.jsx`, `ExercisePicker.jsx`, `CreateExerciseModal.jsx`) all pick up the new options automatically.
+
+415. **Bonus fix: `predictExerciseMeta` "shrug" prediction now validates.** The keyword map at `helpers.js:1617` already predicted `['Traps']` for exercises matching "shrug", but Traps wasn't in `MUSCLE_GROUPS` — so `addExerciseToLibrary`'s §3.2.1 validation silently rejected the prediction and the user ended up manually picking a different group. With Traps now valid, the auto-fill chip actually sticks on save. `predictExerciseMeta`'s "crunch / sit-up / leg raise / plank / russian twist / ab wheel" predictions continue to map to `'Core'` — not changed this batch; users who want those tagged as `Abs` can switch manually.
+
+416. **No code changes beyond the array.** No build-size change (+0 KB — the strings are tiny). Existing library entries that currently use `muscleGroup: 'Back'` for trap-adjacent exercises (e.g., shrugs) stay as-is; users can re-tag via `/exercises` if they want the finer distinction. No migration needed.
 
 ---
 

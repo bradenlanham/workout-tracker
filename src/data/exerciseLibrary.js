@@ -1,6 +1,6 @@
 export const MUSCLE_GROUPS = [
-  'Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Glutes',
-  'Biceps', 'Triceps', 'Core', 'Calves', 'Forearms', 'Full Body',
+  'Chest', 'Back', 'Traps', 'Shoulders', 'Quads', 'Hamstrings', 'Glutes',
+  'Biceps', 'Triceps', 'Abs', 'Core', 'Calves', 'Forearms', 'Full Body',
 ]
 
 export const EQUIPMENT_TYPES = [
