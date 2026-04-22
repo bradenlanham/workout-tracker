@@ -182,6 +182,8 @@ export function RecommendationSheet({
   aggressivenessMultiplier = 1,
   fatigueSignals = {},
   now = Date.now(),
+  onApply = null,     // Batch 28 item 4 — plug prescription.weight into first empty working set
+  hideApply = false,  // Hide "Use it" in plate mode (weight entry goes via plate picker)
 }) {
   // Recompute per mode so chip tap can swap between them without a recalc.
   // aggressivenessMultiplier (Batch 16n) scales push-mode nudging based on
@@ -273,14 +275,29 @@ export function RecommendationSheet({
               <span className="text-sm text-c-muted">No prescription yet</span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-item text-c-secondary flex items-center justify-center text-lg shrink-0"
-            aria-label="Close"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onApply && !hideApply && selected.prescription?.weight && (
+              <button
+                type="button"
+                onClick={() => onApply({ weight: selected.prescription.weight })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 shrink-0 transition-colors"
+                aria-label={`Use this weight: ${selected.prescription.weight} lbs`}
+              >
+                <SparkleIcon className="w-3 h-3" color="currentColor" />
+                <span>Use it</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-item text-c-secondary flex items-center justify-center shrink-0"
+              aria-label="Close"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* ── e1RM sparkline with explicit title + stat key ─────────────
@@ -727,7 +744,7 @@ function buildAnomalyCopy(anomaly, name) {
 // Accent-tinted per theme so the prompt reads as coaching UI, not a warning.
 // Placed above the AnomalyBanner in the exercise card so tagging decisions
 // come first (correctly-scoped history → fewer false anomaly signals).
-export function GymTagPrompt({ exerciseName, gymLabel, onTag, onNotNow, onAlwaysSkip, theme }) {
+export function GymTagPrompt({ exerciseName, gymLabel, onTag, onNotNow, onHideHere, theme }) {
   if (!gymLabel) return null
   const accent = theme?.hex || 'rgb(59,130,246)'
   return (
@@ -771,11 +788,16 @@ export function GymTagPrompt({ exerciseName, gymLabel, onTag, onNotNow, onAlways
         </button>
         <button
           type="button"
-          onClick={onAlwaysSkip}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-item text-c-muted border border-subtle"
-          title="Stop asking for this exercise at this gym"
+          onClick={onHideHere}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+          style={{
+            background: 'transparent',
+            border: '1px solid rgba(248, 113, 113, 0.4)',
+            color: 'rgb(248, 113, 113)',
+          }}
+          title="Hide this exercise from the workout here"
         >
-          Always skip
+          Hide for this gym
         </button>
       </div>
     </div>

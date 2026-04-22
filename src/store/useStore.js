@@ -268,6 +268,38 @@ const useStore = create(
         }))
       },
 
+      // Batch 28: hiddenAtGyms — explicit per-gym hide list. Exercises with
+      // the current session's gymId in this list are filtered out of the
+      // logger's exercise list. Empty/missing means "visible everywhere".
+      addHiddenAtGym: (exerciseId, gymId) => {
+        if (!exerciseId || !gymId) return
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== exerciseId) return ex
+            const current = Array.isArray(ex.hiddenAtGyms) ? ex.hiddenAtGyms : []
+            if (current.includes(gymId)) return ex
+            return { ...ex, hiddenAtGyms: [...current, gymId] }
+          }),
+        }))
+      },
+
+      removeHiddenAtGym: (exerciseId, gymId) => {
+        if (!exerciseId || !gymId) return
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== exerciseId) return ex
+            const current = Array.isArray(ex.hiddenAtGyms) ? ex.hiddenAtGyms : []
+            if (!current.includes(gymId)) return ex
+            const next = current.filter(g => g !== gymId)
+            if (next.length === 0) {
+              const { hiddenAtGyms, ...rest } = ex
+              return rest
+            }
+            return { ...ex, hiddenAtGyms: next }
+          }),
+        }))
+      },
+
       removeSkipGymTagPrompt: (exerciseId, gymId) => {
         if (!exerciseId || !gymId) return
         set(state => ({

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 27 — Machine split into Selectorized / Plate-loaded + v6 library migration)
+> Last updated: April 21, 2026 (Batch 28 — Session logger polish sweep)
 
 ## Rules for Claude
 
@@ -1550,6 +1550,32 @@ User request: "have selectorized machine and plate-loaded machine as the two mac
 424. **What was deliberately not touched.** Historical session data (`session.data.exercises[].equipmentInstance`) stays as user-typed free-text — that's a per-session machine-name tag ("Hoist" / "Cybex"), which is orthogonal to the library's equipment-type classification. `settings.*` unchanged. Sessions array unchanged. No migration-sanity script for this batch — the migration is a one-line string swap with full 14/14 node test coverage.
 
 425. **Build.** `npx vite build --outDir /tmp/test-build` → 755.56 KB bundle / 203.82 KB gzipped (negligible +0 KB change — two helpers + one enum split + 27 raw-data string replacements all net to a wash).
+
+### Batch 28 (April 21, 2026) — Session logger polish sweep
+
+Live-feedback round after Monday's Quads workout at Lanhammer. Seven discrete items — the biggest being `hiddenAtGyms` (data-layer deny-list for per-gym exercise visibility) and the Coach's Call "Use it" button that one-taps a prescription into the next empty working set (plate-mode aware via a greedy plate packer).
+
+426. **Gym pill neutral styling + "Resumed from saved session" subheader killed** (`SessionGymPill.jsx`, `BbLogger.jsx`). Filled-state gym chip now uses `rgba(0,0,0,0.35)` bg + `rgba(255,255,255,0.3)` border + `rgba(255,255,255,0.95)` text — contrasts against any accent header gradient (was using `${theme.hex}1a`+`${theme.hex}` which disappeared against the matching-accent header). Subheader "Resumed from saved session" removed entirely (not useful); unused `isResumed` state dropped. Gym pill margin tightened `mt-1.5 → mt-1` since the subheader no longer spaces it out.
+
+427. **Drop stage CTA polish + hide after next working set** (`BbLogger.jsx`, `space-y-1.5`). Styling softened `text-orange-400 font-semibold → text-xs italic font-medium text-orange-400/70` + border opacity `/40 → /30` — reads as a subtle opt-in, not a primary affordance. New gate `!hasLaterWorking` (set index j > i exists with type='working') hides the CTA on prior working sets once the user advances — no stale "+ Drop stage" offering retroactive drops on already-finished sets.
+
+428. **Set 2+ locked to Work** (`SetTypeBtn` + `addSet` + `SetRow`/`PlateSetRow`). Warmups only make sense on the first set; subsequent sets displayed-and-stored as working regardless. New `lockedToWorking` prop on SetTypeBtn forces effective value to 'working', disables click handler, renders `cursor-default` (no opacity dimming — looks like a normal Work chip, just non-interactive). `addSet` for setIndex > 0 now always writes `type: 'working'` (dropped the warmup-inheritance branch) so stored data matches the forced display.
+
+429. **Drop stage rows at ~2/3 height of primary** (`DropStageRow`). Compact row treatment reinforces bundling visually: `h-10 → h-7` on the ↳ Drop label + weight/reps inputs + × button; `text-base → text-sm` on input values; `rounded-lg → rounded-md`; `py-2 → py-0`; × icon `w-4 h-4 → w-3.5 h-3.5`. Verified live: primary 40px / drop 28px (ratio 0.70).
+
+430. **Focus mode header collapse + hardening** (`BbLogger.jsx`, `index.css`). When the numpad is open, the title row (emoji + workout name + gym pill) collapses to 0px via CSS max-height + opacity transition (0.2s ease-out). Saves ~64px of vertical real estate for set rows during data entry. Back arrow in focus mode becomes "Exit focus mode" — taps close the numpad instead of navigating away (prevents accidental session-exit); second tap does the normal navigate-back. aria-label flips dynamically. Old "Tap to show all exercises" zone rewritten as a compact accent-tinted "Show all exercises" pill (inline-flex, hugs content, centered; was full-bleed + stacked). Timer centering fixed via `flex items-center` + `leading-none` on the font-mono span (was sitting 4px low). Back button shrunk `w-8 h-8 → w-7 h-7` to match pause button. `closeNumpad` now blurs `document.activeElement` so tapping the SAME input after Show all re-fires onFocus and reopens the numpad (previously a no-op because React only re-fires onFocus on blur→focus edges).
+
+431. **Hide for this gym** (data + UI + logger filter). New `Exercise.hiddenAtGyms?: string[]` field + store actions `addHiddenAtGym(exerciseId, gymId)` / `removeHiddenAtGym(exerciseId, gymId)` (drops field when array empties so shape stays minimal). New pure predicate `isExerciseHiddenAtGym(exercise, gymId)` in `helpers.js`. GymTagPrompt's third button renamed "Always skip" → **"Hide for this gym"** with red styling (`rgba(248,113,113)` text + border, transparent bg) to signal destructiveness. On tap: native confirm → if accepted, dual-writes `addHiddenAtGym` + `addSkipGymTagPrompt`. Logger's `templateExercises` + merged-extras loops filter out exercises where `isExerciseHiddenAtGym(libraryEntry, seedGymId)` — exercise disappears from the workout list at that gym on next session mount, stays visible at other gyms (prompt still fires there normally). History unchanged — past sessions that included the now-hidden exercise still show it in the History detail modal. Un-hide UI flagged for Batch 29.
+
+432. **"Use it" button in Tip card** (`RecommendationSheet` + `BbLogger.jsx` + `helpers.js` `recommendPlatesForWeight`). New emerald ghost-pill matching the Tip chip's style (✨ sparkle icon + `bg-emerald-500/15 border border-emerald-500/40 text-emerald-300`) rendered in the sheet header. On tap: closes sheet → finds first working set with empty weight (or `addSet` if none) → populates weight with `prescription.weight` → focuses reps input via `setRepsRefs.current[idx].focus()`. In plate mode, the new `recommendPlatesForWeight(target, bar, multiplier)` helper does a greedy plate-fit across standard Olympic plates [45, 35, 25, 10, 5, 2.5] and rounds DOWN to achievable totals so the user never accidentally overshoots. Verified: 145 lbs @ 45 bar 2× → `{45:1, 5:1}`; 230 @ 45 2× → `{45:2, 2.5:1}`. Close button × also upgraded from unicode glyph to SVG icon (centers cleanly in the 32×32 pill regardless of font baseline). Trace-animation on the target set row was built + discarded per user feedback ("thin and slow... actually just remove it") — Use it works plain-text now.
+
+433. **Gym tag prompt visual parity** (`Recommendation.jsx`). All three GymTagPrompt buttons were unified to outlined ghost-pills (accent-text + transparent bg) briefly, then reverted per user feedback ("Yes, tag it looks already selected that way — prior version was better"). Final state: "Yes, tag it" stays solid accent-filled (primary), "Not this time" neutral ghost, "Hide for this gym" red ghost.
+
+434. **markDone reliable scroll-to-top** (`BbLogger.jsx:1093`). Double-requestAnimationFrame before `window.scrollTo({top:0, behavior:'smooth'})` so the scroll fires AFTER React commits the done-state change + the re-sort that moves completed exercises to the bottom. Pre-Batch-28 behavior sometimes landed the scroll in the wrong place because `scrollTo` fired synchronously against the pre-commit DOM. First rAF waits for commit queue flush; second waits for paint.
+
+435. **Files modified summary.** `src/pages/log/SessionGymPill.jsx` (item 1); `src/pages/log/BbLogger.jsx` (items 1/2a/2b/2c/3/4/5 — biggest diff); `src/pages/log/Recommendation.jsx` (item 3 prompt + item 4 Use it button); `src/store/useStore.js` (item 3 actions); `src/utils/helpers.js` (item 3 predicate + item 4 plate packer); `src/index.css` (transient trace animation, added + removed).
+
+436. **Build.** `npx vite build --outDir /tmp/test-build` → passes clean.
 
 ---
 

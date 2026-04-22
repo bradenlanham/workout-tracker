@@ -8,8 +8,8 @@ import {
   findSimilarExercises, normalizeExerciseName,
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
   detectAnomalies, formatRec, getInstancesForExercise,
-  shouldPromptGymTag, isExerciseAvailableAtGym,
-  toLocalDateStr, isMachineEquipment,
+  shouldPromptGymTag, isExerciseAvailableAtGym, isExerciseHiddenAtGym,
+  toLocalDateStr, isMachineEquipment, recommendPlatesForWeight,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
@@ -83,26 +83,29 @@ const SET_TYPES = [
   { id: 'warmup',  label: 'Warm' },
 ]
 
-function SetTypeBtn({ value, onChange, theme, disabled = false }) {
-  const legacyDrop = value === 'drop'
+function SetTypeBtn({ value, onChange, theme, disabled = false, lockedToWorking = false }) {
+  // lockedToWorking: set 2+ always displays as Work and ignores clicks — warmups
+  // only make sense on the first set of an exercise. No visual "disabled" styling,
+  // just a non-interactive chip.
+  const effectiveValue = lockedToWorking ? 'working' : value
+  const legacyDrop = effectiveValue === 'drop'
   const current = legacyDrop
     ? { id: 'drop', label: 'Drop' }
-    : (SET_TYPES.find(t => t.id === value) || SET_TYPES[0])
-  // Cycler steps through SET_TYPES (warmup ↔ working). Legacy drops cycle
-  // back to working so a user can escape the defensive state.
+    : (SET_TYPES.find(t => t.id === effectiveValue) || SET_TYPES[0])
   const currentIdx = legacyDrop ? 0 : SET_TYPES.indexOf(current)
   const next    = SET_TYPES[(currentIdx + 1) % SET_TYPES.length]
   const color      = current.id === 'working' ? `${theme.bg} text-white`
                    : current.id === 'warmup'  ? 'bg-amber-500 text-white'
                    : 'bg-orange-500 text-white'
   const colorStyle = current.id === 'working' ? { color: theme.contrastText } : {}
+  const isInteractive = !disabled && !lockedToWorking
   return (
     <button
       type="button"
-      onClick={() => { if (!disabled) onChange(next.id) }}
-      disabled={disabled}
+      onClick={() => { if (isInteractive) onChange(next.id) }}
+      disabled={!isInteractive}
       title={disabled ? 'Remove drop stages to change type' : undefined}
-      className={`w-14 h-10 rounded-lg text-xs font-bold shrink-0 transition-colors ${color} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+      className={`w-14 h-10 rounded-lg text-xs font-bold shrink-0 transition-colors ${color} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${lockedToWorking ? 'cursor-default' : ''}`}
       style={colorStyle}
     >
       {current.label}
@@ -427,7 +430,7 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false }) {
   const numpadCtx = useContext(NumpadContext)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
@@ -491,7 +494,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} />
+        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} />
         <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-sm font-bold min-w-0">
           <span className="text-c-muted text-xs font-normal">Total</span>
           <span>{total} lbs</span>
@@ -607,7 +610,7 @@ function PlatePicker({ plates, addPlate, removePlate, theme }) {
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false }) {
   const numpadCtx    = useContext(NumpadContext)
   const localRepsRef = useRef(null)
 
@@ -692,6 +695,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         onDone={onDone}
         setIndex={setIndex}
         cyclerDisabled={cyclerDisabled}
+        lockedToWorking={lockedToWorking}
       />
     )
   }
@@ -708,7 +712,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
 
   return (
     <div className="flex items-center gap-2">
-      <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} />
+      <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} />
       {/* Weight FIRST */}
       <input
         ref={weightRef}
@@ -808,10 +812,12 @@ function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exe
     // eslint-disable-next-line
   }, [repsFieldKey, handleRepsChange, theme.hex, theme.contrastText])
 
+  // Compact row — ~2/3 the height of a primary set row to visually reinforce
+  // that drop stages are bundled within the parent working set.
   return (
     <div className="flex items-center gap-2">
       <div
-        className="w-14 h-10 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[11px] font-semibold shrink-0 flex items-center justify-center"
+        className="w-14 h-7 rounded-md bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[10px] font-semibold shrink-0 flex items-center justify-center"
         aria-label="Drop stage"
       >
         ↳ Drop
@@ -832,7 +838,7 @@ function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exe
           themeContrastText: theme.contrastText,
         })}
         placeholder="lbs"
-        className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
+        className="w-20 min-w-0 bg-item text-c-primary rounded-md px-1 py-0 text-center text-sm font-semibold h-7 outline-none"
         style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
       />
       <input
@@ -850,7 +856,7 @@ function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exe
           themeContrastText: theme.contrastText,
         })}
         placeholder="reps"
-        className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
+        className="w-16 min-w-0 bg-item text-c-primary rounded-md px-1 py-0 text-center text-sm font-semibold h-7 outline-none"
         style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
       />
       <span className="flex-1" />
@@ -858,9 +864,9 @@ function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exe
         type="button"
         onClick={onDelete}
         aria-label="Remove drop stage"
-        className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+        className="w-8 h-7 flex items-center justify-center rounded-md bg-item text-c-muted shrink-0"
       >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
@@ -895,6 +901,7 @@ function ExerciseItem({
   const { settings, setRestEndTimestamp, dismissAnomaly, dismissGymPrompt } = useStore()
   const addExerciseGymTag    = useStore(s => s.addExerciseGymTag)
   const addSkipGymTagPrompt  = useStore(s => s.addSkipGymTagPrompt)
+  const addHiddenAtGym       = useStore(s => s.addHiddenAtGym)
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const numpadCtx = useContext(NumpadContext)
   const [recSheetOpen,    setRecSheetOpen]    = useState(false)
@@ -944,7 +951,9 @@ function ExerciseItem({
     const lastSet = exercise.sets[exercise.sets.length - 1]
     const prevSet = lastSessionEx?.sets?.[exercise.sets.length]
     const isFirstSet = exercise.sets.length === 0
-    const newType = isFirstSet ? firstSetType : (lastSet?.type === 'warmup' ? 'warmup' : 'working')
+    // Warmups only make sense on the first set. Set 2+ is always working so the
+    // stored type matches what SetTypeBtn's lockedToWorking display enforces.
+    const newType = isFirstSet ? firstSetType : 'working'
     const newSet = {
       type:       newType,
       reps:       '',
@@ -970,6 +979,61 @@ function ExerciseItem({
       patch.barDefault = newSet.barWeight
     }
     onUpdate(patch)
+  }
+
+  // Batch 28 item 4: apply the recommended weight to the first empty working
+  // set (or a freshly-added one), then focus the reps field so the user only
+  // has to type the reps they hit. In plate mode, compute a greedy plate
+  // breakdown matching the target — reuses the existing barWeight + multiplier
+  // from the exercise. If the target can't be hit exactly (e.g., gym lacks
+  // 2.5-lb plates), rounds down so the user never overshoots.
+  const handleApplyRecommendation = ({ weight }) => {
+    if (!weight && weight !== 0) return
+    setRecSheetOpen(false)
+    const sets = [...exercise.sets]
+    let targetIdx = sets.findIndex(s => s.type === 'working' && (!s.weight || String(s.weight).trim() === ''))
+    const isPlate = !!exercise.plateLoaded
+    const mult = exercise.plateMultiplier || 2
+    // Prefer the target set's bar weight, fall back to last set, then exercise default.
+    const barFor = (idx) => (
+      (idx >= 0 && sets[idx]?.barWeight != null) ? sets[idx].barWeight
+        : (sets[sets.length - 1]?.barWeight != null ? sets[sets.length - 1].barWeight
+          : (exercise.barDefault ?? 45))
+    )
+    const buildPlateSet = (baseSet, bar) => {
+      const { plates, actualTotal } = recommendPlatesForWeight(weight, bar, mult)
+      return {
+        ...(baseSet || { type: 'working', reps: '' }),
+        reps:            baseSet?.reps ?? '',
+        weight:          String(actualTotal),
+        plates,
+        barWeight:       bar,
+        plateMultiplier: mult,
+      }
+    }
+    if (targetIdx === -1) {
+      let newSet
+      if (isPlate) {
+        newSet = buildPlateSet(null, barFor(sets.length - 1))
+      } else {
+        newSet = { type: 'working', reps: '', weight: String(weight) }
+      }
+      onUpdate({ ...exercise, sets: [...sets, newSet] })
+      targetIdx = sets.length
+    } else {
+      if (isPlate) {
+        sets[targetIdx] = buildPlateSet(sets[targetIdx], barFor(targetIdx))
+      } else {
+        sets[targetIdx] = { ...sets[targetIdx], weight: String(weight) }
+      }
+      onUpdate({ ...exercise, sets })
+    }
+    requestAnimationFrame(() => {
+      const repsEl = setRepsRefs.current[targetIdx]
+      if (repsEl && typeof repsEl.focus === 'function') {
+        repsEl.focus({ preventScroll: true })
+      }
+    })
   }
 
   const deleteSet = (i) => {
@@ -1030,7 +1094,16 @@ function ExerciseItem({
     numpadCtx?.closeNumpad()
     onUpdate({ ...exercise, done: true, completedAt: Date.now() })
     setExpanded(false)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    // Batch 28 item 5: double-rAF so scroll fires AFTER React commits the
+    // done-state change + the re-sort that moves completed exercises to the
+    // bottom. Without this, smooth scroll animates against the pre-commit DOM
+    // and the page rearranges mid-animation, sometimes landing in the wrong
+    // place. First rAF = after commit queue flushes; second = after paint.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      })
+    })
   }
 
   // Stable ref-backed version for the numpad Done button (avoids stale closures)
@@ -1473,7 +1546,18 @@ function ExerciseItem({
               theme={theme}
               onTag={() => addExerciseGymTag(libraryEntry.id, currentGymId)}
               onNotNow={() => dismissGymPrompt(libraryEntry.id, currentGymId)}
-              onAlwaysSkip={() => addSkipGymTagPrompt(libraryEntry.id, currentGymId)}
+              onHideHere={() => {
+                // Batch 28: confirm before hiding. Dual-write to hiddenAtGyms
+                // (filters the exercise out of the logger) AND skipGymTagPrompt
+                // (silences future prompts here). A different gym will still
+                // show this exercise + fire the prompt.
+                const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
+                  ? window.confirm(`${exercise.name} will no longer appear in workouts at ${currentGymLabel}. You can un-hide it later (Manage Exercises support coming next batch).`)
+                  : true
+                if (!ok) return
+                addHiddenAtGym(libraryEntry.id, currentGymId)
+                addSkipGymTagPrompt(libraryEntry.id, currentGymId)
+              }}
             />
           )}
 
@@ -1520,6 +1604,10 @@ function ExerciseItem({
             const primaryR     = parseInt(set.reps)     || 0
             const primaryReady = isWorking && primaryW > 0 && primaryR > 0
             const cyclerDisabled = isWorking && hasDrops
+            // 2b: hide "+ Drop stage" once a later working set exists — once
+            // the user has moved on, they're not retroactively dropping on
+            // a prior set.
+            const hasLaterWorking = exercise.sets.some((s, j) => j > i && s.type === 'working')
             return (
               <div key={i} className="space-y-1.5">
                 <SetRow
@@ -1532,6 +1620,7 @@ function ExerciseItem({
                   plateLoaded={exercise.plateLoaded}
                   plateMultiplier={exercise.plateMultiplier || 2}
                   cyclerDisabled={cyclerDisabled}
+                  lockedToWorking={i > 0}
                   onToggleMultiplier={() => {
                     const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
                     // Batch 23: plate remap only applies to working/warmup
@@ -1572,11 +1661,11 @@ function ExerciseItem({
                 {/* "+ Drop stage" CTA — only on a working set whose primary
                     has weight + reps filled. Keeps users from creating
                     orphan drops attached to a blank parent. */}
-                {isWorking && primaryReady && (
+                {isWorking && primaryReady && !hasLaterWorking && (
                   <button
                     type="button"
                     onClick={() => addDropStage(i)}
-                    className="ml-3 pl-3 py-1.5 text-xs text-orange-400 font-semibold flex items-center gap-1 border-l-2 border-orange-500/40 border-dashed"
+                    className="ml-3 pl-3 py-1.5 text-xs italic font-medium text-orange-400/70 flex items-center gap-1 border-l-2 border-orange-500/30 border-dashed"
                   >
                     <span className="text-sm leading-none">+</span> Drop stage
                   </button>
@@ -1636,6 +1725,7 @@ function ExerciseItem({
         defaultMode={suggestedMode}
         aggressivenessMultiplier={aggressivenessMultiplier}
         fatigueSignals={fatigueSignals || {}}
+        onApply={handleApplyRecommendation}
       />
     </div>
   )
@@ -2296,6 +2386,7 @@ export default function BbLogger() {
   } = useStore()
   const theme = getTheme(settings.accentColor)
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
+  const exerciseLibraryAll = useStore(s => s.exerciseLibrary)
 
   // ── Audio unlock on first touch (iOS requires user-gesture before AudioContext) ──
   useEffect(() => {
@@ -2381,11 +2472,31 @@ export default function BbLogger() {
     }
   }
 
+  // Batch 28: build a name→library entry map so we can apply the per-gym
+  // hide filter against library records (hiddenAtGyms lives there).
+  const libraryByName = (() => {
+    const m = new Map()
+    for (const lib of (exerciseLibraryAll || [])) {
+      if (!lib?.name) continue
+      m.set(normalizeExerciseName(lib.name), lib)
+      if (Array.isArray(lib.aliases)) {
+        for (const a of lib.aliases) m.set(normalizeExerciseName(a), lib)
+      }
+    }
+    return m
+  })()
+  const isHiddenHere = (name) => {
+    if (!seedGymId) return false
+    const lib = libraryByName.get(normalizeExerciseName(name))
+    return isExerciseHiddenAtGym(lib, seedGymId)
+  }
+
   const templateExercises = groups.flatMap(group =>
-    group.exercises.map((e, i) => {
+    group.exercises.flatMap((e, i) => {
       const name = typeof e === 'string' ? e : e.name
+      if (isHiddenHere(name)) return []
       const rec  = typeof e === 'string' ? '' : (e.rec || '')
-      return {
+      return [{
         id:    `${group.label}-${name}-${i}`,
         name,
         rec,
@@ -2400,7 +2511,7 @@ export default function BbLogger() {
         unilateral: !!lastExDataByName[name]?.unilateral,
         plateLoaded: !!(lastExDataByName[name]?.plates),
         equipmentInstance: lastExDataByName[name]?.equipmentInstance || '',
-      }
+      }]
     })
   )
 
@@ -2415,6 +2526,7 @@ export default function BbLogger() {
       for (const ex of sess.data.exercises) {
         if (!templateNames.has(ex.name) && !extrasSeen.has(ex.name)) {
           extrasSeen.add(ex.name)
+          if (isHiddenHere(ex.name)) continue
           const lastEx = lastExDataByName[ex.name]
           extras.push({
             id:    `prev-${ex.name}-${extras.length}`,
@@ -2437,11 +2549,6 @@ export default function BbLogger() {
     return [...templateExercises, ...extras]
   })()
 
-  // True only when this component mounted with an existing saved session (genuine resume).
-  // Captured once at mount — savedSession becomes truthy after the first auto-save even
-  // on a fresh session, so we can't rely on it reactively for the subtitle.
-  const [isResumed] = useState(() => !!(activeSession && activeSession.type === type))
-
   const [exercises,      setExercises]      = useState(() => savedSession?.exercises || defaultExercises)
   const [sessionNotes,   setSessionNotes]   = useState(() => savedSession?.sessionNotes || '')
   const [showAddPanel,   setShowAddPanel]   = useState(false)
@@ -2461,6 +2568,12 @@ export default function BbLogger() {
 
   const closeNumpad = useCallback(() => {
     setNumpad(s => ({ ...s, isOpen: false }))
+    // Blur the active input so tapping the SAME field again re-fires onFocus
+    // and reopens the numpad. Without this, the input keeps DOM focus and
+    // a second tap is a no-op (React only re-fires onFocus on blur→focus edges).
+    if (typeof document !== 'undefined' && document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur()
+    }
   }, [])
 
   const numpadCtxValue = { numpadConfig, numpadIsOpen, openNumpad, closeNumpad }
@@ -3014,13 +3127,22 @@ export default function BbLogger() {
           <div className="flex-1 flex justify-start">
             <button
               onClick={() => {
+                // In focus mode, back arrow exits focus (closes numpad) instead
+                // of navigating away — prevents an accidental tap from bouncing
+                // the user out of an in-progress session. Second tap does the
+                // normal navigate-back.
+                if (numpadIsOpen) {
+                  closeNumpad()
+                  return
+                }
                 if (sessionStarted && !isPaused) handlePause()
                 navigate(-1)
               }}
-              className="w-8 h-8 flex items-center justify-center rounded-full"
+              className="w-7 h-7 flex items-center justify-center rounded-full"
               style={{ background: 'var(--bg-item)' }}
+              aria-label={numpadIsOpen ? 'Exit focus mode' : 'Back'}
             >
-              <svg className="w-4 h-4 text-c-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-3.5 h-3.5 text-c-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </button>
@@ -3043,26 +3165,33 @@ export default function BbLogger() {
                 )}
               </button>
             )}
-            <div className={`rounded-full px-2.5 py-1 ${isPaused ? 'opacity-60' : ''}`} style={{ background: 'var(--bg-item)' }}>
-              <span className="text-sm font-mono font-extrabold tracking-tight" style={{ color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
+            <div className={`rounded-full px-2.5 py-1 flex items-center ${isPaused ? 'opacity-60' : ''}`} style={{ background: 'var(--bg-item)' }}>
+              <span className="text-sm font-mono font-extrabold tracking-tight leading-none" style={{ color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
                 {formatElapsed(elapsedSeconds)}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="px-5 pb-2">
+        {/* Title + gym pill collapse in focus mode to reclaim vertical space
+            for set rows (especially plate-loaded). Transition on max-height +
+            opacity so the collapse reads as intentional, not a layout jump. */}
+        <div
+          className="px-5 overflow-hidden transition-all duration-200 ease-out"
+          style={{
+            maxHeight: numpadIsOpen ? 0 : 120,
+            opacity:   numpadIsOpen ? 0 : 1,
+            paddingBottom: numpadIsOpen ? 0 : 8,
+          }}
+        >
           <h1
             className="font-bold leading-tight"
             style={{ fontSize: 21, color: 'var(--text-primary)' }}
           >
             {workoutEmoji} {workoutName}
           </h1>
-          {isResumed && (
-            <p className="text-xs mt-0.5" style={{ opacity: 0.6 }}>Resumed from saved session</p>
-          )}
           {sessionStarted && (
-            <div className="mt-1.5">
+            <div className="mt-1">
               <SessionGymPill
                 gymId={gymId}
                 onChange={setGymId}
@@ -3131,17 +3260,23 @@ export default function BbLogger() {
             from the numpad's "Next →" button can never accidentally trigger this
             and collapse the numpad mid-transition. */}
         {numpadIsOpen && (
-          <button
-            type="button"
-            onPointerDown={(e) => { e.preventDefault(); closeNumpad() }}
-            className="w-full flex flex-col items-center justify-center gap-2 py-8 mt-2 rounded-2xl"
-            style={{ backgroundColor: 'transparent' }}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.3 }}>
-              <path d="M7 14L12 9L17 14" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className="text-c-muted text-xs font-semibold tracking-wide">Tap to show all exercises</span>
-          </button>
+          <div className="flex justify-center mt-2">
+            <button
+              type="button"
+              onPointerDown={(e) => { e.preventDefault(); closeNumpad() }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full transition-colors"
+              style={{
+                backgroundColor: `${theme.hex}14`,
+                border: `1px solid ${theme.hex}33`,
+              }}
+              aria-label="Show all exercises"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M7 14L12 9L17 14" stroke={theme.hex} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span className="text-xs font-bold tracking-wide" style={{ color: theme.hex }}>Show all exercises</span>
+            </button>
+          </div>
         )}
 
         {/* Session notes – hidden when numpad is open */}

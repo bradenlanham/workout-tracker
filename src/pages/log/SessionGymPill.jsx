@@ -112,9 +112,9 @@ export default function SessionGymPill({ gymId, onChange, theme }) {
         onClick={openPicker}
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors max-w-full"
         style={selectedGym ? {
-          background:  `${theme.hex}1a`,
-          border:      `1px solid ${theme.hex}40`,
-          color:       theme.hex,
+          background:  'rgba(0,0,0,0.35)',
+          border:      '1px solid rgba(255,255,255,0.3)',
+          color:       'rgba(255,255,255,0.95)',
         } : {
           background:  'var(--bg-item)',
           border:      '1px dashed var(--border-base)',

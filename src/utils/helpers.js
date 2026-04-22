@@ -944,6 +944,17 @@ export function isExerciseAvailableAtGym(exercise, gymId) {
   return tags.includes(gymId)
 }
 
+// Batch 28: is this exercise explicitly hidden at this gym? Written by the
+// GymTagPrompt's "Hide for this gym" button. Unlike sessionGymTags (allow-list),
+// this is a per-gym deny-list — used by BbLogger to filter out the exercise
+// from the current session's exercise list entirely.
+export function isExerciseHiddenAtGym(exercise, gymId) {
+  if (!gymId || !exercise || typeof exercise !== 'object') return false
+  const list = Array.isArray(exercise.hiddenAtGyms) ? exercise.hiddenAtGyms : null
+  if (!list || list.length === 0) return false
+  return list.includes(gymId)
+}
+
 // Returns true when the auto-tag-on-use prompt should stay silent for this
 // (exercise, gym) pair. The "Always skip" branch of the prompt (§3.5.4)
 // writes the gymId into exercise.skipGymTagPrompt; this helper just reads it.
@@ -951,6 +962,34 @@ export function shouldSkipGymTagPrompt(exercise, gymId) {
   if (!exercise || !gymId) return false
   const skip = Array.isArray(exercise.skipGymTagPrompt) ? exercise.skipGymTagPrompt : null
   return !!skip && skip.includes(gymId)
+}
+
+// Batch 28 item 4 follow-up: greedy plate packer for plate-mode "Use it".
+// Given a target total weight, bar weight, and multiplier (1× or 2×), return
+// a plate breakdown that gets as close as possible. Uses the standard
+// Olympic plate set [45, 35, 25, 10, 5, 2.5]. If the target can't be hit
+// exactly (e.g., gym doesn't have 2.5s for a 7.5-per-side need), it rounds
+// DOWN to the nearest achievable total so the user doesn't accidentally
+// overshoot the recommendation.
+export function recommendPlatesForWeight(targetTotal, barWeight, multiplier) {
+  const AVAILABLE = [45, 35, 25, 10, 5, 2.5]
+  const target = Number(targetTotal) || 0
+  const bar    = Number(barWeight)   || 0
+  const mult   = multiplier === 1 ? 1 : 2
+  const remaining = target - bar
+  if (remaining <= 0) return { plates: {}, actualTotal: bar }
+  const perSide = mult === 2 ? remaining / 2 : remaining
+  const plates = {}
+  let loaded = 0
+  let toFill = perSide
+  for (const p of AVAILABLE) {
+    while (toFill >= p - 0.0001) {
+      plates[p] = (plates[p] || 0) + 1
+      toFill -= p
+      loaded += p
+    }
+  }
+  return { plates, actualTotal: bar + mult * loaded }
 }
 
 // True when the UI should surface the auto-tag-on-use prompt (§3.5.4):
