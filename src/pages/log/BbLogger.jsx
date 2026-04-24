@@ -1072,18 +1072,21 @@ function ExerciseItem({
       const type = lastSet.type === 'working' || lastSet.type === 'warmup'
         ? lastSet.type
         : 'working'  // legacy top-level 'drop' defaults to working
-      const reps = lastSet.reps != null && lastSet.reps !== ''
-        ? String(lastSet.reps)
-        : ''
-      const next = { ...base, type, reps }
+      // Reps are intentionally left blank — paste is a SCAFFOLD for the
+      // session's structure (sets / weights / drop chain / plate config),
+      // not a record of what the user will do. Reps are the variable the
+      // user's chasing per session, so forcing them to overwrite prefilled
+      // values would be worse than leaving the field empty.
+      const next = { ...base, type, reps: '' }
 
-      // Drops — deep-copy weight/reps only. Per Batch 23 shape, drops never
-      // carry type / plates / barWeight / isNewPR / plateMultiplier.
+      // Drops — deep-copy the weight/plate context only, leave reps blank
+      // by the same reasoning as the primary. Per Batch 23 shape, drops
+      // never carry type / plates / barWeight / isNewPR / plateMultiplier.
       const rawDrops = Array.isArray(lastSet.drops) ? lastSet.drops : []
       if (rawDrops.length) {
         next.drops = rawDrops.map(d => ({
           weight: perSideLoad(d) ? String(perSideLoad(d)) : '',
-          reps:   d?.reps != null && d.reps !== '' ? String(d.reps) : '',
+          reps:   '',
         }))
       } else if (Array.isArray(next.drops) && next.drops.length === 0) {
         // Nothing to paste, and today's slot had no drops either — ensure field
