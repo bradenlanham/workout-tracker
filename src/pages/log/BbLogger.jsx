@@ -2509,8 +2509,11 @@ export default function BbLogger() {
         plateWeight: 45,
         // Batch 29.1: seed bar weight from the most recent past set that had
         // one logged. Prevents the popover from silently resetting to 45 when
-        // the user trained last session with a 25 lb or no-bar rig.
-        barWeight: (lastExDataByName[name]?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
+        // the user trained last session with a 25 lb or no-bar rig. The plate
+        // popover (`PlateConfigPopover`) reads `ex.barDefault`; `ex.barWeight`
+        // at the exercise level is vestigial — write both defensively.
+        barWeight:  (lastExDataByName[name]?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
+        barDefault: (lastExDataByName[name]?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
         unilateral: !!lastExDataByName[name]?.unilateral,
         plateLoaded: !!(lastExDataByName[name]?.plates),
         equipmentInstance: lastExDataByName[name]?.equipmentInstance || '',
@@ -2542,7 +2545,8 @@ export default function BbLogger() {
             platesPerSide: 2,
             plateWeight: 45,
             // Batch 29.1: seed bar weight from prior session (see template init above).
-            barWeight: (lastEx?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
+            barWeight:  (lastEx?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
+            barDefault: (lastEx?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
             unilateral: !!lastEx?.unilateral,
             plateLoaded: !!(lastEx?.plates),
             equipmentInstance: lastEx?.equipmentInstance || '',
