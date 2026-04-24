@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { formatDate, formatTime, getWorkoutStreak, perSideLoad } from '../utils/helpers'
+import { formatDate, formatTime, getWorkoutStreak, perSideLoad, toLocalDateStr } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../data/exercises'
 import ShareCard from './log/ShareCard'
 
@@ -232,7 +232,35 @@ function SessionDetail({ session, onClose, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showShareCard, setShowShareCard] = useState(false)
   const [showGradePicker, setShowGradePicker] = useState(false)
+  const [editingMeta, setEditingMeta] = useState(false)
+  const [editDate, setEditDate] = useState('')
+  const [editDuration, setEditDuration] = useState('')
   const { settings, updateSession, cardioSessions, splits, sessions, activeSplitId, restDaySessions } = useStore()
+
+  // Sessions saved within 48 h can have their date + duration corrected.
+  const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000
+  const savedAt = session.createdAt || session.date
+  const canEditMeta = Date.now() - new Date(savedAt).getTime() < EDIT_WINDOW_MS
+
+  function openEditMeta() {
+    setEditDate(toLocalDateStr(new Date(session.date)))
+    setEditDuration(String(session.duration || ''))
+    setEditingMeta(true)
+  }
+
+  function saveEditMeta() {
+    if (!editDate) return
+    // Keep the original time-of-day; swap only the date portion.
+    const orig = new Date(session.date)
+    const [y, m, d] = editDate.split('-').map(Number)
+    orig.setFullYear(y, m - 1, d)
+    const newDuration = parseInt(editDuration, 10)
+    updateSession(session.id, {
+      date: orig.toISOString(),
+      ...(Number.isFinite(newDuration) && newDuration > 0 ? { duration: newDuration } : {}),
+    })
+    setEditingMeta(false)
+  }
   const theme = getTheme(settings.accentColor)
   const d        = session.data || {}
   const isBb     = session.mode === 'bb'
@@ -277,8 +305,56 @@ function SessionDetail({ session, onClose, onDelete }) {
             </button>
             <div>
               <h2 className="text-xl font-bold">{sessionEmoji} {sessionName}</h2>
-              <p className="text-sm text-c-dim">{formatDate(session.date)} · {formatTime(session.date)}</p>
-              {session.duration && <p className="text-xs text-c-muted">{session.duration} min session</p>}
+
+              {editingMeta ? (
+                <div className="mt-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-c-muted w-16 shrink-0">Date</label>
+                    <input
+                      type="date"
+                      value={editDate}
+                      onChange={e => setEditDate(e.target.value)}
+                      className="bg-item border border-subtle rounded-lg px-2 py-1 text-sm text-c-primary"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-c-muted w-16 shrink-0">Duration</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="480"
+                      value={editDuration}
+                      onChange={e => setEditDuration(e.target.value)}
+                      placeholder="min"
+                      className="bg-item border border-subtle rounded-lg px-2 py-1 text-sm text-c-primary w-20"
+                    />
+                    <span className="text-xs text-c-muted">min</span>
+                  </div>
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      onClick={saveEditMeta}
+                      className="px-3 py-1 rounded-lg text-xs font-semibold"
+                      style={{ background: theme.hex, color: theme.contrastText }}
+                    >Save</button>
+                    <button
+                      onClick={() => setEditingMeta(false)}
+                      className="px-3 py-1 rounded-lg text-xs font-semibold bg-item text-c-dim"
+                    >Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm text-c-dim">{formatDate(session.date)} · {formatTime(session.date)}</p>
+                  {canEditMeta && (
+                    <button onClick={openEditMeta} className="text-c-muted hover:text-c-secondary" title="Edit date / duration">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
+              {!editingMeta && session.duration && <p className="text-xs text-c-muted">{session.duration} min session</p>}
               <div className="flex items-center gap-2 mt-1">
                 <button
                   onClick={() => setShowGradePicker(v => !v)}

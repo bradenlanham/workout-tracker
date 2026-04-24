@@ -2816,6 +2816,9 @@ export default function BbLogger() {
 
   const [sessionStarted, setSessionStarted] = useState(savedSession?.sessionStarted || false)
   const startTimestamp = useRef(savedSession?.startTimestamp || null)
+  // Frozen at the moment the finish modal first opens so a multi-minute grade
+  // picker + cardio flow doesn't inflate the saved duration.
+  const frozenElapsedRef = useRef(null)
   const [isPaused, setIsPaused] = useState(savedSession?.isPaused || false)
   const totalPausedMsRef = useRef(savedSession?.totalPausedMs || 0)
   const pauseStartedAtRef = useRef(savedSession?.pauseStartedAt || null)
@@ -3045,11 +3048,11 @@ export default function BbLogger() {
   // ── Shared: persist workout + auto-sync custom exercises to template ──────
 
   const buildAndSaveWorkout = ({ grade, completedCardio, cardio }) => {
-    const duration     = Math.round(elapsedSeconds / 60)
+    const duration     = Math.round((frozenElapsedRef.current ?? elapsedSeconds) / 60)
     const exerciseData = buildExerciseData()
 
     const savedSess = addSession({
-      date:            new Date().toISOString(),
+      date:            new Date(startTimestamp.current || Date.now()).toISOString(),
       mode:            'bb',
       type:            isCustomTemplate ? `tpl_${templateId}` : type,
       duration,
@@ -3527,7 +3530,7 @@ export default function BbLogger() {
             <p className="text-center text-sm text-c-muted py-1">Log at least one set to save</p>
           ) : (
             <button
-              onClick={() => setShowConfirm(true)}
+              onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
               className={`w-full ${theme.bg} text-white py-4 rounded-2xl font-bold text-lg`}
               style={{ color: theme.contrastText }}
             >
