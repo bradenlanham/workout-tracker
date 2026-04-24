@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 24, 2026 (Batch 29 — Session logger hotfixes)
+> Last updated: April 24, 2026 (Batches 30 + 31 — Rep-range inference + advisory UI)
 
 ## Rules for Claude
 
@@ -1595,6 +1595,55 @@ Three hotfixes from live session logger use: plate bar weight not sticking sessi
     Close button stays reachable regardless of prescription state; the no-prescription state renders "No prescription yet" + close button on a single row with no empty row above.
 
 440. **Build.** `npx vite build --outDir /tmp/test-build` → 760.19 KB bundle / 205.15 KB gzipped (+4.63 KB / +1.33 KB vs Batch 28, accounted for by the three comments + `perSideLoad` imports in History + ShareCard + the two-row restructure JSX).
+
+### Batch 30 + 31 (April 24, 2026) — Rep-range inference + advisory UI
+
+Solves the user-reported "coach silently deloaded me from 90×8 → 80×10 even though I'm progressing at +5%/wk" problem. Pre-Batch-30 the recommender used a uniform `targetReps=10` across every exercise, and auto-deloaded after two consecutive sessions missed by ≥2 reps. User's observation: "targetReps=10 doesn't match how I train — for compound lifts 6–8 is a strong set, for calves 12–15 is normal." Plan: per-exercise [min, max] range, INFERRED from the user's own recent rep counts by default (with an editable override surface). Engine becomes advisory instead of prescriptive: the auto-deload silent override is gone; when the user drops below their own declared floor twice in a row, a soft banner surfaces a one-increment-down weight suggestion next to the normal Push/Maintain chips instead of rewriting them. Both batches ship together via `claude/rep-range-inference` feature branch so users never see a mid-refactor state where persisted data has ranges but the UI doesn't.
+
+User-locked design decisions (from plan conversation):
+1. Engine INFERS range from the user's last 6 top-set rep counts by default — zero-friction, reflects actual training pattern.
+2. User override via `ExerciseEditSheet` (plus quick Edit→ from inside the Recommendation sheet) flips `repRangeUserSet: true`.
+3. `Your range: 6–9 reps (inferred)` vs `(you set this)` suffix makes the source visible per "AI inferences should be visible."
+4. Below-floor-streak detection keeps the push prescription at current-strength-level; advisory is a SOFT suggestion, not a silent override.
+5. Deload step is one `loadIncrement` down, not 10% off last weight. Respects per-exercise increment (DB → 5 lb step, BB → 10 lb step).
+
+441. **`classifyRepRange(name, equipment, primaryMuscles)` (`helpers.js`).** Cold-start default when history has < 4 sessions. 50-entry keyword map, ordered specific-first. Returns [min, max]: compound barbell (squat, deadlift, bench, barbell row, overhead press) → [5, 8]; DB / machine press + row + pulldown → [6, 10]; isolation (curl, extension, fly, pec dec, pushdown, hip thrust) → [8, 12]; side / rear delts + calf raise + forearms + core (crunch, leg raise, plank) → [10, 15]. Equipment fallback: Barbell → [5, 8]. Muscle fallback: Calves / Forearms → [10, 15]. Default [8, 12].
+
+442. **`inferRepRange(history, classificationDefault)` (`helpers.js`).** Pulls [min, max] from the user's last 6 top-set reps: min = worst rep count in window, max = best + 1 (gives a ceiling to push toward). Falls back to classificationDefault when < 4 sessions. Clamped to [3, 25]. For Overhead DB Extension with real backup history `[6, 7, 8, 8, 8, 8]` yields `[6, 9]` — close to user's stated intent of `[6, 10]`.
+
+443. **`migrateLibraryToV7(library)` (`helpers.js`).** Idempotent v6 → v7 library migration. Re-seeds every entry's `defaultRepRange` per `classifyRepRange` (pre-v7 had uniform `[8, 12]` across built-ins), and adds `repRangeUserSet: false` on every entry. Entries with `repRangeUserSet: true` keep their range intact — they're user overrides. Returns same reference when no changes (matches v6 idempotency marker).
+
+444. **Persist version bumped `6 → 7` (`useStore.js`).** New migrate block + chain — `if (version < 7) library = migrateLibraryToV7(library)`. `importData` also runs v6 + v7 on imported libraries so pre-v7 backups land in the current schema. `buildBuiltInLibrary` now calls `classifyRepRange(raw.name, raw.equipment, [raw.muscleGroup])` instead of hardcoding `[8, 12]`.
+
+445. **`recommendNextLoad` signature change + decision-rule rewrite (`helpers.js`).** Replaces `targetReps = 10` with `repRange = [min, max]`. Backwards-compat: if a legacy caller still passes `targetReps`, derives `[targetReps - 2, targetReps]`. New range-aware decision rule:
+    - `reps >= max` → push (Layer 3 nudge, existing math unchanged; Layer 2 floor at `maxReps`).
+    - `min ≤ reps < max` → hold weight, "in range" reasoning.
+    - `reps < min` (single session) → hold weight, "below floor once, fine" copy.
+    - `reps < min` for 2 consecutive sessions → `meta.belowFloorStreak = 2` + `meta.suggestedDeloadWeight = last.weight - loadIncrement`. Prescription itself stays at current-strength-level. NO silent override.
+    - `mode === 'deload'` (user-declared) → `last.weight - loadIncrement` rounded to loadIncrement. Softer than the pre-Batch-30 65%-of-e1RM formula, respects per-exercise loadIncrement.
+    Meta additions: `repRange: [min, max]`, `belowFloorStreak`, `suggestedDeloadWeight`.
+
+446. **`rep-range-sanity.mjs` at worktree root.** 60/60 pass. Covers: classifyRepRange across 22 exercise names + equipment + muscle fallbacks; inferRepRange edge cases (< 4 sessions, exactly 4, clamp at 25, reps:0 filter, null history); Overhead DB Extension user scenario (range inferred to [6, 9], push rec holds weight, no silent deload); below-floor-streak detection on 2 consecutive sub-min sessions + single-session handling; in-range hold; loadIncrement-aware deload for 2.5 / 5 / 10 lb; migrateLibraryToV7 idempotency + user-override preservation; real-backup sanity spot-check.
+
+447. **BbLogger `recRepRange` memo (`BbLogger.jsx`).** Replaces `recTargetReps`. Resolution order:
+    1. `libraryEntry.defaultRepRange` when `libraryEntry.repRangeUserSet === true` (user override).
+    2. `inferRepRange(recHistory, classified)` where `classified = classifyRepRange(name, equipment, muscles)`.
+    3. Classification default (via inferRepRange fallback) when history is thin.
+    Threaded through `recommendNextLoad({history, repRange: recRepRange, ...})` and into `RecommendationSheet` as `repRange` + `repRangeUserSet` props.
+
+448. **`ExerciseEditSheet` gains two number steppers (`src/components/ExerciseEditSheet.jsx`).** "Top-set rep range" section between Load increment and Unilateral. `Progress when reps ≥ [max]` + `Back off when reps < [min]`, each with − / + stepper buttons (tap-only, no keyboard needed). Values clamp [1, 30]; min nudges up with max when max drops below it (and vice versa). Save commits both values + flips `repRangeUserSet: true` + clears `needsTagging: false` (pre-existing). Pre-fills from the current range regardless of whether it's user-set or inferred-and-stamped by v7.
+
+449. **"Your range" row in Recommendation sheet (`Recommendation.jsx`).** New row between the sparkline key and mode chips. Format: `Your range: 6–9 reps (inferred) [Edit →]` vs `Your range: 6–10 reps (you set this) [Edit →]`. `Edit →` button closes the recommendation sheet and fires `onEditLibraryEntry(libraryEntry)` from BbLogger, which opens `ExerciseEditSheet` stacked above at its native z-260. Hidden when `minReps`/`maxReps` aren't resolvable. New props: `repRange`, `repRangeUserSet`, `libraryEntry`, `onEditRange`.
+
+450. **`BelowFloorAdvisory` inline in Recommendation sheet (`Recommendation.jsx`).** Renders between the Your-range row and mode chips when `recs.push.meta.belowFloorStreak === 2` and not dismissed this session. Amber tint (`rgba(245, 158, 11)` at 8% bg + 35% border). Copy: `**Two sessions below your {min}-rep floor.** Today could be a lighter reset day. [Use lighter weight: {suggestedDeloadWeight} lbs] [×]`. Use-lighter button calls `onApply({ weight: suggestedDeloadWeight })` (reuses the existing Use-it path from Batch 28) + dismisses the advisory. × button dismisses only. Push + Maintain chips keep their normal current-strength-level values.
+
+451. **`settings.dismissedBelowFloorAdvisories` + `dismissBelowFloorAdvisory(exerciseKey)` (`useStore.js`).** Session-scoped dismissal map keyed by `exerciseId || name`, mirrors `dismissedAnomalies`. Stamps `activeSession.startTimestamp` against the key; next session's startTimestamp change auto-invalidates stale entries and the advisory returns if the streak still fires. No un-dismiss UI — the streak breaks naturally when the user hits at or above floor.
+
+452. **Growth label disambiguation (`Recommendation.jsx`).** The sparkline key's `Growth: +7.0%/wk` renders as `Weekly growth: +7.0%` post-Batch-31. User reported parsing `+2.0%/wk` as a "+2 lbs" weight delta in one of the data points (Rear Delts had a ~1.7%/wk rate that rounded to +2.0%). Explicit "Weekly growth:" prefix removes the ambiguity.
+
+453. **Files modified summary.** `src/utils/helpers.js` (classifier, inferrer, migration, engine rewrite); `src/store/useStore.js` (v7 persist, buildBuiltInLibrary classifier, importData v6+v7 run, dismissedBelowFloorAdvisories slice + action); `src/pages/log/BbLogger.jsx` (recRepRange memo, ExerciseItem thread-throughs, parent-level ExerciseEditSheet render, below-floor dismissal state); `src/pages/log/Recommendation.jsx` (Your-range row, advisory banner, Growth → Weekly growth, new props); `src/components/ExerciseEditSheet.jsx` (rep range steppers + save flip).
+
+454. **Build.** `npx vite build --outDir /tmp/test-build` → 769.24 KB bundle / 206.99 KB gzipped (+9.05 KB / +1.84 KB vs Batch 29, accounted for by the 50-entry classifier map + inferRepRange + v7 migration + range-aware recommender branch + the Your-range + advisory + stepper UI additions).
 
 ---
 

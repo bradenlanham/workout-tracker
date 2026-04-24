@@ -174,7 +174,13 @@ export function RecommendationSheet({
   onClose,
   exerciseName,
   history,
-  targetReps,
+  // Batch 30: effective [min, max] rep range — resolved in BbLogger via the
+  // user override OR inferRepRange(history, classificationDefault).
+  repRange,
+  // Batch 31.1: flag from libraryEntry.repRangeUserSet drives the "(inferred)"
+  // vs "(you set this)" suffix on the Your-range stat row.
+  repRangeUserSet = false,
+  libraryEntry = null,
   progressionClass,
   loadIncrement,
   accentColor = '#3b82f6',
@@ -184,16 +190,31 @@ export function RecommendationSheet({
   now = Date.now(),
   onApply = null,     // Batch 28 item 4 — plug prescription.weight into first empty working set
   hideApply = false,  // Hide "Use it" in plate mode (weight entry goes via plate picker)
+  // Batch 31.1 — tap the "Edit →" chip on the Your-range row. Parent opens
+  // ExerciseEditSheet stacked above; null hides the chip.
+  onEditRange = null,
+  // Batch 31.3 — below-floor advisory. When meta.belowFloorStreak === 2 from
+  // the push branch, a soft advisory renders above the mode chips. Parent
+  // passes the dismissed flag (session-scoped, from settings map) + dismiss
+  // callback. Use lighter weight rides through the existing onApply path.
+  belowFloorDismissed = false,
+  onDismissBelowFloor = null,
 }) {
+  // Derive [min, max] once — used throughout the sheet for the Your-range row,
+  // reasoning copy, and the recommender calls below.
+  const [minReps, maxReps] = Array.isArray(repRange) && repRange.length === 2
+    ? [repRange[0], repRange[1]]
+    : [8, 12]
+
   // Recompute per mode so chip tap can swap between them without a recalc.
   // aggressivenessMultiplier (Batch 16n) scales push-mode nudging based on
   // the user's readiness answers; maintain/deload ignore it.
   // fatigueSignals (Batch 16o) adds grade / cardio / rest / gap modulation.
   const recs = useMemo(() => ({
-    push:     recommendNextLoad({ history, targetReps, mode: 'push',     progressionClass, loadIncrement, aggressivenessMultiplier, fatigueSignals, now }),
-    maintain: recommendNextLoad({ history, targetReps, mode: 'maintain', progressionClass, loadIncrement, now }),
-    deload:   recommendNextLoad({ history, targetReps, mode: 'deload',   progressionClass, loadIncrement, now }),
-  }), [history, targetReps, progressionClass, loadIncrement, aggressivenessMultiplier, fatigueSignals, now])
+    push:     recommendNextLoad({ history, repRange, mode: 'push',     progressionClass, loadIncrement, aggressivenessMultiplier, fatigueSignals, now }),
+    maintain: recommendNextLoad({ history, repRange, mode: 'maintain', progressionClass, loadIncrement, now }),
+    deload:   recommendNextLoad({ history, repRange, mode: 'deload',   progressionClass, loadIncrement, now }),
+  }), [history, repRange, progressionClass, loadIncrement, aggressivenessMultiplier, fatigueSignals, now])
 
   // When a readiness answer suggests a specific mode, open the sheet aligned
   // with that mode so the user sees the prescription that matches their
@@ -357,12 +378,88 @@ export function RecommendationSheet({
                 })()}
               </div>
               <div>
-                <span className="text-c-faint">Growth:</span>{' '}
+                <span className="text-c-faint">Weekly growth:</span>{' '}
                 <span style={{ color: accentColor }} className="font-semibold tabular-nums">
-                  {formatWeeklyRate(selected.meta?.progressionRate ?? 0)}
+                  {formatWeeklyRate(selected.meta?.progressionRate ?? 0).replace('/wk', '')}
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Batch 31.1 — Your range row. Shows the effective [min, max] the
+            coach is measuring against, with source suffix:
+              - "(inferred)" when repRangeUserSet === false
+              - "(you set this)" when repRangeUserSet === true
+            Tap "Edit →" to open ExerciseEditSheet stacked above (handled by
+            the parent via onEditRange). Hidden when minReps/maxReps aren't
+            resolvable. */}
+        {typeof minReps === 'number' && typeof maxReps === 'number' && (
+          <div className="flex items-center justify-between gap-2 mb-3 px-3 py-2 rounded-xl bg-base/30 border border-white/5">
+            <div className="text-[12px] text-c-secondary">
+              <span className="text-c-faint">Your range:</span>{' '}
+              <span className="font-semibold text-c-primary tabular-nums">{minReps}&ndash;{maxReps} reps</span>
+              <span className="text-c-faint">{' '}({repRangeUserSet ? 'you set this' : 'inferred'})</span>
+            </div>
+            {onEditRange && (
+              <button
+                type="button"
+                onClick={onEditRange}
+                className="text-[11px] font-semibold text-c-secondary hover:text-c-primary"
+                style={{ color: accentColor }}
+              >
+                Edit →
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Batch 31.3 — below-floor advisory. When the user has fallen
+            below their own min-rep floor for two consecutive sessions, the
+            engine stamps meta.belowFloorStreak=2 on the push branch. Rather
+            than silently override the Push chip (old pre-Batch-30 behavior),
+            we surface an inline soft advisory above the chips: "consider a
+            lighter reset day" + "Use lighter weight: N lbs" button. The
+            normal Push / Maintain chips keep their current-strength-level
+            values — user chooses. Dismissal is session-scoped. */}
+        {recs?.push?.meta?.belowFloorStreak === 2 && !belowFloorDismissed && (
+          <div
+            className="flex items-start justify-between gap-2 mb-3 px-3 py-2.5 rounded-xl"
+            style={{
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+            }}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] leading-snug text-c-secondary">
+                <span className="font-semibold text-amber-300">Two sessions below your {minReps}-rep floor.</span>{' '}
+                Today could be a lighter reset day.
+              </div>
+              {onApply && recs.push.meta.suggestedDeloadWeight > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApply({ weight: recs.push.meta.suggestedDeloadWeight })
+                    if (onDismissBelowFloor) onDismissBelowFloor()
+                  }}
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 border border-amber-500/40 text-amber-300"
+                >
+                  Use lighter weight: {recs.push.meta.suggestedDeloadWeight} lbs
+                </button>
+              )}
+            </div>
+            {onDismissBelowFloor && (
+              <button
+                type="button"
+                onClick={onDismissBelowFloor}
+                className="shrink-0 w-7 h-7 rounded-full bg-item text-c-faint flex items-center justify-center"
+                aria-label="Dismiss advisory"
+              >
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
 
@@ -489,17 +586,17 @@ export function RecommendationSheet({
                   })()
                 }
                 hint={
-                  `How much the prescribed weight changes from last session's top set. This can jump by a lot when your strength level at ${targetReps} reps has climbed since last time (most often the case). A smaller per-session cap only kicks in if your e1RM plateaus and the engine is relying on the weekly nudge to push past the stall, not the strength projection.`
+                  `How much the prescribed weight changes from last session's top set. This can jump by a lot when your strength level at ${maxReps} reps has climbed since last time (most often the case). A smaller per-session cap only kicks in if your e1RM plateaus and the engine is relying on the weekly nudge to push past the stall, not the strength projection.`
                 }
               />
             )}
             {selected.meta?.layer2Weight > 0 && (
               <ContextRow
-                label={`Strength at ${targetReps} reps`}
+                label={`Strength at ${maxReps} reps`}
                 value={`${selected.meta.layer2Weight} lbs`}
                 hint={
-                  `What ${targetReps} reps should weigh given your current e1RM — a projection of your strength level at that rep target.\n` +
-                  `Standard lifting math says a ${targetReps}-rep max is about ${Math.round(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM) * 100)}% of a 1-rep max. So ${selected.meta.currentE1RM} × ${(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM)).toFixed(2)} ≈ ${selected.meta.layer2Weight} lbs. Push recommendations stay at or above this, so a lighter day doesn't undo your gains.`
+                  `What ${maxReps} reps should weigh given your current e1RM — a projection of your strength level at the top of your ${minReps}–${maxReps} range.\n` +
+                  `Standard lifting math says a ${maxReps}-rep max is about ${Math.round(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM) * 100)}% of a 1-rep max. So ${selected.meta.currentE1RM} × ${(selected.meta.layer2Weight / Math.max(1, selected.meta.currentE1RM)).toFixed(2)} ≈ ${selected.meta.layer2Weight} lbs. Push recommendations stay at or above this, so a lighter day doesn't undo your gains.`
                 }
               />
             )}

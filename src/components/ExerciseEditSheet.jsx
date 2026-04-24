@@ -39,6 +39,13 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
   const [equipment, setEquipment]                     = useState('')
   const [defaultUnilateral, setDefaultUnilateral]     = useState(false)
   const [loadIncrement, setLoadIncrement]             = useState(5)
+  // Batch 31.2 — rep range for the push/hold/back-off decision. [min, max]
+  // are two number steppers below load increment. On save, we flip
+  // repRangeUserSet → true so the recommender honors the override (vs
+  // inferring from history). Pre-filled with the exercise's current range
+  // (whether user-set or inferred-and-stamped by the v7 migration).
+  const [rangeMin, setRangeMin]                       = useState(8)
+  const [rangeMax, setRangeMax]                       = useState(12)
   const [confirmingDelete, setConfirmingDelete]       = useState(false)
 
   // Refresh form state whenever the sheet opens with a new entry.
@@ -49,6 +56,11 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
       setEquipment(exercise.equipment && exercise.equipment !== 'Other' ? exercise.equipment : '')
       setDefaultUnilateral(!!exercise.defaultUnilateral)
       setLoadIncrement(exercise.loadIncrement || 5)
+      const rr = Array.isArray(exercise.defaultRepRange) && exercise.defaultRepRange.length === 2
+        ? exercise.defaultRepRange
+        : [8, 12]
+      setRangeMin(rr[0])
+      setRangeMax(rr[1])
       setConfirmingDelete(false)
     }
   }, [open, exercise])
@@ -60,12 +72,24 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
     && primaryMuscles.length > 0
     && equipment
     && equipment !== 'Other'
+    && rangeMin >= 1 && rangeMax >= rangeMin && rangeMax <= 30
 
   const toggleMuscle = (m) => {
     setPrimaryMuscles(prev =>
       prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
     )
   }
+
+  const bumpMin = (delta) => setRangeMin(v => {
+    const next = Math.max(1, Math.min(30, v + delta))
+    if (next > rangeMax) setRangeMax(next)
+    return next
+  })
+  const bumpMax = (delta) => setRangeMax(v => {
+    const next = Math.max(1, Math.min(30, v + delta))
+    if (next < rangeMin) setRangeMin(next)
+    return next
+  })
 
   const handleSave = () => {
     if (!canSave) return
@@ -75,6 +99,10 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
       equipment,
       defaultUnilateral,
       loadIncrement,
+      // Batch 31.2 — clamp min ≤ max and persist; flip the user-set flag so
+      // the recommender stops inferring from history for this exercise.
+      defaultRepRange:   [rangeMin, Math.max(rangeMin, rangeMax)],
+      repRangeUserSet:   true,
       needsTagging:      false,
     })
   }
@@ -143,6 +171,58 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
               {li} lb
             </Pill>
           ))}
+        </div>
+
+        {/* Batch 31.2 — top-set rep range. Steppers are tap-only so the user
+            can adjust without keyboard. Min row + Max row. Values clamp to
+            [1, 30] and min is nudged up with max when max drops below it
+            (+ vice versa). Saving flips repRangeUserSet so the recommender
+            honors the override instead of inferring from history. */}
+        <p className="text-xs text-c-dim font-medium mb-0.5">Top-set rep range</p>
+        <p className="text-[10px] text-c-muted mb-2">Coach pushes weight up at or above max; flags below min as a tough day.</p>
+        <div className="flex items-center justify-between gap-3 mb-2 bg-item rounded-xl px-3 py-2.5">
+          <span className="text-xs text-c-secondary">Progress when reps ≥</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => bumpMax(-1)}
+              className="w-8 h-8 rounded-lg bg-card text-c-primary text-lg leading-none font-bold active:bg-hover"
+              aria-label="Decrease max reps"
+            >
+              −
+            </button>
+            <span className="text-base font-bold text-c-primary tabular-nums w-6 text-center">{rangeMax}</span>
+            <button
+              type="button"
+              onClick={() => bumpMax(+1)}
+              className="w-8 h-8 rounded-lg bg-card text-c-primary text-lg leading-none font-bold active:bg-hover"
+              aria-label="Increase max reps"
+            >
+              +
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3 mb-4 bg-item rounded-xl px-3 py-2.5">
+          <span className="text-xs text-c-secondary">Back off when reps &lt;</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => bumpMin(-1)}
+              className="w-8 h-8 rounded-lg bg-card text-c-primary text-lg leading-none font-bold active:bg-hover"
+              aria-label="Decrease min reps"
+            >
+              −
+            </button>
+            <span className="text-base font-bold text-c-primary tabular-nums w-6 text-center">{rangeMin}</span>
+            <button
+              type="button"
+              onClick={() => bumpMin(+1)}
+              className="w-8 h-8 rounded-lg bg-card text-c-primary text-lg leading-none font-bold active:bg-hover"
+              aria-label="Increase min reps"
+            >
+              +
+            </button>
+          </div>
         </div>
 
         <label className="flex items-center gap-2 mb-5 text-xs text-c-secondary">

@@ -10,9 +10,11 @@ import {
   detectAnomalies, formatRec, getInstancesForExercise,
   shouldPromptGymTag, isExerciseAvailableAtGym, isExerciseHiddenAtGym,
   toLocalDateStr, isMachineEquipment, recommendPlatesForWeight,
+  classifyRepRange, inferRepRange,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
+import ExerciseEditSheet from '../../components/ExerciseEditSheet'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
 import { RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt } from './Recommendation'
@@ -882,6 +884,9 @@ function ExerciseItem({
   aggressivenessMultiplier = 1, suggestedMode = 'push',
   fatigueSignals = null, activeSessionId = null,
   currentGymId = null, currentGymLabel = null,
+  // Batch 31.1 — callback fired by the Your-range Edit→ chip inside the
+  // Recommendation sheet; parent opens ExerciseEditSheet at the top level.
+  onEditLibraryEntry = null,
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
@@ -1142,13 +1147,16 @@ function ExerciseItem({
     )
   }, [exerciseLibrary, exercise.exerciseId, exercise.name])
 
-  const recTargetReps = useMemo(() => {
-    const range = libraryEntry?.defaultRepRange
-    if (Array.isArray(range) && range.length === 2) {
-      return Math.round((range[0] + range[1]) / 2)
-    }
-    return 10
-  }, [libraryEntry])
+  // Batch 30: effective rep range resolves to EITHER the user override (when
+  // repRangeUserSet) OR inferRepRange(history, classificationDefault). The
+  // recommender uses the returned [min, max] for its push / hold / back-off
+  // decision. This memo is recomputed AFTER recHistory below, so it reads the
+  // current gym-scoped history — keeping the inferred range in sync with the
+  // same data the recommender fits against.
+  // Note: recHistory is declared below, so this `recRepRange` memo references
+  // it after-the-fact via the useMemo deps list. React honors that order as
+  // long as nothing reads recRepRange DURING recHistory's render pass, which
+  // is the case here (only the `recommendation` useMemo below reads it).
 
   // Instance + gym scoping (spec §3.4, §3.5.6). Progressive fallback keyed
   // on the richness of available history:
@@ -1206,6 +1214,27 @@ function ExerciseItem({
   // Machine + legacy 'Machine' (defensive; pre-v6 migration fallback).
   const showMachineChip = isMachineEquipment(libraryEntry?.equipment)
 
+  // Batch 30: effective rep range resolves in priority order:
+  //   1. libraryEntry.defaultRepRange when libraryEntry.repRangeUserSet — the
+  //      user has explicitly overridden via ExerciseEditSheet or the Your-range
+  //      edit link in the Recommendation sheet.
+  //   2. inferRepRange(recHistory, classificationDefault) — derived from the
+  //      user's own last 6 top-set rep counts. Reflects actual training
+  //      pattern and updates automatically as they evolve.
+  //   3. classifyRepRange(name, equipment, muscles) — cold-start default when
+  //      history is too thin (< 4 sessions) for a stable inference.
+  const recRepRange = useMemo(() => {
+    const classified = classifyRepRange(
+      exercise.name,
+      libraryEntry?.equipment,
+      libraryEntry?.primaryMuscles,
+    )
+    if (libraryEntry?.repRangeUserSet && Array.isArray(libraryEntry?.defaultRepRange) && libraryEntry.defaultRepRange.length === 2) {
+      return libraryEntry.defaultRepRange
+    }
+    return inferRepRange(recHistory, classified)
+  }, [libraryEntry, recHistory, exercise.name])
+
   // Recommendation: mode derives from the readiness "goal" answer (Batch 16n,
   // spec §2.5). Defaults to 'push' when no readiness data is present — same
   // behavior as pre-16n. aggressivenessMultiplier scales push-mode nudging.
@@ -1215,14 +1244,14 @@ function ExerciseItem({
     if (!recHistory.length) return null
     return recommendNextLoad({
       history:          recHistory,
-      targetReps:       recTargetReps,
+      repRange:         recRepRange,
       mode:             suggestedMode,
       progressionClass: libraryEntry?.progressionClass || 'isolation',
       loadIncrement:    libraryEntry?.loadIncrement    || 5,
       aggressivenessMultiplier,
       fatigueSignals:   fatigueSignals || {},
     })
-  }, [recHistory, recTargetReps, libraryEntry?.progressionClass, libraryEntry?.loadIncrement, suggestedMode, aggressivenessMultiplier, fatigueSignals])
+  }, [recHistory, recRepRange, libraryEntry?.progressionClass, libraryEntry?.loadIncrement, suggestedMode, aggressivenessMultiplier, fatigueSignals])
 
   // ── Anomaly detection (Batch 16q, step 9 / spec §4.5 + §9.3) ──────────
   // Runs plateau / regression / swing over the same recHistory used by the
@@ -1234,6 +1263,12 @@ function ExerciseItem({
   const dismissedFor = settings.dismissedAnomalies?.[anomalyKey]
   const dismissedThisSession = dismissedFor != null && activeSessionId != null && dismissedFor === activeSessionId
   const showAnomalyBanner = settings.enableAiCoaching && anomaly && !dismissedThisSession
+
+  // Batch 31.3 — below-floor advisory dismissal state. Shares the anomalyKey
+  // shape (exerciseId || name) so dismiss logic mirrors anomaly banners.
+  const belowFloorDismissedFor = settings.dismissedBelowFloorAdvisories?.[anomalyKey]
+  const belowFloorDismissedThisSession = belowFloorDismissedFor != null && activeSessionId != null && belowFloorDismissedFor === activeSessionId
+  const dismissBelowFloorAdvisory = useStore(s => s.dismissBelowFloorAdvisory)
 
   // ── Gym-tag prompt (Batch 20b, spec §3.5.4) ─────────────────────────────
   // Surface the "Tag X as available at Y?" prompt when the exercise has a
@@ -1718,7 +1753,9 @@ function ExerciseItem({
         onClose={() => setRecSheetOpen(false)}
         exerciseName={exercise.name}
         history={recHistory}
-        targetReps={recTargetReps}
+        repRange={recRepRange}
+        repRangeUserSet={!!libraryEntry?.repRangeUserSet}
+        libraryEntry={libraryEntry}
         progressionClass={libraryEntry?.progressionClass || 'isolation'}
         loadIncrement={libraryEntry?.loadIncrement || 5}
         accentColor={theme.hex}
@@ -1726,6 +1763,11 @@ function ExerciseItem({
         aggressivenessMultiplier={aggressivenessMultiplier}
         fatigueSignals={fatigueSignals || {}}
         onApply={handleApplyRecommendation}
+        onEditRange={libraryEntry && onEditLibraryEntry
+          ? () => { setRecSheetOpen(false); onEditLibraryEntry(libraryEntry) }
+          : null}
+        belowFloorDismissed={belowFloorDismissedThisSession}
+        onDismissBelowFloor={() => dismissBelowFloorAdvisory(anomalyKey)}
       />
     </div>
   )
@@ -2386,7 +2428,13 @@ export default function BbLogger() {
   } = useStore()
   const theme = getTheme(settings.accentColor)
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
-  const exerciseLibraryAll = useStore(s => s.exerciseLibrary)
+  const exerciseLibraryAll   = useStore(s => s.exerciseLibrary)
+  // Batch 31.1 — when the user taps "Edit →" on the Your-range row inside
+  // the RecommendationSheet, we open ExerciseEditSheet stacked above for
+  // that library entry. State lives at the parent BbLogger level so the
+  // sheet isn't per-exercise local.
+  const updateExerciseInLibrary = useStore(s => s.updateExerciseInLibrary)
+  const [editingLibEntry, setEditingLibEntry] = useState(null)
 
   // ── Audio unlock on first touch (iOS requires user-gesture before AudioContext) ──
   useEffect(() => {
@@ -3245,6 +3293,7 @@ export default function BbLogger() {
                       activeSessionId={startTimestamp.current || null}
                       currentGymId={gymId}
                       currentGymLabel={currentGymLabel}
+                      onEditLibraryEntry={setEditingLibEntry}
                     />
                   )
                 })}
@@ -3373,6 +3422,22 @@ export default function BbLogger() {
 
       {/* Custom numpad – always in DOM for slide animation */}
       <CustomNumpad config={numpadConfig} isOpen={numpadIsOpen} onClose={closeNumpad} />
+
+      {/* Batch 31.1 — ExerciseEditSheet opened from the Your-range Edit→ chip
+          inside RecommendationSheet. Stacks above at z-260 (which the sheet
+          itself owns). Save updates the library entry and flips
+          repRangeUserSet=true so the recommender stops inferring. */}
+      <ExerciseEditSheet
+        open={!!editingLibEntry}
+        exercise={editingLibEntry}
+        theme={theme}
+        onCancel={() => setEditingLibEntry(null)}
+        onSave={(id, patch) => {
+          updateExerciseInLibrary(id, patch)
+          setEditingLibEntry(null)
+        }}
+        onDelete={() => { /* not a destructive surface — no-op */ }}
+      />
     </div>
     </NumpadContext.Provider>
   )

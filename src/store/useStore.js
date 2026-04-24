@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateLibraryToV6, toLocalDateStr } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateLibraryToV6, migrateLibraryToV7, classifyRepRange, toLocalDateStr } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -35,7 +35,13 @@ function buildBuiltInLibrary() {
     isBuiltIn:         true,
     defaultUnilateral: false,
     loadIncrement:     5,
-    defaultRepRange:   [8, 12],
+    // Batch 30: per-exercise rep range replaces the uniform [8, 12] seed.
+    // classifyRepRange uses the name + equipment + muscle to pick a sensible
+    // default (compound barbell → [5,8]; DB/machine press/row/pulldown → [6,10];
+    // side/rear delts/calves/forearms → [10,15]; otherwise [8,12]). User can
+    // override via ExerciseEditSheet; override flips repRangeUserSet to true.
+    defaultRepRange:   classifyRepRange(raw.name, raw.equipment, [raw.muscleGroup]),
+    repRangeUserSet:   false,
     progressionClass:
       raw.muscleGroup === 'Full Body' ? 'compound'
       : raw.equipment === 'Bodyweight' ? 'bodyweight'
@@ -106,6 +112,12 @@ const useStore = create(
         // via startTimestamp change. The "Always skip" branch writes to
         // Exercise.skipGymTagPrompt instead (persists across sessions).
         dismissedGymPrompts: {},
+        // Batch 31.3 — per-exercise below-floor advisory dismissal map.
+        // Shape: { [exerciseKey]: sessionId }. Mirrors dismissedAnomalies:
+        // session-scoped so the advisory reappears next session if the
+        // below-floor streak (2 consecutive sessions under min-reps) still
+        // fires.
+        dismissedBelowFloorAdvisories: {},
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
@@ -705,6 +717,25 @@ const useStore = create(
         }))
       },
 
+      // Batch 31.3 — Below-floor advisory dismissal. Same session-scoped
+      // pattern as dismissAnomaly: stamp the activeSession.startTimestamp
+      // against the exercise key, advisory re-appears next session if the
+      // streak still fires. No UI to un-dismiss; the streak breaks naturally
+      // when the user hits a session at or above their floor.
+      dismissBelowFloorAdvisory: (exerciseKey) => {
+        if (!exerciseKey) return
+        const activeId = get().activeSession?.startTimestamp || 'no-session'
+        set(state => ({
+          settings: {
+            ...state.settings,
+            dismissedBelowFloorAdvisories: {
+              ...(state.settings.dismissedBelowFloorAdvisories || {}),
+              [exerciseKey]: activeId,
+            },
+          },
+        }))
+      },
+
       // ── Gym-tag prompt "Not this time" dismissal (Batch 20b, §3.5.4) ──
       // Stamps the current activeSession.startTimestamp against an
       // (exerciseKey, gymId) pair so the auto-tag prompt stays hidden for
@@ -807,6 +838,11 @@ const useStore = create(
             // from a pre-v5 install lands in the current schema. Idempotent
             // on already-bundled data, so re-imports + v5 backups are safe.
             const migratedSessions = migrateSessionsToV5(data.sessions)
+            // Batch 30: run v6 + v7 library migrations on imported library
+            // so pre-v7 backups land in the current schema (per-exercise
+            // defaultRepRange + repRangeUserSet flag). Idempotent.
+            const libV6 = migrateLibraryToV6(data.exerciseLibrary || [])
+            const migratedLibrary = migrateLibraryToV7(libV6)
             set({
               sessions: migratedSessions,
               settings: data.settings || get().settings,
@@ -814,7 +850,7 @@ const useStore = create(
               workoutSequence: data.workoutSequence || null,
               splits: data.splits || [],
               activeSplitId: data.activeSplitId || null,
-              exerciseLibrary: data.exerciseLibrary || [],
+              exerciseLibrary: migratedLibrary,
               cardioSessions: data.cardioSessions || [],
               customCardioTypes: data.customCardioTypes || [],
               restDaySessions: data.restDaySessions || [],
@@ -829,7 +865,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 6,
+      version: 7,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -851,6 +887,12 @@ const useStore = create(
       //   commercial gyms). Plate-loaded machines users own will need
       //   one-tap re-tagging via /exercises. User-created custom machine
       //   entries and persisted built-ins both sweep.
+      //   V6→V7 (Batch 30): re-seed per-exercise defaultRepRange via
+      //   classifyRepRange (pre-v7 had uniform [8,12]) and add
+      //   repRangeUserSet:false on every entry. Entries already carrying
+      //   repRangeUserSet=true keep their current range — they're user
+      //   overrides. Recommender subsequently reads either the override
+      //   or inferRepRange(history, classificationDefault).
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -876,6 +918,9 @@ const useStore = create(
         }
         if (version < 6 && Array.isArray(persistedState.exerciseLibrary)) {
           persistedState.exerciseLibrary = migrateLibraryToV6(persistedState.exerciseLibrary)
+        }
+        if (version < 7 && Array.isArray(persistedState.exerciseLibrary)) {
+          persistedState.exerciseLibrary = migrateLibraryToV7(persistedState.exerciseLibrary)
         }
         return persistedState
       },

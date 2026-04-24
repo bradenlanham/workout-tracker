@@ -1035,6 +1035,40 @@ export function migrateLibraryToV6(library) {
   return changed > 0 ? out : library
 }
 
+// Batch 30 v6 → v7 library migration: re-seed `defaultRepRange` per exercise
+// classification (pre-v7 had [8, 12] hardcoded across every built-in) and add
+// `repRangeUserSet: false` on every entry so the recommender knows whether to
+// infer from history vs honor a user override. Idempotent — entries already
+// carrying `repRangeUserSet` keep their `defaultRepRange` untouched; the flag
+// means "user has engaged with this range via ExerciseEditSheet or the Your
+// range edit link in the Recommendation sheet."
+export function migrateLibraryToV7(library) {
+  if (!Array.isArray(library)) return library
+  let changed = 0
+  const out = library.map(e => {
+    if (!e || typeof e !== 'object') return e
+    const patch = {}
+    // Re-classify defaultRepRange only when the user hasn't engaged with it.
+    if (!e.repRangeUserSet) {
+      const classified = classifyRepRange(e.name, e.equipment, e.primaryMuscles)
+      const current = Array.isArray(e.defaultRepRange) ? e.defaultRepRange : null
+      if (!current || current[0] !== classified[0] || current[1] !== classified[1]) {
+        patch.defaultRepRange = classified
+      }
+    }
+    // Ensure the flag exists with a sane default. Existing true values stay.
+    if (typeof e.repRangeUserSet !== 'boolean') {
+      patch.repRangeUserSet = false
+    }
+    if (Object.keys(patch).length > 0) {
+      changed++
+      return { ...e, ...patch }
+    }
+    return e
+  })
+  return changed > 0 ? out : library
+}
+
 // Per-session top set for an exercise — the working set with the highest
 // e1RM. Skips warmups; drop sets count (same per-side load as the parent
 // working set is fine for fit purposes). Returns chronological ascending.
@@ -1192,6 +1226,147 @@ export function getRecommendationConfidence(n, rSquared) {
   return 'building'
 }
 
+// ── Rep-range classification + inference (Batches 30 + 31) ─────────────────
+//
+// Rep ranges drive the recommender's "when to push" vs "when to back off"
+// decision. Instead of a single hardcoded targetReps=10 (pre-Batch-30), each
+// exercise now has a [min, max] range:
+//   reps >= max          → push weight up next session
+//   reps < min           → below-floor warning (2 consecutive → soft advisory)
+//   min ≤ reps < max     → hold weight, keep training
+//
+// Effective range resolution order (inside BbLogger's recRepRange memo):
+//   1. library.defaultRepRange if repRangeUserSet === true — user override
+//   2. inferRepRange(history, classificationDefault) — derived from the user's
+//      own last 6 top-set rep counts; reflects their actual training pattern
+//   3. classifyRepRange(name, equipment, primaryMuscles) — cold-start default
+//      when history has < 4 sessions.
+
+// Keyword map for classifyRepRange. Order matters — specific terms before
+// generic. Mirrors the EXERCISE_KEYWORD_MAP pattern used by predictExerciseMeta.
+const REP_RANGE_KEYWORD_MAP = [
+  // ── Higher-rep bodies first (calves, forearms, delts, core) ──
+  { kw: 'calf raise',      range: [10, 15] },
+  { kw: 'seated calf',     range: [10, 15] },
+  { kw: 'standing calf',   range: [10, 15] },
+  { kw: 'donkey calf',     range: [10, 15] },
+  { kw: 'forearm',         range: [10, 15] },
+  { kw: 'wrist curl',      range: [10, 15] },
+  { kw: 'lateral raise',   range: [10, 15] },
+  { kw: 'side raise',      range: [10, 15] },
+  { kw: 'rear delt',       range: [10, 15] },
+  { kw: 'reverse pec',     range: [10, 15] },
+  { kw: 'face pull',       range: [10, 15] },
+  { kw: 'crunch',          range: [10, 15] },
+  { kw: 'sit-up',          range: [10, 15] },
+  { kw: 'situp',           range: [10, 15] },
+  { kw: 'leg raise',       range: [10, 15] },
+  { kw: 'plank',           range: [10, 15] },
+  { kw: 'russian twist',   range: [10, 15] },
+  { kw: 'ab wheel',        range: [10, 15] },
+
+  // ── Compound barbell lifts — strength-biased [5, 8] ──
+  { kw: 'back squat',      range: [5, 8] },
+  { kw: 'front squat',     range: [5, 8] },
+  { kw: 'squat',           range: [5, 8] },
+  { kw: 'romanian deadlift', range: [5, 8] },
+  { kw: 'rdl',             range: [5, 8] },
+  { kw: 'deadlift',        range: [5, 8] },
+  { kw: 'bench press',     range: [5, 8] },
+  { kw: 'barbell row',     range: [5, 8] },
+  { kw: 'overhead press',  range: [5, 8] },
+  { kw: 'military press',  range: [5, 8] },
+
+  // ── DB / machine press + row + pulldown — medium [6, 10] ──
+  { kw: 'db press',        range: [6, 10] },
+  { kw: 'dumbbell press',  range: [6, 10] },
+  { kw: 'incline db',      range: [6, 10] },
+  { kw: 'incline dumbbell', range: [6, 10] },
+  { kw: 'db row',          range: [6, 10] },
+  { kw: 'dumbbell row',    range: [6, 10] },
+  { kw: 'cable row',       range: [6, 10] },
+  { kw: 'seated row',      range: [6, 10] },
+  { kw: 'chest row',       range: [6, 10] },
+  { kw: 'lat pulldown',    range: [6, 10] },
+  { kw: 'pulldown',        range: [6, 10] },
+  { kw: 'chest press',     range: [6, 10] },
+  { kw: 'shoulder press',  range: [6, 10] },
+  { kw: 'pec dec',         range: [6, 10] },
+  { kw: 'pec deck',        range: [6, 10] },
+  { kw: 'leg press',       range: [6, 10] },
+  { kw: 'hack squat',      range: [6, 10] },
+  { kw: 'pull-up',         range: [6, 10] },
+  { kw: 'pullup',          range: [6, 10] },
+  { kw: 'chin-up',         range: [6, 10] },
+  { kw: 'chinup',          range: [6, 10] },
+  { kw: 'dip',             range: [6, 10] },
+
+  // ── Isolation / smaller moves — hypertrophy [8, 12] ──
+  { kw: 'bicep curl',      range: [8, 12] },
+  { kw: 'curl',            range: [8, 12] },
+  { kw: 'tricep extension',range: [8, 12] },
+  { kw: 'overhead extension', range: [8, 12] },
+  { kw: 'extension',       range: [8, 12] },
+  { kw: 'leg extension',   range: [8, 12] },
+  { kw: 'leg curl',        range: [8, 12] },
+  { kw: 'pushdown',        range: [8, 12] },
+  { kw: 'shrug',           range: [8, 12] },
+  { kw: 'pullover',        range: [8, 12] },
+  { kw: 'fly',             range: [8, 12] },
+  { kw: 'flye',            range: [8, 12] },
+  { kw: 'hip thrust',      range: [8, 12] },
+  { kw: 'glute bridge',    range: [8, 12] },
+  { kw: 'adductor',        range: [8, 12] },
+  { kw: 'abductor',        range: [8, 12] },
+]
+
+// classifyRepRange(name, equipment, primaryMuscles) → [min, max]
+//
+// Cold-start default used when the user has < 4 sessions of history on an
+// exercise. Returns a NEW array each call so callers can safely mutate it.
+export function classifyRepRange(name, equipment, primaryMuscles) {
+  const n = String(name || '').toLowerCase()
+  for (const { kw, range } of REP_RANGE_KEYWORD_MAP) {
+    if (n.includes(kw)) return [range[0], range[1]]
+  }
+  // Equipment fallback: barbell → strength-biased.
+  if (equipment === 'Barbell') return [5, 8]
+  // Muscle fallback: calves + forearms → higher reps.
+  const muscles = (primaryMuscles || []).map(m => String(m || '').toLowerCase())
+  if (muscles.some(m => m === 'calves' || m === 'forearms')) return [10, 15]
+  // Default hypertrophy range.
+  return [8, 12]
+}
+
+// inferRepRange(history, classificationDefault) → [min, max]
+//
+// Pulls the rep range from the user's actual recent training pattern — last
+// 6 top-set rep counts. Falls back to the classification default when history
+// is too thin (< 4 sessions) to produce a stable inference.
+//
+//   min = worst rep count in the recent window (what they've bottomed out at)
+//   max = best rep count + 1 (gives a ceiling to push toward)
+//
+// Clamped to [3, 25] for sanity. Returns a fresh array.
+export function inferRepRange(history, classificationDefault) {
+  const fallback = Array.isArray(classificationDefault) && classificationDefault.length === 2
+    ? [classificationDefault[0], classificationDefault[1]]
+    : [8, 12]
+  if (!Array.isArray(history)) return fallback
+  const reps = history
+    .slice(-6)
+    .map(h => Number(h?.reps) || 0)
+    .filter(r => r > 0)
+    .sort((a, b) => a - b)
+  if (reps.length < 4) return fallback
+  const min = Math.max(3, reps[0])
+  const max = Math.min(25, reps[reps.length - 1] + 1)
+  // Guard against pathological cases where min ≥ max (e.g. all sets at 3 reps
+  // → min=3, max=4 after +1 = still OK; all sets at 25 → min=25, max=25 after
+  // clamp. Nudge max up by 1 when the two collide so the range is never empty).
+  return min < max ? [min, max] : [min, Math.min(25, min + 1)]
+}
+
 // Top-level — takes per-exercise history (chronological, from
 // getExerciseHistory) plus the exercise's defaults and mode. Caller rounds
 // the returned prescription to `loadIncrement` already; we return numbers.
@@ -1205,26 +1380,47 @@ export function getRecommendationConfidence(n, rSquared) {
 // session only."
 export function recommendNextLoad({
   history,
-  targetReps       = 10,
+  // Batch 30 — per-exercise [min, max] rep range. Drives push/hold/back-off
+  // decision. Callers resolve via library.defaultRepRange (user override) or
+  // inferRepRange(history, classificationDefault). When unset → [8, 12].
+  repRange         = null,
+  // Legacy pre-Batch-30 API — single target rep count. When passed without a
+  // repRange, a synthetic [max-2, max] range is derived so legacy callers
+  // retain their approximate behavior. New callers should use repRange.
+  targetReps       = null,
   mode             = 'push',
   progressionClass = 'isolation',
   loadIncrement    = 5,
   // Readiness modulation (spec §2.5, Batch 16n). 0.85 = low energy/sleep,
-  // 1.00 = typical, 1.15 = great readiness. Scales the push-mode aggressiveness
-  // constant (base 1.15) so a tired day nudges less aggressively than a
-  // fresh day. No effect in maintain/deload modes. Defaults to 1 so callers
-  // without a readiness signal get identical behavior to pre-16n.
+  // 1.00 = typical, 1.15 = great readiness. Scales push-mode aggressiveness
+  // constant (base 1.15) so a tired day nudges less than a fresh day. No
+  // effect in maintain/deload modes.
   aggressivenessMultiplier = 1,
-  // Fatigue signals (spec §4, Batch 16o). All optional, all default to
-  // no-op so pre-16o callers get identical output.
+  // Fatigue signals (spec §4, Batch 16o). All optional, all default to no-op.
   //   priorGrade:      'A+'|'A'|'B'|'C'|'D'|null — most recent bb session's grade
-  //   cardioRecent:    { intensity, hoursAgo } | null — most recent cardio
-  //                    session; only "allout" within 24h dampens (user said
-  //                    routine cardio should not factor)
-  //   restedYesterday: bool — a rest day was logged within the last 36h
+  //   cardioRecent:    { intensity, hoursAgo } | null — only "allout" <24h damps
+  //   restedYesterday: bool — rest day logged within 36h
   fatigueSignals = {},
   now              = Date.now(),
 } = {}) {
+  // Resolve effective [min, max]. repRange wins; targetReps legacy path
+  // synthesizes [max-2, max] with min floor of 3; neither → [8, 12].
+  let rawMin, rawMax
+  if (Array.isArray(repRange) && repRange.length === 2) {
+    rawMin = Number(repRange[0]) || 0
+    rawMax = Number(repRange[1]) || 0
+  } else if (typeof targetReps === 'number' && targetReps > 0) {
+    rawMax = targetReps
+    rawMin = Math.max(3, targetReps - 2)
+  } else {
+    rawMin = 8
+    rawMax = 12
+  }
+  const minReps = Math.max(1, Math.min(rawMin, rawMax))
+  const maxReps = Math.max(minReps, rawMax)
+  // Push-nudge + Layer 2 %1RM target uses the ceiling — that's when we push.
+  const effectiveTarget = maxReps
+
   const h = Array.isArray(history) ? history : []
   const n = h.length
 
@@ -1233,8 +1429,8 @@ export function recommendNextLoad({
       mode,
       confidence: 'none',
       prescription: null,
-      reasoning:  'No prior sessions logged — pick a weight you can do for ' + targetReps + ' clean reps.',
-      meta: { n: 0, rSquared: 0 },
+      reasoning:  `No prior sessions logged — pick a weight you can do for ${minReps}–${maxReps} clean reps.`,
+      meta: { n: 0, rSquared: 0, repRange: [minReps, maxReps] },
     }
   }
   if (n < 3) {
@@ -1245,7 +1441,7 @@ export function recommendNextLoad({
       confidence: 'none',
       prescription: { weight: last.weight, reps: last.reps },
       reasoning:  `Log ${remaining} more ${remaining === 1 ? 'session' : 'sessions'} and I'll start prescribing weights.`,
-      meta: { n, rSquared: 0, daysSince: Math.max(0, Math.round((now - new Date(last.date).getTime()) / 86400000)) },
+      meta: { n, rSquared: 0, daysSince: Math.max(0, Math.round((now - new Date(last.date).getTime()) / 86400000)), repRange: [minReps, maxReps] },
     }
   }
 
@@ -1259,107 +1455,107 @@ export function recommendNextLoad({
   const personalRate = usedFit ? fit.rate : fallbackRate
   const confidence   = getRecommendationConfidence(fit.n, fit.rSquared)
 
-  const layer2Weight = currentE1RM * percent1RM(targetReps)
+  const layer2Weight = currentE1RM * percent1RM(effectiveTarget)
 
-  // Auto-deload trigger (spec §2.2 rule 3): missed by 2+ reps in the last
-  // two consecutive sessions. Only applies when the user hasn't already
-  // explicitly declared maintain/deload — otherwise mode wins. When RPE
-  // is logged, "miss" is evaluated against effective reps (reps + RIR);
-  // a set at RPE 8 with 2 RIR counts as hitting target even if raw reps
-  // fell short (§3.7).
+  // Below-floor streak detection (Batch 30). Replaces the pre-Batch-30
+  // auto-deload silent override. Detects 2 consecutive sessions where the
+  // user came in below their own declared floor; feeds the soft advisory
+  // banner rendered in Batch 31.3 — does NOT rewrite the push prescription.
+  // RPE-aware via effectiveReps (reps + RIR) when available.
   const effReps = p => {
     const rir = p.rpe ? Math.max(0, 10 - p.rpe) : 0
     return p.reps + rir
   }
-  const lastTwo    = h.slice(-2)
-  const autoDeload = mode === 'push' && lastTwo.length >= 2 &&
-                     lastTwo.every(p => (targetReps - effReps(p)) >= 2)
+  const lastTwo = h.slice(-2)
+  const belowFloorStreak = lastTwo.length >= 2 && lastTwo.every(p => effReps(p) < minReps) ? 2 : 0
+
+  // Suggested soft-deload weight: one loadIncrement below last weight, floored
+  // at one increment. Used by the advisory banner AND by the user-declared
+  // `deload` mode (which previously returned 65% of e1RM — too aggressive for
+  // most users; one-step-down is the softer option that respects the
+  // exercise's own loadIncrement).
+  const inc = Number(loadIncrement) > 0 ? Number(loadIncrement) : 5
+  const suggestedDeloadWeight = Math.max(inc, Math.round((last.weight - inc) / inc) * inc)
 
   let prescriptionWeight
   let reasoning
   let effectiveMode = mode
 
   if (mode === 'deload') {
-    // User-declared deload. 65% of current e1RM (midpoint of 60-70%).
-    prescriptionWeight = currentE1RM * 0.65
-    reasoning          = `Recovery day. 65% of your e1RM for an easier session.`
-  } else if (autoDeload) {
-    // 10% off the last working weight, per the decision rule.
-    prescriptionWeight = last.weight * 0.90
-    reasoning          = `You've missed the rep target two sessions in a row. Backing off 10% today to reset before pushing again.`
-    effectiveMode      = 'deload'
+    // User explicitly picked Recover. One increment below last weight — soft,
+    // respects loadIncrement per-exercise. No fatigue multipliers apply
+    // (user already declared intent to back off).
+    prescriptionWeight = suggestedDeloadWeight
+    reasoning          = `Recovery day. One step below last session — aim for clean reps at ${suggestedDeloadWeight} today.`
   } else if (mode === 'maintain') {
-    // Layer 2 only: match the e1RM at the target reps, no nudge.
+    // Layer 2 only — no nudge, no fatigue, no gap adjustment. Match strength.
     prescriptionWeight = layer2Weight
-    reasoning          = `Matching your e1RM at ${targetReps} reps. A solid maintenance day.`
+    const layer2Round  = Math.round(layer2Weight)
+    reasoning          = `Matching your current strength level: ${Math.round(currentE1RM)} lb e1RM projects to ${layer2Round} for ${maxReps} reps.`
   } else {
-    // Push (default) — full Layer 3 with aggressiveness 1.15, clamped to Layer 2.
-    // Readiness multiplier (§2.5) scales the aggressiveness coefficient so a
-    // low-energy/low-sleep day nudges more conservatively. No effect when
-    // callers don't provide readiness — multiplier defaults to 1.
-    // Fatigue signals (§4, Batch 16o) stack additional multipliers on top.
+    // Push (default) — Layer 3 nudge with aggressiveness 1.15, clamped to
+    // Layer 2 floor. Readiness + fatigue multipliers stack onto the
+    // aggressiveness coefficient.
     const readinessMult = Number(aggressivenessMultiplier) || 1
-    const gradeMult  = gradeMultiplier(fatigueSignals.priorGrade)
-    const cardioMult = cardioDamping(fatigueSignals.cardioRecent)
-    const restMult   = fatigueSignals.restedYesterday ? 1.05 : 1.00
-    const gap        = gapAdjustment(daysSince)
-    const fatigueMult = gradeMult * cardioMult * restMult
+    const gradeMult     = gradeMultiplier(fatigueSignals.priorGrade)
+    const cardioMult    = cardioDamping(fatigueSignals.cardioRecent)
+    const restMult      = fatigueSignals.restedYesterday ? 1.05 : 1.00
+    const gap           = gapAdjustment(daysSince)
+    const fatigueMult   = gradeMult * cardioMult * restMult
     const aggressiveness = 1.15 * readinessMult * fatigueMult
-    const P              = Math.min(personalRate * aggressiveness, 0.03)
-    const alpha          = Math.min(daysSince / 7, gap.alphaCap)
-    const hitTarget      = last.reps >= targetReps
-    const missedByOne    = (targetReps - last.reps) === 1
+    const P             = Math.min(personalRate * aggressiveness, 0.03)
+    const alpha         = Math.min(daysSince / 7, gap.alphaCap)
 
-    // Effective-reps: factor in RIR when the user logged an RPE on last top
-    // set. RIR = Math.max(0, 10 − RPE). E.g. 10 reps @ RPE 8 = 12 effective.
-    // Spec §3.7: "effectiveRepsBeaten = repsHit + estimatedRIR − targetReps".
-    // No RPE → RIR 0, behavior identical to pre-16c.
+    // Range-aware decision (Batch 30):
+    //   reps >= max    → push nudge
+    //   min ≤ reps < max → hold weight, "in range"
+    //   reps < min     → hold weight, "below floor" (advisory fires if 2x)
     const lastRIR          = last.rpe ? Math.max(0, 10 - last.rpe) : 0
-    const effectiveReps    = last.reps + lastRIR
-    const hitEffective     = effectiveReps >= targetReps
-    const effectiveMissBy1 = (targetReps - effectiveReps) === 1
+    const effectiveRepsNow = last.reps + lastRIR
+    const hitTarget        = last.reps >= maxReps || effectiveRepsNow >= maxReps
+    const inRange          = !hitTarget && last.reps >= minReps
+    const belowFloor       = !hitTarget && last.reps < minReps
 
-    if (hitTarget || hitEffective) {
-      const deltaReps    = effectiveReps - targetReps
+    if (hitTarget) {
+      const deltaReps    = effectiveRepsNow - maxReps
       const layer3Weight = last.weight * (1 + P * alpha) + 0.033 * last.weight * deltaReps
       prescriptionWeight = Math.max(layer3Weight, layer2Weight)
       const e1rmRounded  = Math.round(currentE1RM)
       const layer2Round  = Math.round(layer2Weight)
       if (layer2Weight >= layer3Weight) {
-        // Floor driven: user's recent top sets imply a strength level above
-        // what they loaded last time. Today the prescription pulls them
-        // back up to that projected level.
+        // Floor-driven: user's strength projection exceeds last session's load.
         if (layer2Round > last.weight) {
-          reasoning = `Your recent top sets put your estimated 1-rep max around ${e1rmRounded} lbs, which projects to ${layer2Round} for ${targetReps} reps. Last session you went ${last.weight}×${last.reps}, lighter than your strength suggests, so today's weight catches you back up to your actual level.`
+          reasoning = `Your recent top sets put your estimated 1-rep max around ${e1rmRounded} lbs, which projects to ${layer2Round} for ${maxReps} reps (the top of your ${minReps}–${maxReps} range). Last session you went ${last.weight}×${last.reps}, lighter than your strength suggests, so today's weight catches you back up.`
         } else {
-          reasoning = `Matching your current strength level: ${e1rmRounded} lb e1RM projects to ${layer2Round} for ${targetReps} reps, right around last session's ${last.weight}×${last.reps}.`
+          reasoning = `Matching your current strength level: ${e1rmRounded} lb e1RM projects to ${layer2Round} for ${maxReps} reps, right around last session's ${last.weight}×${last.reps}.`
         }
       } else {
-        // Nudge driven: user is already at their strength ceiling. Layer 3
-        // adds a gradual load bump based on their progression rate.
+        // Nudge-driven: at the ceiling of the range, add load gradually.
         const bumpLbs = Math.max(0, Math.round(layer3Weight - last.weight))
-        reasoning = `You hit ${last.weight}×${last.reps} last session, right at your current strength level. Bumping load by +${bumpLbs} lbs today based on your progression trend (capped at +3% per elapsed week to keep it sustainable).`
+        reasoning = `You hit ${last.weight}×${last.reps} last session, at the top of your ${minReps}–${maxReps} range. Bumping load by +${bumpLbs} lbs today based on your progression trend (capped at +3% per elapsed week).`
       }
-    } else if (missedByOne || effectiveMissBy1) {
+    } else if (inRange) {
       prescriptionWeight = Math.max(last.weight, layer2Weight)
-      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Same weight. Go for all ${targetReps} this session.`
+      reasoning          = `You hit ${last.weight}×${last.reps} last session, inside your ${minReps}–${maxReps} range. Same weight today — keep adding reps before adding load.`
     } else {
+      // belowFloor branch. Holds weight either way; reasoning differs on streak.
       prescriptionWeight = Math.max(last.weight, layer2Weight)
-      reasoning          = `You got ${last.reps} reps at ${last.weight} last time (target was ${targetReps}). Holding the weight. Push for the reps before adding load.`
+      if (belowFloorStreak === 2) {
+        // Reasoning stays neutral — the Batch 31.3 advisory banner carries
+        // the "consider a lighter reset day" copy separately so we don't
+        // duplicate that message here.
+        reasoning = `You hit ${last.weight}×${last.reps} last session, below your ${minReps}-rep floor. Holding the weight — aim for ${minReps}+ clean reps today.`
+      } else {
+        reasoning = `You hit ${last.weight}×${last.reps} last session, below your ${minReps}-rep floor. One sub-floor session is fine: same weight today, aim for ${minReps}+.`
+      }
     }
 
-    // Gap adjustment — tempers the final prescription when the user has been
-    // away longer than ~10 days. Protects against the alpha=3 (21-day) case
-    // that would otherwise triple the nudge, risking injury on a detrained
-    // lifter. Applies after the mode-specific math so the Floor is tempered
-    // too when necessary.
+    // Gap adjustment — tempers the final prescription when away >10 days.
     if (gap.mult < 1.0) {
       prescriptionWeight = prescriptionWeight * gap.mult
     }
 
-    // Compose fatigue prefix: only mention signals that actually moved the
-    // aggressiveness meaningfully (±5% or more). Keep the reasoning terse —
-    // one short sentence prefix before the existing body.
+    // Fatigue prefix: one-sentence lead when a signal materially moved things.
     const prefix = buildFatigueReasoningPrefix({
       gradeMult, cardioMult, restMult, gap, daysSince,
       priorGrade: fatigueSignals.priorGrade,
@@ -1368,28 +1564,22 @@ export function recommendNextLoad({
     if (prefix) reasoning = `${prefix} ${reasoning}`
   }
 
-  const inc     = Number(loadIncrement) > 0 ? Number(loadIncrement) : 5
   const rounded = Math.round(prescriptionWeight / inc) * inc
 
-  // Actual this-session nudge percentage (P × α × 100). May be 0 in
-  // maintain/deload modes. Displayed in the Details section of the sheet
-  // for the curious.
-  // Effective aggressiveness = base × readiness × grade × cardio × rest,
-  // clamped via the standard 3%/wk P cap. Alpha is capped by the gap
-  // adjustment for long-gap safety.
+  // This-session nudge pct for the Details pane. 0 in maintain/deload modes.
   const composedMult = (Number(aggressivenessMultiplier) || 1)
     * gradeMultiplier(fatigueSignals.priorGrade)
     * cardioDamping(fatigueSignals.cardioRecent)
     * (fatigueSignals.restedYesterday ? 1.05 : 1.00)
   const gapForMeta = gapAdjustment(daysSince)
-  const thisSessionNudgePct = mode === 'push' && !autoDeload
+  const thisSessionNudgePct = mode === 'push'
     ? Math.min(personalRate * 1.15 * composedMult, 0.03) * Math.min(daysSince / 7, gapForMeta.alphaCap) * 100
     : 0
 
   return {
     mode: effectiveMode,
     confidence,
-    prescription: { weight: rounded, reps: targetReps },
+    prescription: { weight: rounded, reps: maxReps },
     reasoning,
     meta: {
       currentE1RM:        Math.round(currentE1RM),
@@ -1400,6 +1590,11 @@ export function recommendNextLoad({
       usedFit,
       layer2Weight:       Math.round(layer2Weight),
       thisSessionNudgePct: Number(thisSessionNudgePct.toFixed(2)),
+      // Batch 30 additions — drive the Your-range row (31.1), advisory
+      // banner (31.3), and future reasoning surfaces.
+      repRange:              [minReps, maxReps],
+      belowFloorStreak,
+      suggestedDeloadWeight,
     },
   }
 }
