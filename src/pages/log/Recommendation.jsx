@@ -251,52 +251,59 @@ export function RecommendationSheet({
           {exerciseName}
         </div>
 
-        {/* ── Header: AI-tipped recommendation + last session context ─── */}
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="min-w-0 flex-1">
-            {selected.prescription ? (
-              <>
-                <div className="flex items-baseline gap-2 whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5 text-sm text-emerald-300 font-semibold shrink-0">
-                    <SparkleIcon className="w-3 h-3" color="currentColor" />
-                    Recommended top set:
-                  </span>
-                  <span className="text-2xl font-extrabold text-c-primary tabular-nums tracking-tight">
-                    {selected.prescription.weight} × {selected.prescription.reps}
-                  </span>
-                </div>
-                {last && (
-                  <div className="text-[11px] text-c-faint mt-0.5 pl-[18px]">
+        {/* ── Header: AI-tipped recommendation + last session context ───
+            Batch 29.3: two-row layout. Row 1 is full-width prescription so
+            the 2xl weight value doesn't compete with Use it / close buttons
+            at 375px. Row 2 pairs the last-session subtitle with the action
+            buttons, right-aligned via justify-between. Close always reachable
+            regardless of prescription state. */}
+        <div className="mb-3">
+          {selected.prescription ? (
+            <div className="flex items-baseline gap-2 flex-wrap mb-1.5">
+              <span className="inline-flex items-center gap-1.5 text-sm text-emerald-300 font-semibold shrink-0">
+                <SparkleIcon className="w-3 h-3" color="currentColor" />
+                Recommended top set:
+              </span>
+              <span className="text-2xl font-extrabold text-c-primary tabular-nums tracking-tight">
+                {selected.prescription.weight} × {selected.prescription.reps}
+              </span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1 pl-[18px]">
+              {selected.prescription ? (
+                last ? (
+                  <div className="text-[11px] text-c-faint truncate">
                     Last session's top set: <span className="tabular-nums">{last.weight} × {last.reps}</span>
                   </div>
-                )}
-              </>
-            ) : (
-              <span className="text-sm text-c-muted">No prescription yet</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {onApply && !hideApply && selected.prescription?.weight && (
+                ) : null
+              ) : (
+                <span className="text-sm text-c-muted">No prescription yet</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {onApply && !hideApply && selected.prescription?.weight && (
+                <button
+                  type="button"
+                  onClick={() => onApply({ weight: selected.prescription.weight })}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 shrink-0 transition-colors"
+                  aria-label={`Use this weight: ${selected.prescription.weight} lbs`}
+                >
+                  <SparkleIcon className="w-3 h-3" color="currentColor" />
+                  <span>Use it</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => onApply({ weight: selected.prescription.weight })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 shrink-0 transition-colors"
-                aria-label={`Use this weight: ${selected.prescription.weight} lbs`}
+                onClick={onClose}
+                className="w-8 h-8 rounded-full bg-item text-c-secondary flex items-center justify-center shrink-0"
+                aria-label="Close"
               >
-                <SparkleIcon className="w-3 h-3" color="currentColor" />
-                <span>Use it</span>
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-item text-c-secondary flex items-center justify-center shrink-0"
-              aria-label="Close"
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            </div>
           </div>
         </div>
 

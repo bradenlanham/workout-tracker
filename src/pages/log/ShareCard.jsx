@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import html2canvas from 'html2canvas'
 import CameraCapture from './CameraCapture'
+import { perSideLoad } from '../../utils/helpers'
 
 // ── CSS keyframes (injected once, live card only) ──────────────────────────────
 const SHIMMER_CSS = `
@@ -120,6 +121,9 @@ function gradeColor(g) {
 function getTopSet(sets) {
   const working = (sets || []).filter(s => s.type === 'working' && (s.weight > 0 || s.reps > 0))
   if (!working.length) return null
+  // Comparison uses s.weight (volume-consistent within an exercise — all sets
+  // of a single exercise share the same unilateral state, so the total-weight
+  // ordering matches the per-side ordering).
   const best = working.reduce((b, s) => {
     if (!b) return s
     if (s.weight > b.weight) return s
@@ -127,7 +131,10 @@ function getTopSet(sets) {
     return b
   }, null)
   if (!best) return null
-  if (best.weight > 0) return `${best.weight} × ${best.reps}`
+  // Batch 29.2: display the per-side weight for unilateral exercises so the
+  // share card shows the number the user actually inputted. Volume stats
+  // above still use the doubled `weight` field.
+  if (best.weight > 0) return `${perSideLoad(best)} × ${best.reps}`
   return `${best.reps} reps`
 }
 

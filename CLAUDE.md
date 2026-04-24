@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 21, 2026 (Batch 28 — Session logger polish sweep)
+> Last updated: April 24, 2026 (Batch 29 — Session logger hotfixes)
 
 ## Rules for Claude
 
@@ -1576,6 +1576,25 @@ Live-feedback round after Monday's Quads workout at Lanhammer. Seven discrete it
 435. **Files modified summary.** `src/pages/log/SessionGymPill.jsx` (item 1); `src/pages/log/BbLogger.jsx` (items 1/2a/2b/2c/3/4/5 — biggest diff); `src/pages/log/Recommendation.jsx` (item 3 prompt + item 4 Use it button); `src/store/useStore.js` (item 3 actions); `src/utils/helpers.js` (item 3 predicate + item 4 plate packer); `src/index.css` (transient trace animation, added + removed).
 
 436. **Build.** `npx vite build --outDir /tmp/test-build` → passes clean.
+
+### Batch 29 (April 24, 2026) — Session logger hotfixes
+
+Three hotfixes from live session logger use: plate bar weight not sticking session-to-session, unilateral doubled weights leaking into post-session display surfaces, and the Coach's Call sheet's "Use it" button visually colliding with the 2xl weight text on mobile. Ships alone so the more substantial rep-range inference (Batches 30 + 31) gets a clean revert point.
+
+437. **Plate-mode bar weight persists session to session** (`BbLogger.jsx`). Both `templateExercises` init (2510) and the `defaultExercises` extras path (2541) now seed `barWeight` from `(lastExDataByName[name]?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45` — pulls the first past set that actually recorded a bar value, falls back to 45 only when no prior session logged one. Previously hardcoded to 45 regardless of last session, which made the plate popover silently reset to 45 every session and forced the user to re-pick 25 / None each time.
+
+438. **Unilateral display uses per-side weight across post-session surfaces** (`History.jsx`, `ShareCard.jsx`). For unilateral exercises, `set.weight` holds the doubled (total) volume value and `set.rawWeight` holds the per-side input. The logger's ghost rows, inline "Last:" hints, PR chip, and recommender sheet already use `perSideLoad(set)` correctly (Batch 9 / 14 / `getExerciseHistory` return shape). This batch swaps the remaining leaks:
+    - `History.jsx:344` session detail set row: `{s.reps} reps × {s.weight} lbs` → `{s.reps} reps × {perSideLoad(s)} lbs`.
+    - `History.jsx:349` drop chain inside session detail: now reads `perSideLoad(d)` per drop so unilateral parents chain as `↳ 60×8 → 45×6` instead of `↳ 120×8 → 90×6`.
+    - `ShareCard.jsx getTopSet`: comparison still reads `s.weight` (volume-consistent within a single exercise since all sets share the same unilateral state); display swaps from `best.weight` to `perSideLoad(best)` so the share card's exercise-list line matches what the user inputted.
+    Volume math everywhere (History `buildShareData`, Progress, Dashboard weekly / total, session comparison) unchanged — `set.weight` is the correct doubled value for volume totals per Batch 22 decision 2.
+
+439. **Coach's Call sheet header restructured to two rows** (`Recommendation.jsx:254–301`). Pre-29 layout was a single flex row: `[Recommended top set: 180 × 10]  [✨ Use it] [×]`. At 375px the 2xl weight value and the emerald Use it pill competed for the middle band and visually collided. Restructured:
+    - Row 1: label + 2xl weight×reps, full width, `flex-wrap` so extreme cases gracefully spill to row 2.
+    - Row 2: `Last session's top set: …` subtitle left (truncated if needed) + `[✨ Use it] [×]` right-aligned via `justify-between`.
+    Close button stays reachable regardless of prescription state; the no-prescription state renders "No prescription yet" + close button on a single row with no empty row above.
+
+440. **Build.** `npx vite build --outDir /tmp/test-build` → 760.19 KB bundle / 205.15 KB gzipped (+4.63 KB / +1.33 KB vs Batch 28, accounted for by the three comments + `perSideLoad` imports in History + ShareCard + the two-row restructure JSX).
 
 ---
 

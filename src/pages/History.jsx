@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { formatDate, formatTime, getWorkoutStreak } from '../utils/helpers'
+import { formatDate, formatTime, getWorkoutStreak, perSideLoad } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI } from '../data/exercises'
 import ShareCard from './log/ShareCard'
 
@@ -341,12 +341,16 @@ function SessionDetail({ session, onClose, onDelete }) {
                             }`}>
                               {s.type === 'warmup' ? 'Warm' : s.type === 'drop' ? 'Drop' : 'Work'}
                             </span>
-                            <span>{s.reps} reps × {s.weight} lbs</span>
+                            {/* Batch 29.2: show per-side weight for unilateral
+                                exercises (perSideLoad returns rawWeight when set,
+                                falls back to weight otherwise). Volume math elsewhere
+                                still uses the doubled `weight` field. */}
+                            <span>{s.reps} reps × {perSideLoad(s)} lbs</span>
                             {s.isNewPR && <span className="text-amber-400 text-xs">🏆 PR</span>}
                           </div>
                           {drops.length > 0 && (
                             <div className="ml-[54px] mt-0.5 text-xs text-orange-400/80 font-semibold">
-                              ↳ {drops.map(d => `${d.weight}×${d.reps}`).join(' → ')}
+                              ↳ {drops.map(d => `${perSideLoad(d)}×${d.reps}`).join(' → ')}
                             </div>
                           )}
                         </div>
