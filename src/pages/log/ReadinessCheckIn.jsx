@@ -1,13 +1,17 @@
 // Batch 16n — Readiness check-in overlay (spec §2.5).
+// Batch 35 — Gym promoted to top + Exercise Order row added.
 //
-// Three-tap pre-session prompt placed on the Start Session overlay. Captures
-// energy / sleep / goal plus current gym. Results feed the recommender's
-// aggressivenessMultiplier (energy + sleep → 0.85 / 1.00 / 1.15) and
-// suggestedMode (goal → deload / maintain / push).
+// Pre-session prompt placed on the Start Session overlay. Captures
+// gym / energy / sleep / goal / exercise order. Readiness rows feed the
+// recommender's aggressivenessMultiplier (energy + sleep → 0.85 / 1.00 /
+// 1.15) and suggestedMode (goal → deload / maintain / push). Exercise
+// order flows to BbLogger, which reorders the default exercise list by
+// last session's completion timestamps within each section when the user
+// picks "Last session".
 //
-// Defaults (OK / OK / Push) match pre-16n recommender behavior so a user
-// who ignores the rows and taps Start immediately gets no change. A subtle
-// "Skip check-in" link stores no readiness block at all.
+// Defaults (Mid / Mid / Push / Default order) match pre-feature behavior so
+// a user who ignores the rows and taps Start immediately gets no change.
+// "Skip check-in" stores readiness=null but still honors gym + order.
 
 import { useState, useRef, useEffect } from 'react'
 import useStore from '../../store/useStore'
@@ -27,6 +31,10 @@ const GOAL_OPTIONS = [
   { value: 'match',   label: 'Match'   },
   { value: 'push',    label: 'Push'    },
 ]
+const ORDER_OPTIONS = [
+  { value: 'lastSession', label: 'Last session' },
+  { value: 'default',     label: 'Default'      },
+]
 
 export default function ReadinessCheckIn({
   workoutName,
@@ -40,10 +48,11 @@ export default function ReadinessCheckIn({
   const addGym        = useStore(s => s.addGym)
   const setDefaultGymId = useStore(s => s.setDefaultGymId)
 
-  const [energy, setEnergy] = useState('ok')
-  const [sleep,  setSleep]  = useState('ok')
-  const [goal,   setGoal]   = useState('push')
-  const [gymId,  setGymId]  = useState(defaultGymId || null)
+  const [energy,    setEnergy]    = useState('ok')
+  const [sleep,     setSleep]     = useState('ok')
+  const [goal,      setGoal]      = useState('push')
+  const [orderMode, setOrderMode] = useState('default')
+  const [gymId,     setGymId]     = useState(defaultGymId || null)
 
   // Gym picker popover
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -83,12 +92,12 @@ export default function ReadinessCheckIn({
 
   const handleStart = () => {
     if (gymId) setDefaultGymId(gymId)
-    onStart({ energy, sleep, goal, gymId: gymId || null })
+    onStart({ energy, sleep, goal, gymId: gymId || null, orderMode })
   }
 
   const handleSkip = () => {
     if (gymId) setDefaultGymId(gymId)
-    onStart({ readiness: null, gymId: gymId || null })
+    onStart({ readiness: null, gymId: gymId || null, orderMode })
   }
 
   const selectedGym = gyms.find(g => g.id === gymId) || null
@@ -102,53 +111,36 @@ export default function ReadinessCheckIn({
         <h2 className="text-2xl font-bold text-white mb-1">{workoutName}</h2>
         <p className="text-xs text-white/50 mb-5">Timer starts when you begin</p>
 
-        {/* Readiness rows */}
-        <div className="space-y-4 mb-5 text-left">
-          <ReadinessRow
-            label="Energy"
-            options={ENERGY_OPTIONS}
-            value={energy}
-            onChange={setEnergy}
-            theme={theme}
-          />
-          <ReadinessRow
-            label="Sleep"
-            options={SLEEP_OPTIONS}
-            value={sleep}
-            onChange={setSleep}
-            theme={theme}
-          />
-          <ReadinessRow
-            label="Today's goal"
-            options={GOAL_OPTIONS}
-            value={goal}
-            onChange={setGoal}
-            theme={theme}
-          />
-        </div>
-
-        {/* Gym chip */}
-        <div className="relative mb-5 flex justify-center">
+        {/* Gym section — full-width, top of the form for prominence */}
+        <div className="relative mb-4 text-left">
+          <div className="text-[10px] uppercase tracking-wider text-white/50 mb-1.5 px-1">Gym</div>
           <button
             ref={chipRef}
             type="button"
             onClick={() => setPickerOpen(v => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-[12px] text-white/80 font-medium"
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-colors ${
+              selectedGym
+                ? 'bg-white/10 border-white/15 text-white hover:bg-white/15'
+                : 'bg-white/5 border-white/20 border-dashed text-white/80 hover:bg-white/10'
+            }`}
           >
             {selectedGym ? (
               <>
-                <span>Gym: <span className="font-semibold text-white">{selectedGym.label}</span></span>
-                <span className="text-white/50">change</span>
+                <span className="text-base font-semibold truncate">{selectedGym.label}</span>
+                <span className="text-xs text-white/50 shrink-0 ml-2">change</span>
               </>
             ) : (
-              <span className="text-white/70">+ Where are you lifting?</span>
+              <>
+                <span className="text-sm">Where are you lifting?</span>
+                <span className="text-xs text-white/60 shrink-0 ml-2">pick</span>
+              </>
             )}
           </button>
 
           {pickerOpen && (
             <div
               ref={pickerRef}
-              className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 rounded-xl border border-white/15 bg-card shadow-2xl p-2 text-left"
+              className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-white/15 bg-card shadow-2xl p-2 text-left"
               style={{ zIndex: 60 }}
             >
               {gyms.length > 0 && (
@@ -199,6 +191,38 @@ export default function ReadinessCheckIn({
           )}
         </div>
 
+        {/* Readiness rows */}
+        <div className="space-y-4 mb-5 text-left">
+          <ReadinessRow
+            label="Energy"
+            options={ENERGY_OPTIONS}
+            value={energy}
+            onChange={setEnergy}
+            theme={theme}
+          />
+          <ReadinessRow
+            label="Sleep"
+            options={SLEEP_OPTIONS}
+            value={sleep}
+            onChange={setSleep}
+            theme={theme}
+          />
+          <ReadinessRow
+            label="Today's goal"
+            options={GOAL_OPTIONS}
+            value={goal}
+            onChange={setGoal}
+            theme={theme}
+          />
+          <ReadinessRow
+            label="Exercise order"
+            options={ORDER_OPTIONS}
+            value={orderMode}
+            onChange={setOrderMode}
+            theme={theme}
+          />
+        </div>
+
         {/* Actions */}
         <button
           type="button"
@@ -230,10 +254,11 @@ export default function ReadinessCheckIn({
 // ── Row primitive ──────────────────────────────────────────────────────────
 
 function ReadinessRow({ label, options, value, onChange, theme }) {
+  const cols = options.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-white/50 mb-1.5 px-1">{label}</div>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className={`grid ${cols} gap-1.5`}>
         {options.map(opt => {
           const selected = value === opt.value
           return (

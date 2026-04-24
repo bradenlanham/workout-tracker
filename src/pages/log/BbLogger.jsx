@@ -2602,6 +2602,53 @@ function FinishModal({ loggedSets, exerciseCount, elapsed, onSave, onLogNow, onC
   )
 }
 
+// ── Exercise reorder by last-session completion (Batch 35) ────────────────────
+//
+// Honors the "Last session" choice from the readiness check-in's Exercise
+// Order row. Within each section (group), reorders exercises by the time
+// they were completed last session (ascending — first-completed on top).
+// Exercises not completed last session sink to the bottom of their section.
+// Section order from the template is preserved; only the within-section
+// order shifts. No-op when there's no prior session or no completedAt
+// timestamps to anchor against.
+
+function reorderByLastSessionCompletion(exercises, lastSession) {
+  if (!exercises?.length) return exercises
+  const lastExercises = lastSession?.data?.exercises
+  if (!lastExercises?.length) return exercises
+
+  const completedAtByName = {}
+  for (const ex of lastExercises) {
+    if (ex?.completedAt) completedAtByName[ex.name] = ex.completedAt
+  }
+  if (!Object.keys(completedAtByName).length) return exercises
+
+  // Bucket by group, preserving first-seen group order from the template.
+  const groupOrder = []
+  const byGroup    = {}
+  for (const ex of exercises) {
+    const g = ex.group || ''
+    if (!(g in byGroup)) {
+      groupOrder.push(g)
+      byGroup[g] = []
+    }
+    byGroup[g].push(ex)
+  }
+
+  for (const g of groupOrder) {
+    byGroup[g].sort((a, b) => {
+      const at = completedAtByName[a.name]
+      const bt = completedAtByName[b.name]
+      if (at == null && bt == null) return 0
+      if (at == null) return 1   // unlogged goes after logged
+      if (bt == null) return -1
+      return at - bt             // earlier completedAt wins top
+    })
+  }
+
+  return groupOrder.flatMap(g => byGroup[g])
+}
+
 // ── Main BbLogger ──────────────────────────────────────────────────────────────
 
 export default function BbLogger() {
@@ -2868,9 +2915,10 @@ export default function BbLogger() {
 
   const [elapsedSeconds, setElapsedSeconds] = useState(calcElapsed)
 
-  // Called from ReadinessCheckIn. Either { energy, sleep, goal, gymId } on the
-  // answered path, or { readiness: null, gymId } on the Skip path. Builds the
-  // readiness block (or null) and starts the timer.
+  // Called from ReadinessCheckIn. Either { energy, sleep, goal, gymId,
+  // orderMode } on the answered path, or { readiness: null, gymId,
+  // orderMode } on the Skip path. Builds the readiness block (or null),
+  // applies the exercise-order preference (Batch 35), and starts the timer.
   const handleStartSession = (payload = {}) => {
     if (payload.readiness === null) {
       setReadiness(null)
@@ -2882,6 +2930,15 @@ export default function BbLogger() {
       }))
     }
     if (payload.gymId !== undefined) setGymId(payload.gymId || null)
+
+    // Batch 35 — reorder by last session's completion order when requested.
+    // Only applies at fresh start; resumed sessions keep their saved order.
+    if (payload.orderMode === 'lastSession') {
+      const prior = getLastBbSession(sessions, type)
+      if (prior) {
+        setExercises(prev => reorderByLastSessionCompletion(prev, prior))
+      }
+    }
 
     startTimestamp.current = Date.now()
     setSessionStarted(true)

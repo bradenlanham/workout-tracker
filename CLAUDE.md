@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 24, 2026 (Batch 34 — Plate bar-change hotfix)
+> Last updated: April 24, 2026 (Batch 35 — Readiness check-in polish: prominent gym + exercise order)
 
 ## Rules for Claude
 
@@ -165,9 +165,13 @@ src/
         │                      # rendered above AnomalyBanner so tagging decisions come first).
         │                      # Batches 16b + 16f + 16n + 16n-1 + 16q + 20b.
         │                      # Exports: RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt.
-        ├── ReadinessCheckIn.jsx # Batch 16n — three-tap pre-session overlay (§2.5): Energy /
-        │                      # Sleep / Goal rows + gym chip. Goal→mode, Energy+Sleep→multiplier.
-        │                      # Defaults OK/OK/Push = no-op (mult 1.0). Skip link + Go back.
+        ├── ReadinessCheckIn.jsx # Batch 16n / 35 — pre-session overlay (§2.5). Prominent GYM row
+        │                      # at top + Energy / Sleep / Goal + Exercise Order rows.
+        │                      # Goal→mode, Energy+Sleep→multiplier, orderMode flows to
+        │                      # BbLogger's handleStartSession which reorders exercises by
+        │                      # last session's completedAt within each section when set to
+        │                      # 'lastSession'. Defaults Mid/Mid/Push/Default = no-op (mult 1.0,
+        │                      # template order preserved). Skip link + Go back.
         ├── SessionGymPill.jsx # Batch 20a — compact in-session gym indicator shown
         │                      # below the workout title in BbLogger. Hidden when
         │                      # no gyms configured. Tap opens a portal popover
@@ -1660,6 +1664,24 @@ Two live-feedback features on the session logger. Both live entirely inside `src
 457. **Files modified summary.** `src/pages/log/BbLogger.jsx` — only file touched. Four discrete surfaces: `SetTypeBtn` gains `onConvertToDrop` branch (:88); `SetRow` + `PlateSetRow` thread the prop through to SetTypeBtn (:450, :630, :700, :730); `ExerciseItem` gains `pasteOutline()` (after `handleApplyRecommendation` at :1058) and `convertSetToDrop()` (after `deleteDropStage` at :1112); the rendering loop computes `canConvertToDrop` per set (:1786) and the ghost-row block renders the `📋 Paste Outline →` button (:1760).
 
 458. **Build.** `npx vite build --outDir /tmp/test-build` → 771.57 KB bundle / 207.74 KB gzipped (+2.33 KB / +0.75 KB vs Batch 31, accounted for by the two handlers + the button + the prop-threading branches).
+
+### Batch 35 (April 24, 2026) — Readiness check-in polish: prominent gym + exercise order
+
+User feedback on the pre-session check-in overlay: "Choosing the gym that you're at should be more prominent, not sort of nested below" + new feature request "Exercise Order" with two options (Last session / Default). Both land in one batch — purely UI + a local reorder helper in BbLogger. No schema / persist / store changes.
+
+465. **Gym promoted to a labeled top-of-form row** (`src/pages/log/ReadinessCheckIn.jsx`). Was a small 12px pill nested below the three readiness rows — easy to miss per the user's report. Now a full-width button sitting directly beneath the workout title, with an uppercase `GYM` label above it (matching the other row labels). Filled state: `bg-white/10 border-white/15` with the gym label rendered at `text-base font-semibold` on the left and a muted `change` affordance on the right. Empty state: dashed `border-white/20 border-dashed` pill reading `Where are you lifting?` with a muted `pick` affordance. The existing portal-style popover pattern stays — same gym list, same `Add gym name…` inline input, same case-insensitive dedupe via `addGym`. Only the trigger's prominence changed.
+
+466. **Exercise Order row** (`ReadinessCheckIn.jsx`). New 2-button grid row at the bottom of the readiness stack, between `Today's goal` and `Start Session`: `[Last session] [Default]`. Default value is `'default'` so untouched sessions behave identically to pre-Batch-35. Payload now carries `orderMode` on both the answered path (`onStart({energy, sleep, goal, gymId, orderMode})`) and the Skip path (`onStart({readiness: null, gymId, orderMode})`) — exercise order is an independent preference from readiness data, so a user can skip the check-in while still picking a non-default order.
+
+467. **`ReadinessRow` column-count adapts to options length** (`ReadinessCheckIn.jsx`). 2-option rows (Exercise Order) use `grid-cols-2`; 3-option rows (Energy/Sleep/Goal) keep `grid-cols-3`. Single primitive handles both layouts so the visual rhythm across all four rows stays consistent.
+
+468. **`reorderByLastSessionCompletion(exercises, lastSession)` helper** (`src/pages/log/BbLogger.jsx`, module-scope). Pure function. Buckets `exercises` by `group` (section label) while preserving first-seen group order from the template, then sorts WITHIN each group by `completedAt` ascending — earliest-completed last session wins top slot within its section. Exercises with no `completedAt` on last session sink to the bottom of their section (stable sort preserves any tiebreaker order for them). No-op when `exercises` is empty, when there's no `lastSession`, or when the last session had no `completedAt` timestamps. Section order from today's template is never rearranged; only within-section order shifts.
+
+469. **`handleStartSession` applies `orderMode`** (`BbLogger.jsx`). When `payload.orderMode === 'lastSession'`, looks up the prior session via the already-imported `getLastBbSession(sessions, type)` and calls `setExercises(prev => reorderByLastSessionCompletion(prev, prior))`. Only applies at fresh start — resumed sessions skip the whole overlay (guarded at `!sessionStarted`) so their saved order stays intact. `'default'` is a complete no-op. Comment on the handler now documents both the answered + Skip payload shapes.
+
+470. **Verified live in preview** (mobile 375×812, debug-backup.json). Layout: overlay renders with stacked rows in order GYM → ENERGY → SLEEP → TODAY'S GOAL → EXERCISE ORDER → Start Session → Skip/Go back, all left-aligned labels in uppercase 10px text. Gym button reads `Training Room change` in large semibold white text; tapping opens the existing popover with `Training Room ✓` + `Lanhammer` + `Add gym name…` row. With `orderMode = 'default'`: Legs 2 template renders in canonical order `Seated Leg Curl / Single Leg RDL / Leg Press` (Primary), `Lying Leg Curl / Leg Extensions` (Choose 1), `Calf Raises` (If You Have Time). After synthetically reordering last session's `completedAt` to `Leg Press → Single Leg RDL → Seated Leg Curl` + `Leg Extensions → Lying Leg Curl` and picking `Last session` + Start: today's template correctly renders `Leg Press / Single Leg RDL / Seated Leg Curl` (Primary) and `Leg Extensions / Lying Leg Curl` (Choose 1). Section headers and calf-only If-You-Have-Time section unchanged. Zero console errors.
+
+471. **Build.** `npx vite build --outDir /tmp/test-build` → 774.69 KB bundle / 208.59 KB gzipped (+2.55 KB / +0.75 KB vs Batch 34, accounted for by the gym row markup + Exercise Order row + reorder helper + the handleStartSession branch).
 
 ### Batch 34 (April 24, 2026) — Plate bar-change hotfix
 
