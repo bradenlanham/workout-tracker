@@ -85,10 +85,16 @@ const SET_TYPES = [
   { id: 'warmup',  label: 'Warm' },
 ]
 
-function SetTypeBtn({ value, onChange, theme, disabled = false, lockedToWorking = false }) {
-  // lockedToWorking: set 2+ always displays as Work and ignores clicks — warmups
-  // only make sense on the first set of an exercise. No visual "disabled" styling,
-  // just a non-interactive chip.
+function SetTypeBtn({ value, onChange, theme, disabled = false, lockedToWorking = false, onConvertToDrop = null }) {
+  // lockedToWorking: set 2+ always displays as Work — warmups only make sense
+  // on the first set of an exercise.
+  //
+  // Batch 32 Feature 2 (Model A): when `onConvertToDrop` is provided at a
+  // locked-to-Work position (set index ≥ 1, prev is working, no drops attached),
+  // the chip becomes interactive again — tapping fires the callback which
+  // structurally converts this set into a drop stage of the preceding working
+  // set. Label stays "Work" because the click *performs* the conversion; no
+  // intermediate "Drop" state on the chip.
   const effectiveValue = lockedToWorking ? 'working' : value
   const legacyDrop = effectiveValue === 'drop'
   const current = legacyDrop
@@ -96,18 +102,27 @@ function SetTypeBtn({ value, onChange, theme, disabled = false, lockedToWorking 
     : (SET_TYPES.find(t => t.id === effectiveValue) || SET_TYPES[0])
   const currentIdx = legacyDrop ? 0 : SET_TYPES.indexOf(current)
   const next    = SET_TYPES[(currentIdx + 1) % SET_TYPES.length]
+  const canConvert = lockedToWorking && !disabled && typeof onConvertToDrop === 'function'
+  const isInteractive = !disabled && (!lockedToWorking || canConvert)
+  const handleClick = () => {
+    if (disabled) return
+    if (canConvert) { onConvertToDrop(); return }
+    if (!lockedToWorking) onChange(next.id)
+  }
   const color      = current.id === 'working' ? `${theme.bg} text-white`
                    : current.id === 'warmup'  ? 'bg-amber-500 text-white'
                    : 'bg-orange-500 text-white'
   const colorStyle = current.id === 'working' ? { color: theme.contrastText } : {}
-  const isInteractive = !disabled && !lockedToWorking
+  const title = disabled ? 'Remove drop stages to change type'
+              : canConvert ? 'Convert to drop stage'
+              : undefined
   return (
     <button
       type="button"
-      onClick={() => { if (isInteractive) onChange(next.id) }}
+      onClick={handleClick}
       disabled={!isInteractive}
-      title={disabled ? 'Remove drop stages to change type' : undefined}
-      className={`w-14 h-10 rounded-lg text-xs font-bold shrink-0 transition-colors ${color} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${lockedToWorking ? 'cursor-default' : ''}`}
+      title={title}
+      className={`w-14 h-10 rounded-lg text-xs font-bold shrink-0 transition-colors ${color} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${!isInteractive ? 'cursor-default' : ''}`}
       style={colorStyle}
     >
       {current.label}
@@ -432,7 +447,7 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null }) {
   const numpadCtx = useContext(NumpadContext)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
@@ -496,7 +511,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} />
+        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} />
         <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-sm font-bold min-w-0">
           <span className="text-c-muted text-xs font-normal">Total</span>
           <span>{total} lbs</span>
@@ -612,7 +627,7 @@ function PlatePicker({ plates, addPlate, removePlate, theme }) {
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null }) {
   const numpadCtx    = useContext(NumpadContext)
   const localRepsRef = useRef(null)
 
@@ -698,6 +713,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         setIndex={setIndex}
         cyclerDisabled={cyclerDisabled}
         lockedToWorking={lockedToWorking}
+        onConvertToDrop={onConvertToDrop}
       />
     )
   }
@@ -714,7 +730,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
 
   return (
     <div className="flex items-center gap-2">
-      <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} />
+      <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} />
       {/* Weight FIRST */}
       <input
         ref={weightRef}
@@ -1041,6 +1057,87 @@ function ExerciseItem({
     })
   }
 
+  // Batch 32 Feature 1 — Paste Outline.
+  // Copy last session's set structure (working + drops + weights/reps/plates)
+  // into today as a scaffold. Never overwrites a filled set — empty slots get
+  // populated, appended slots are derived from last's tail. Final set count =
+  // max(today.sets.length, last.sets.length). Per-side weights throughout:
+  // buildExerciseData re-doubles at save time for unilateral exercises.
+  const pasteOutline = () => {
+    const lastSets = Array.isArray(lastSessionEx?.sets) ? lastSessionEx.sets : []
+    if (!lastSets.some(s => s?.type === 'working')) return
+
+    const buildPastedSet = (lastSet, todaySet) => {
+      const base = todaySet || {}
+      const type = lastSet.type === 'working' || lastSet.type === 'warmup'
+        ? lastSet.type
+        : 'working'  // legacy top-level 'drop' defaults to working
+      const reps = lastSet.reps != null && lastSet.reps !== ''
+        ? String(lastSet.reps)
+        : ''
+      const next = { ...base, type, reps }
+
+      // Drops — deep-copy weight/reps only. Per Batch 23 shape, drops never
+      // carry type / plates / barWeight / isNewPR / plateMultiplier.
+      const rawDrops = Array.isArray(lastSet.drops) ? lastSet.drops : []
+      if (rawDrops.length) {
+        next.drops = rawDrops.map(d => ({
+          weight: perSideLoad(d) ? String(perSideLoad(d)) : '',
+          reps:   d?.reps != null && d.reps !== '' ? String(d.reps) : '',
+        }))
+      } else if (Array.isArray(next.drops) && next.drops.length === 0) {
+        // Nothing to paste, and today's slot had no drops either — ensure field
+        // stays absent rather than an empty array.
+        delete next.drops
+      }
+
+      if (exercise.plateLoaded && lastSet.plates) {
+        // Copy plate breakdown verbatim; recompute weight under TODAY's
+        // multiplier so displayed total matches current config.
+        const mult = exercise.plateMultiplier || 2
+        next.plates = { ...lastSet.plates }
+        next.barWeight = lastSet.barWeight ?? exercise.barDefault ?? 45
+        next.plateMultiplier = mult
+        next.weight = String(calcTotal(next.plates, next.barWeight, mult))
+      } else {
+        // Not plate mode today — paste per-side numeric weight, strip any
+        // stale plate config that might have been on the previous shape.
+        const w = perSideLoad(lastSet)
+        next.weight = w ? String(w) : ''
+        delete next.plates
+        delete next.barWeight
+        delete next.plateMultiplier
+      }
+
+      return next
+    }
+
+    const todaySets = exercise.sets
+    const length = Math.max(todaySets.length, lastSets.length)
+    const newSets = []
+    for (let i = 0; i < length; i++) {
+      const todaySet = todaySets[i]
+      const lastSet  = lastSets[i]
+
+      // Preserve any slot the user has already typed into.
+      if (todaySet && (todaySet.weight || todaySet.reps)) {
+        newSets.push(todaySet)
+        continue
+      }
+
+      // No matching last-set entry — keep today's empty slot as-is (or skip
+      // entirely if today also lacks a slot at this index).
+      if (!lastSet) {
+        if (todaySet) newSets.push(todaySet)
+        continue
+      }
+
+      newSets.push(buildPastedSet(lastSet, todaySet))
+    }
+
+    onUpdate({ ...exercise, sets: newSets })
+  }
+
   const deleteSet = (i) => {
     const target = exercise.sets[i]
     const dropCount = Array.isArray(target?.drops) ? target.drops.length : 0
@@ -1093,6 +1190,51 @@ function ExerciseItem({
       // Drop array empty → strip the field entirely so serialized shape stays minimal.
       : (() => { const { drops: _d, ...rest } = parent; return rest })()
     onUpdate({ ...exercise, sets })
+  }
+
+  // Batch 32 Feature 2 — Model A retroactive drop conversion.
+  // Extract the set at idx from top-level sets[] and attach as a drop stage
+  // under the preceding working set. Preserves weight + reps; strips all
+  // other fields per the Batch 23 drops[] shape (no type / isNewPR / plates /
+  // barWeight / plateMultiplier). Caller guards at the render site, but we
+  // defensively recheck so this never orphans a drop under a non-working.
+  const convertSetToDrop = (idx) => {
+    if (idx <= 0) return
+    const sets = exercise.sets
+    const target = sets[idx]
+    if (!target) return
+    if (Array.isArray(target.drops) && target.drops.length > 0) return  // would orphan
+    const parent = sets[idx - 1]
+    if (!parent || parent.type !== 'working') return
+
+    const newDrop = {
+      weight: target.weight ?? '',
+      reps:   target.reps   ?? '',
+    }
+    const parentDrops = Array.isArray(parent.drops) ? [...parent.drops] : []
+    parentDrops.push(newDrop)
+
+    const newSets = sets
+      .map((s, i) => i === idx - 1 ? { ...parent, drops: parentDrops } : s)
+      .filter((_, i) => i !== idx)
+
+    onUpdate({ ...exercise, sets: newSets })
+
+    // Move numpad focus to the newly-created drop stage's weight field so the
+    // user can keep typing without re-tapping. Parent is now at idx - 1 since
+    // the target was removed.
+    const newParentIdx = idx - 1
+    const newDropIdx = parentDrops.length - 1
+    requestAnimationFrame(() => {
+      numpadCtx?.openNumpad({
+        fieldKey: `weight-drop-${exercise.name}-${newParentIdx}-${newDropIdx}`,
+        label: 'Weight (lbs)',
+        isDecimalAllowed: true,
+        initialValue: newDrop.weight,
+        themeHex: theme.hex,
+        themeContrastText: theme.contrastText,
+      })
+    })
   }
 
   const markDone = () => {
@@ -1618,6 +1760,22 @@ function ExerciseItem({
           {prevSets.length > 0 && showPrev && (
             <>
               {prevSets.map((s, i) => <PrevSetRow key={i} set={s} />)}
+              {/* Batch 32: Paste Outline copies last session's structure into
+                  today — empty slots get filled from last's matching set,
+                  extras get appended. Never overwrites a filled set. Hidden
+                  when last session has no working sets (nothing useful to
+                  paste). */}
+              {prevSets.some(s => s?.type === 'working') && (
+                <button
+                  type="button"
+                  onClick={pasteOutline}
+                  className={`self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${theme.bgSubtle} ${theme.text} border ${theme.border}`}
+                >
+                  <span>📋</span>
+                  <span>Paste Outline</span>
+                  <span aria-hidden>→</span>
+                </button>
+              )}
               <div className="flex items-center gap-2">
                 <p className="text-xs text-c-faint uppercase tracking-widest font-semibold shrink-0">Today</p>
                 <div className="flex-1 h-px bg-item" />
@@ -1643,6 +1801,13 @@ function ExerciseItem({
             // the user has moved on, they're not retroactively dropping on
             // a prior set.
             const hasLaterWorking = exercise.sets.some((s, j) => j > i && s.type === 'working')
+            // Batch 32 Feature 2: allow conversion to drop stage when this is
+            // a locked-to-Work set (index ≥ 1), the previous set is a working
+            // primary, and this set has no drops attached (would orphan its
+            // own drops). cyclerDisabled already covers the drops-attached
+            // case — piggyback on it.
+            const prevIsWorking = i > 0 && exercise.sets[i - 1]?.type === 'working'
+            const canConvertToDrop = i > 0 && prevIsWorking && !cyclerDisabled
             return (
               <div key={i} className="space-y-1.5">
                 <SetRow
@@ -1656,6 +1821,7 @@ function ExerciseItem({
                   plateMultiplier={exercise.plateMultiplier || 2}
                   cyclerDisabled={cyclerDisabled}
                   lockedToWorking={i > 0}
+                  onConvertToDrop={canConvertToDrop ? () => convertSetToDrop(i) : null}
                   onToggleMultiplier={() => {
                     const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
                     // Batch 23: plate remap only applies to working/warmup

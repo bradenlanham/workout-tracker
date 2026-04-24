@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 24, 2026 (Batches 30 + 31 — Rep-range inference + advisory UI)
+> Last updated: April 24, 2026 (Batch 32 — Paste Outline + retroactive drop-type cycler)
 
 ## Rules for Claude
 
@@ -1644,6 +1644,22 @@ User-locked design decisions (from plan conversation):
 453. **Files modified summary.** `src/utils/helpers.js` (classifier, inferrer, migration, engine rewrite); `src/store/useStore.js` (v7 persist, buildBuiltInLibrary classifier, importData v6+v7 run, dismissedBelowFloorAdvisories slice + action); `src/pages/log/BbLogger.jsx` (recRepRange memo, ExerciseItem thread-throughs, parent-level ExerciseEditSheet render, below-floor dismissal state); `src/pages/log/Recommendation.jsx` (Your-range row, advisory banner, Growth → Weekly growth, new props); `src/components/ExerciseEditSheet.jsx` (rep range steppers + save flip).
 
 454. **Build.** `npx vite build --outDir /tmp/test-build` → 769.24 KB bundle / 206.99 KB gzipped (+9.05 KB / +1.84 KB vs Batch 29, accounted for by the 50-entry classifier map + inferRepRange + v7 migration + range-aware recommender branch + the Your-range + advisory + stepper UI additions).
+
+### Batch 32 (April 24, 2026) — Paste Outline + retroactive drop-type cycler
+
+Two live-feedback features on the session logger. Both live entirely inside `src/pages/log/BbLogger.jsx` — no engine / helpers / persist / schema changes. Ship together since they overlap the drop-stage UI surface.
+
+455. **Paste Outline** (`BbLogger.jsx` ExerciseItem + ghost-row block). Copies last session's set structure into today as an editable scaffold. Button appears below the ghost rows in the "Last" block when toggled on, only when last session had at least one working set. Merge rules: (a) never overwrite a today set whose weight or reps is filled; (b) fill empty slots from last's matching set; (c) append sets when last has more than today; (d) final count = `max(today.sets.length, last.sets.length)`. Drops deep-copied to the new set's `drops[]` (per Batch 23 shape — weight + reps only, no plates / barWeight / type / isNewPR / plateMultiplier). Plate mode: copies plates + barWeight verbatim, recomputes `weight` via `calcTotal(plates, barWeight, exercise.plateMultiplier)` so the displayed total matches today's multiplier if it differs from last's. Non-plate mode strips stale plate fields. Uni handling: pastes `perSideLoad(lastSet)` into `set.weight` (per-side numeric), `buildExerciseData` re-doubles at save time via `exercise.unilateral` — consistent with the rest of the in-memory session shape.
+
+456. **Model A retroactive drop-type cycler** (`SetTypeBtn` + `SetRow` + `PlateSetRow` + ExerciseItem). New `onConvertToDrop` prop on `SetTypeBtn`. When provided at a locked-to-Work position (set index ≥ 1, previous set is a working primary, this set has no drops attached), the chip becomes interactive again — tapping fires the callback which structurally extracts the set from top-level `sets[]` and attaches it as a drop stage under the preceding working set. Label stays "Work" because the click *performs* the conversion — the set leaves `sets[]` entirely and re-renders as a `DropStageRow` under the parent. Preserves weight + reps; strips type / isNewPR / plates / barWeight / plateMultiplier per the Batch 23 drops[] shape. Numpad focus moves to the new drop's weight field so the user continues typing without interruption. Orphan guard: when previous set is a warmup or absent, the prop is null → SetTypeBtn falls back to non-interactive "Work" chip (existing locked behavior). `cyclerDisabled` (working + has drops) still wins — disabled chip stays non-interactive regardless. `addSet` + `updateSet` unchanged; the "+ Drop stage" CTA at `:1699–1707` also unchanged (still gated `!hasLaterWorking`). Interaction matrix:
+    - Set 0: Warm ↔ Work existing cycler.
+    - Set ≥ 1 + prev working + no drops: tap converts to drop.
+    - Set ≥ 1 + prev working + has drops: `cyclerDisabled` → disabled.
+    - Set ≥ 1 + prev warmup / missing: non-interactive Work chip.
+
+457. **Files modified summary.** `src/pages/log/BbLogger.jsx` — only file touched. Four discrete surfaces: `SetTypeBtn` gains `onConvertToDrop` branch (:88); `SetRow` + `PlateSetRow` thread the prop through to SetTypeBtn (:450, :630, :700, :730); `ExerciseItem` gains `pasteOutline()` (after `handleApplyRecommendation` at :1058) and `convertSetToDrop()` (after `deleteDropStage` at :1112); the rendering loop computes `canConvertToDrop` per set (:1786) and the ghost-row block renders the `📋 Paste Outline →` button (:1760).
+
+458. **Build.** `npx vite build --outDir /tmp/test-build` → 771.57 KB bundle / 207.74 KB gzipped (+2.33 KB / +0.75 KB vs Batch 31, accounted for by the two handlers + the button + the prop-threading branches).
 
 ---
 
