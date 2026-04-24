@@ -1620,20 +1620,34 @@ function ExerciseItem({
                 barWeight={exercise.barDefault ?? 45}
                 multiplier={exercise.plateMultiplier ?? 2}
                 onBarChange={newBar => {
+                  // Batch 34 hotfix: stamp bar + recompute weight on EVERY set,
+                  // not only those with a plate breakdown. Pre-fix, the
+                  // `if (!s.plates) return s` skip left bar-less sets with
+                  // stale weight values while the display silently rendered
+                  // `calcTotal(emptyPlates(), bar, mult) = just-the-bar` via
+                  // the per-render fallback — user saw the display update,
+                  // but the stored weight (and saved volume) stayed at the
+                  // old value. Seeding `emptyPlates()` here normalizes the
+                  // set shape: after a bar change, every set has a
+                  // consistent plates+barWeight+weight triple, and the
+                  // display, stored total, and saved volume all agree.
                   const mult = exercise.plateMultiplier ?? 2
                   const updatedSets = exercise.sets.map(s => {
-                    if (!s.plates) return s
-                    const newTotal = calcTotal(s.plates, newBar, mult)
-                    return { ...s, barWeight: newBar, weight: String(newTotal) }
+                    const plates = s.plates ?? emptyPlates()
+                    const newTotal = calcTotal(plates, newBar, mult)
+                    return { ...s, plates, barWeight: newBar, weight: String(newTotal), plateMultiplier: mult }
                   })
                   onUpdate({ ...exercise, barDefault: newBar, sets: updatedSets })
                 }}
                 onMultChange={newMult => {
+                  // Batch 34 hotfix: same pattern as onBarChange — stamp
+                  // multiplier on every set so bar-less sets stay in sync.
                   const bar = exercise.barDefault ?? 45
                   const updatedSets = exercise.sets.map(s => {
-                    if (!s.plates) return s
-                    const newTotal = calcTotal(s.plates, s.barWeight ?? bar, newMult)
-                    return { ...s, weight: String(newTotal), plateMultiplier: newMult }
+                    const plates = s.plates ?? emptyPlates()
+                    const setBar = s.barWeight ?? bar
+                    const newTotal = calcTotal(plates, setBar, newMult)
+                    return { ...s, plates, barWeight: setBar, weight: String(newTotal), plateMultiplier: newMult }
                   })
                   onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
                 }}
@@ -1829,10 +1843,15 @@ function ExerciseItem({
                     const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
                     // Batch 23: plate remap only applies to working/warmup
                     // primaries — drop stages never carry plates.
+                    // Batch 34 hotfix: stamp multiplier + bar on every set
+                    // (not just plates-loaded) so display and stored weight
+                    // agree after a change. See matching fix in PlateConfigPopover.
+                    const bar = exercise.barDefault ?? 45
                     const updatedSets = exercise.sets.map(s => {
-                      if (!s.plates) return s
-                      const newTotal = calcTotal(s.plates, s.barWeight ?? 45, newMult)
-                      return { ...s, weight: String(newTotal), plateMultiplier: newMult }
+                      const plates = s.plates ?? emptyPlates()
+                      const setBar = s.barWeight ?? bar
+                      const newTotal = calcTotal(plates, setBar, newMult)
+                      return { ...s, plates, barWeight: setBar, weight: String(newTotal), plateMultiplier: newMult }
                     })
                     onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
                   }}

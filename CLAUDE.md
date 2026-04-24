@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 24, 2026 (Batch 32 — Paste Outline + retroactive drop-type cycler)
+> Last updated: April 24, 2026 (Batch 34 — Plate bar-change hotfix)
 
 ## Rules for Claude
 
@@ -1660,6 +1660,22 @@ Two live-feedback features on the session logger. Both live entirely inside `src
 457. **Files modified summary.** `src/pages/log/BbLogger.jsx` — only file touched. Four discrete surfaces: `SetTypeBtn` gains `onConvertToDrop` branch (:88); `SetRow` + `PlateSetRow` thread the prop through to SetTypeBtn (:450, :630, :700, :730); `ExerciseItem` gains `pasteOutline()` (after `handleApplyRecommendation` at :1058) and `convertSetToDrop()` (after `deleteDropStage` at :1112); the rendering loop computes `canConvertToDrop` per set (:1786) and the ghost-row block renders the `📋 Paste Outline →` button (:1760).
 
 458. **Build.** `npx vite build --outDir /tmp/test-build` → 771.57 KB bundle / 207.74 KB gzipped (+2.33 KB / +0.75 KB vs Batch 31, accounted for by the two handlers + the button + the prop-threading branches).
+
+### Batch 34 (April 24, 2026) — Plate bar-change hotfix
+
+User report: "the plate loaded bar weight does seem persistent, but what happens is sometimes a user will log a set and then realize that the plate loaded bar setting is wrong and change it. It doesn't apply that change to the volume calculated in the already programmed set." Reproduced: when a set exists in plate mode but has no `plates` breakdown (e.g. set was logged pre-plate-mode and plate mode was toggled on after, or an edge-case init state), the popover's `onBarChange` / `onMultChange` skipped that set entirely via `if (!s.plates) return s`. The display meanwhile was happily showing `calcTotal(emptyPlates(), exercise.barDefault, mult)` = just the current bar, while storage kept the old `weight` string. Result: display "25 lbs" with stored weight "225" — the bar change visibly updated the UI but the saved volume number didn't move. User saw the display change; didn't realize the stored value hadn't.
+
+459. **`onBarChange` always stamps every set** (`BbLogger.jsx` PlateConfigPopover at `:1622`). Replaces `if (!s.plates) return s` with an always-apply path: seeds `plates: emptyPlates()` when absent, stamps `barWeight: newBar`, recomputes `weight: String(calcTotal(plates, newBar, mult))`, stamps `plateMultiplier: mult`. After the change, every set has a consistent `plates + barWeight + weight + plateMultiplier` quadruple and display / storage / saved volume all agree.
+
+460. **`onMultChange` mirrors the pattern** (`:1638`). Same always-apply: `plates: s.plates ?? emptyPlates()`, `barWeight: s.barWeight ?? exercise.barDefault ?? 45`, recomputes weight under the new multiplier.
+
+461. **Inline `onToggleMultiplier` at SetRow render site** (`:1842`). Same always-apply treatment; previously duplicated the same `if (!s.plates) return s` skip.
+
+462. **Tradeoff accepted.** For a set that somehow entered plate mode with a typed weight like `'225'` but no plate breakdown, the first bar-or-mult change recomputes `weight` to just-the-bar (losing the 225). Pre-fix the 225 was already visually lost (display showed bar-only via emptyPlates fallback) — this fix just syncs storage with what was already on screen. User can tap the plate picker to re-seed the real breakdown anytime.
+
+463. **Verified live** (preview, mobile 375×812). Scenario 2 seed: Leg Press w/ plate mode on, set `{weight:'225', reps:'10'}` + no plates. Opened popover → tapped 25 lb → stored set became `{weight:'25', plates: emptyPlates(), barWeight:25, plateMultiplier:2, reps:'10', type:'working'}` — display "Total 25 lbs" matches stored. Scenario 3 (set with plates 45×1): bar 45→25 still correctly updates stored weight 135→115 via the existing path. Both paths now uniform.
+
+464. **Build.** `npx vite build --outDir /tmp/test-build` → 772.14 KB bundle / 207.84 KB gzipped (+0.57 KB / +0.10 KB vs Batch 32, accounted for by three tiny handler rewrites + comments).
 
 ---
 
