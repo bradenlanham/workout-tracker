@@ -2265,7 +2265,7 @@ const TYPE_COLORS = {
 }
 
 const TYPE_LABELS = {
-  'weight-training': 'WEIGHT',
+  'weight-training': 'WEIGHT TRAINING',
   'running':         'RUN',
   'hyrox-station':   'HYROX',
   'hyrox-round':     'HYROX',
