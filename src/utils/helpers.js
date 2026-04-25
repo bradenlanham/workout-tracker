@@ -995,6 +995,18 @@ export function isExerciseHiddenAtGym(exercise, gymId) {
   return list.includes(gymId)
 }
 
+// Returns the per-gym default machine instance the user set in the library
+// (ExerciseEditSheet → Gyms section). Wins over historical session values
+// when seeding `equipmentInstance` for a fresh session. Returns null when
+// nothing is set, no gym is passed, or the field is missing/malformed.
+export function getDefaultMachineForGym(exercise, gymId) {
+  if (!gymId || !exercise || typeof exercise !== 'object') return null
+  const map = exercise.defaultMachineByGym
+  if (!map || typeof map !== 'object') return null
+  const v = map[gymId]
+  return typeof v === 'string' && v.trim() ? v : null
+}
+
 // Returns true when the auto-tag-on-use prompt should stay silent for this
 // (exercise, gym) pair. The "Always skip" branch of the prompt (§3.5.4)
 // writes the gymId into exercise.skipGymTagPrompt; this helper just reads it.

@@ -388,6 +388,41 @@ const useStore = create(
         }))
       },
 
+      // Per-gym default machine instance. Shape:
+      //   defaultMachineByGym?: { [gymId]: string }
+      // Set from ExerciseEditSheet's "Gyms" section so users no longer need
+      // to type the machine mid-session via the Machine chip popover. When
+      // the seed pass in BbLogger looks up equipmentInstance for a session
+      // at gymId, this map wins over historical session values — explicit
+      // user intent beats inferred history.
+      //
+      // Passing an empty/whitespace instance removes that gymId from the
+      // map; emptying the map drops the field entirely (shape stays minimal).
+      setDefaultMachineByGym: (exerciseId, gymId, instance) => {
+        if (!exerciseId || !gymId) return
+        const trimmed = typeof instance === 'string' ? instance.trim().slice(0, 40) : ''
+        set(state => ({
+          exerciseLibrary: state.exerciseLibrary.map(ex => {
+            if (ex.id !== exerciseId) return ex
+            const current = (ex.defaultMachineByGym && typeof ex.defaultMachineByGym === 'object')
+              ? { ...ex.defaultMachineByGym }
+              : {}
+            if (!trimmed) {
+              if (!(gymId in current)) return ex
+              delete current[gymId]
+              if (Object.keys(current).length === 0) {
+                const { defaultMachineByGym, ...rest } = ex
+                return rest
+              }
+              return { ...ex, defaultMachineByGym: current }
+            }
+            if (current[gymId] === trimmed) return ex
+            current[gymId] = trimmed
+            return { ...ex, defaultMachineByGym: current }
+          }),
+        }))
+      },
+
       updateExerciseInLibrary: (id, patch) => {
         set(state => ({
           exerciseLibrary: state.exerciseLibrary.map(ex =>

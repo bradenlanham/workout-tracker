@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 45 followup — HYROX Hybrid as a starting-point template + addSplitWithLibrary)
+> Last updated: April 25, 2026 (Batch 48 — Per-gym editor in ExerciseEditSheet; silences mid-session GymTagPrompt + Machine chip prompts)
 
 ## Rules for Claude
 
@@ -557,22 +557,37 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 
 **Standard workflow for a non-trivial change:**
 1. `git worktree add -b claude/<descriptive-name> .claude/worktrees/<name>` — isolated branch + checkout
-2. Edit files in the worktree
-3. Validate: `cd .claude/worktrees/<name> && npx vite build --outDir /tmp/test-build`
-4. For logic-heavy changes, run a data sanity check (e.g. `streak-debug.mjs` against `debug-backup.json`)
-5. Start preview: `preview_start` with config from `.claude/launch.json`
-6. Verify no runtime errors on affected pages
-7. Commit in the worktree (heredoc commit message, Co-Authored-By Claude line)
-8. For risky changes: push the branch, check the Vercel preview URL, then merge to main
-9. For safe changes: merge to main directly
-10. `git checkout main && git merge --ff-only claude/<name> && git push origin main`
-11. Delete the worktree: `git worktree remove .claude/worktrees/<name>`
+2. `cd .claude/worktrees/<name> && npm install` — each worktree has its own gitignored `node_modules`
+3. Edit files in the worktree
+4. Validate: `cd .claude/worktrees/<name> && npx vite build --outDir /tmp/test-build`
+5. For logic-heavy changes, run a data sanity check (e.g. `streak-debug.mjs` against `debug-backup.json`)
+6. Add a worktree-specific entry to `.claude/launch.json` (see Claude Preview workflow below)
+7. `preview_start` against the worktree entry — walk affected surfaces with `preview_snapshot` / `preview_console_logs` / `preview_screenshot`
+8. Commit in the worktree (heredoc commit message, Co-Authored-By Claude line)
+9. **For user-visible changes: report findings + screenshots to the user and WAIT for explicit "merge it" / "looks good" before merging.** No silent merges of UI work.
+10. For pure data-layer / engine changes that already pass sanity + build: merge to main directly.
+11. `git checkout main && git merge --ff-only claude/<name> && git push origin main`
+12. Delete the worktree: `git worktree remove .claude/worktrees/<name>`, prune the launch.json entry.
 
 **Small fixes (typo, one-line patch):** straight to main is fine — no worktree.
 
+**Claude Preview is the only review surface.** Vercel previews are auth-walled on the team plan and the user's browser can't load them — confirmed April 25, 2026. Always verify user-visible changes via `preview_start`, never via a shared Vercel URL.
+
+**Worktree preview pattern.** Each active worktree gets its own `.claude/launch.json` entry named after the worktree directory:
+```json
+{
+  "name": "<worktree-name>",
+  "runtimeExecutable": "bash",
+  "runtimeArgs": ["-c", "cd .claude/worktrees/<worktree-name> && npm run dev"],
+  "port": <unique-port>,
+  "autoPort": true
+}
+```
+Use a unique port per worktree (5173 main, 5174+ for worktrees) so multiple servers can run side by side. `launch.json` is gitignored — local config, never committed.
+
 **PowerShell note:** If the user needs to run a git command for any reason, use PowerShell syntax (`Remove-Item`, backslashes, etc.) since they're on Windows.
 
-**Vercel project:** Team `team_Ol4ZacaHh0oiEz562VTQLwRg` (slug: `bbblueprint`), Project ID `prj_PFuFC2BuTn6LFhR03fODL5Poc0eo` (name: `bambam`). Auto-deploys preview URLs for non-main branches, production for `main`.
+**Vercel project:** Team `team_Ol4ZacaHh0oiEz562VTQLwRg` (slug: `bbblueprint`), Project ID `prj_PFuFC2BuTn6LFhR03fODL5Poc0eo` (name: `bambam`). Auto-deploys production from `main`. Preview URLs exist but are auth-walled — not a review surface for this user.
 
 **Build validation:** `npx vite build` will fail with EPERM when writing to the mounted `dist/` folder. Always use `--outDir /tmp/test-build`.
 
@@ -2180,6 +2195,69 @@ User-requested: ship Brooke's HYROX program as a discoverable template in the sp
     - `hyrox-hybrid-template-sanity.mjs` (new) — 61-assertion sanity.
 
 583. **Build.** `npx vite build --outDir /tmp/test-build` → 877.37 KB bundle / 236.07 KB gzipped (+5.46 KB / +1.43 KB vs Batch 45, all in the inline HYROX_HYBRID_WORKOUTS template data + the addSplitWithLibrary action + normalizeExerciseEntry extension).
+
+### Batch 48 (April 25, 2026) — Per-gym editor in ExerciseEditSheet (silence the mid-session prompts)
+
+User feedback: "It starts to get a little bit overwhelming, the number of prompts that appear mid-session… I'd like to just be able to set the machine or availability for gyms inside the exercise library." Surfaces every piece of information the GymTagPrompt + Machine chip ask for mid-session up into the library so the user can configure it once and silence the noise.
+
+584. **`defaultMachineByGym?: { [gymId]: string }` on `Exercise`** (`useStore.js`). Per-gym default machine instance — set in the new ExerciseEditSheet → Gyms section. Wins over historical session values when the BbLogger seed pass picks the Machine chip's initial value. Empty/missing means "no library default" (falls back to history). Setting an empty/whitespace value removes that gym from the map; emptying the map drops the field entirely (shape stays minimal).
+
+585. **`setDefaultMachineByGym(exerciseId, gymId, instance)` store action** (`useStore.js`). Trims input to 40 chars, no-ops on missing args, idempotent on no-change writes. Lives next to the existing gym-tagging actions.
+
+586. **`getDefaultMachineForGym(exercise, gymId)` helper** (`helpers.js`). Pure read of the map. Returns null on missing gym / missing exercise / malformed map / whitespace-only value. Defensive against null inputs so callers don't need to guard.
+
+587. **Gyms section in `ExerciseEditSheet.jsx`** — new section between Unilateral and Save row, only renders when `settings.gyms.length > 0` and the type is not `hyrox-round` (round templates aren't gym-scoped). For each configured gym, renders a card with:
+    - Gym label + Default badge (when this is `settings.defaultGymId`).
+    - Three-button segmented status row that **mirrors the GymTagPrompt buttons exactly** (per user request — "the three buttons in the gym selection in the exercise library you're designing need to mirror the three buttons that are shown in the session logger"): `Yes, tag it` (accent-filled), `Not this time` (bg-item neutral), `Hide for this gym` (red ghost). Selected = full opacity, unselected = 35% opacity. Mapping: Yes → adds to `sessionGymTags` (silences the auto-tag prompt); Not this time → neutral default state, no library writes (mid-session prompt may still fire); Hide for this gym → adds to `hiddenAtGyms` + `skipGymTagPrompt` (filters out of logger + silences forever).
+    - For machine-equipment exercises (Selectorized + Plate-loaded), a `Default machine` text input. Setting a value auto-promotes the gym to `Yes, tag it` (since "this is the Hoist at VASA" implies "this exercise IS at VASA").
+    - When status is Hidden, the machine input drops + an italic "This exercise won't appear in workouts logged here." hint shows.
+    - Buttons sized at `text-[10px] / px-2 py-1 / leading-tight / whitespace-nowrap` so all three fit on one line at 375px without wrapping.
+
+588. **Commit-on-Save diffs** (`ExerciseEditSheet.jsx`). Local Sets/Map track the editor state; `commitGymChanges()` runs first inside `handleSave` and diffs against the original exercise's gym fields, calling the per-action store mutations (`addExerciseGymTag` / `removeExerciseGymTag` / `addHiddenAtGym` / `removeHiddenAtGym` / `addSkipGymTagPrompt` / `setDefaultMachineByGym`) for each delta. Hidden gyms always also get added to `skipGymTagPrompt` (mirrors the mid-session "Hide for this gym" button's dual-write behavior). `skipGymTagPrompt` is never auto-removed — a user who hid + later un-hid likely still doesn't want the prompt to fire there.
+
+589. **BbLogger seed wired** (`BbLogger.jsx`). `templateExercises` and the `defaultExercises` extras path both read `libraryMachineFor(name)` from a new local helper that calls `getDefaultMachineForGym(libraryByName.get(name), seedGymId)`. Priority for `equipmentInstance` at session start becomes: (1) library `defaultMachineByGym[seedGymId]` ← new, wins; (2) most-recent same-gym session's `equipmentInstance` (existing); (3) most-recent anywhere session's `equipmentInstance` (existing); (4) blank. Resumed sessions read `savedSession.exercises[i].equipmentInstance` directly — they don't re-seed, so mid-flow library edits don't disturb the in-progress session. Mid-session gym swaps via the SessionGymPill also don't re-seed (existing behavior, carries over).
+
+590. **Verified live in preview** (port 5173, mobile 375×812, three test gyms VASA/Training Room/Lanhammer seeded). Scenarios pass: (a) Tagging Chest Supported Wide Row's VASA = Available, TR = Available + machine "Cybex", Lanhammer = Hidden persists exactly to localStorage as `sessionGymTags: ['gym_vasa','gym_tr']`, `hiddenAtGyms: ['gym_lanhammer']`, `skipGymTagPrompt: ['gym_lanhammer']`, `defaultMachineByGym: { gym_tr: 'Cybex' }`. (b) Re-opening the sheet correctly re-seeds all three states from the persisted exercise. (c) Starting a fresh Pull session at TR seeds `equipmentInstance: 'Cybex'` on Chest Supported Wide Row — the cyan Machine chip reads `Cybex` in the toolbar without any user interaction. (d) Starting a fresh Pull session at VASA (tagged but no machine value) seeds `equipmentInstance: ''` — Machine chip stays in dashed-empty state. (e) Console clean throughout.
+
+591. **Files modified.**
+    - `src/store/useStore.js` — `setDefaultMachineByGym` action.
+    - `src/utils/helpers.js` — `getDefaultMachineForGym` helper.
+    - `src/components/ExerciseEditSheet.jsx` — Gyms section + commit-on-Save diff logic; +`useStore` + `isMachineEquipment` imports.
+    - `src/pages/log/BbLogger.jsx` — `getDefaultMachineForGym` import + `libraryMachineFor` helper + seed priority extended in both `templateExercises` and `defaultExercises` paths.
+
+592. **Build.** `npx vite build --outDir /tmp/test-build` → 892.32 KB bundle / 240.03 KB gzipped (+14.95 KB / +3.96 KB vs Batch 45 followup, accounted for by the new Gyms section UI in ExerciseEditSheet (~12 KB) + the seed wiring + helper + store action (~3 KB)).
+
+---
+
+## Active Workstreams
+
+### Hybrid Training v1 — design locked, ready for implementation
+
+A major new workstream is fully designed and ready to ship in batches B37–B46. It adds first-class support for HYROX-style and running/cardio work alongside the current weight-training model. The user (Braden) is building this for a real user named Brooke whose hybrid program (lifts + HYROX rounds + runs) doesn't fit the current `{weight, reps}` data model.
+
+**Three artifacts in the repo root capture the entire design + plan:**
+
+- `hybrid-training-design-v1.md` — the design doc, currently at v3. 17 sections covering: dimension model (5 dimensions: weight/reps/distance/time/intensity), 4 exercise types (`weight-training`/`running`/`hyrox-station`/`hyrox-round`), the 8-station HYROX catalog with locked dimensions, the round container (run leg + station leg, atomic in v1, generalizable to N legs later), the Start HYROX overlay, the gym-clock digital timer spec (§17), the 30 cycling headlines (§13), the comparison-viz tri-surface model (intra-leg/post-round/post-session, ALL station-anchored — same SkiErg leg compares across all sessions where SkiErg appeared regardless of round position), the rest-between-rounds timer (prescribed in round template, configurable per session, full-screen yellow countdown), the bridge-to-finish flow (HYROX summary → back to lift if needed → hybrid finish modal showing both Lift and HYROX wins), and the units model (lbs+miles input, kg+km derived storage, §11). Decisions are locked.
+
+- `hybrid-training-implementation-plan.md` — the 10-batch plan. Mirrors the structure of `coaching-recommender-plan.md`. Phase 1 (B37–B40) is foundation: library schema, session schema, library UI, JSON v3 import. Phase 2 (B41–B45) is the user-facing HYROX flow. Phase 3 (B46) is the hybrid finish flow + share card variant. Each batch has scope, sanity script spec, preview verification, files modified, dependencies. After B46, hybrid v1 is feature-complete.
+
+- `brooke-hybrid-split.json` — currently v2. B40 reissues this as v3 against the real schema. Day-of-week names are stripped from titles and inferred from rotation position.
+
+**Critical primitives for the implementation to honor:**
+
+1. **Station-anchored comparisons.** The station IS the comparison primitive, not the round position. SkiErg accumulates history independently across all sessions and round templates. `getStationHistory(sessions, stationId, dimensions)` is the canonical helper (defined in B43). Comparisons fall back to pace (s/100m) when dimensions don't match prior occurrences. Round-total comparisons are derived from station-anchored leg comparisons, not the other way around.
+
+2. **HYROX visual takeover.** Yellow + black inside HYROX mode (the HYROX brand identity), user's app accent everywhere else. `--color-hyrox` = `#EAB308`. Don't theme yellow with the user's accent — it's a fixed brand color.
+
+3. **Round = run leg + station leg, atomic.** v1 locks `legs[]` to length 2 with run→station ordering. The schema generalizes to N-leg rounds (§4.5) for when Brooke shifts to HYROX-only training in the future, but v1 doesn't expose that flexibility.
+
+4. **The 8 stations are a closed catalog.** Pre-programmed, dimensions locked per station (see `data/hyroxStations.js` to be created in B37). Users cannot create a 9th station in v1.
+
+5. **Two persist migrations.** v7 → v8 (type field + 8-station seed) lands in B37. v8 → v9 (kg/km derived storage + dimensioned set fields) lands in B38.
+
+6. **Pounds + miles for input, kg + km stored alongside.** §11 of the design doc. HYROX stations specifically invert: metric input (500m SkiErg), miles derived. Conversions applied at save time.
+
+When picking up this workstream in a new Claude Code session, read those three artifacts in order: design doc → implementation plan → JSON. Then start at B37.
 
 ---
 

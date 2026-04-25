@@ -14,9 +14,10 @@
 
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import useStore from '../store/useStore'
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from '../data/exerciseLibrary'
 import { HYROX_STATIONS } from '../data/hyroxStations'
-import { getTypeColor, getTypeLabel } from '../utils/helpers'
+import { getTypeColor, getTypeLabel, isMachineEquipment } from '../utils/helpers'
 
 function Pill({ selected, onClick, children, theme }) {
   return (
@@ -60,6 +61,24 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
   const [roundCount, setRoundCount]                   = useState(4)
   const [restSec, setRestSec]                         = useState(120)
 
+  // Batch 47-ish — per-gym editing pulls every prompt the user sees mid-session
+  // (GymTagPrompt + Machine chip) up into the library. Three Sets / one Map
+  // mirror the Exercise's gym-related fields; commit-on-Save diffs against
+  // the original. Setting a machine name auto-promotes the gym to 'available'
+  // so the user doesn't have to flip status THEN type the machine.
+  const [gymTags, setGymTags]                         = useState(() => new Set())
+  const [gymHidden, setGymHidden]                     = useState(() => new Set())
+  const [gymMachines, setGymMachines]                 = useState({})
+
+  const settingsGyms                = useStore(s => s.settings.gyms)
+  const defaultGymId                = useStore(s => s.settings.defaultGymId)
+  const addExerciseGymTagAction     = useStore(s => s.addExerciseGymTag)
+  const removeExerciseGymTagAction  = useStore(s => s.removeExerciseGymTag)
+  const addHiddenAtGymAction        = useStore(s => s.addHiddenAtGym)
+  const removeHiddenAtGymAction     = useStore(s => s.removeHiddenAtGym)
+  const addSkipGymTagPromptAction   = useStore(s => s.addSkipGymTagPrompt)
+  const setDefaultMachineByGymAction = useStore(s => s.setDefaultMachineByGym)
+
   // Refresh form state whenever the sheet opens with a new entry.
   useEffect(() => {
     if (open && exercise) {
@@ -101,8 +120,72 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
         setRoundCount(4)
         setRestSec(120)
       }
+      // Seed gym editor state from the exercise's gym fields.
+      setGymTags(new Set(Array.isArray(exercise.sessionGymTags) ? exercise.sessionGymTags : []))
+      setGymHidden(new Set(Array.isArray(exercise.hiddenAtGyms) ? exercise.hiddenAtGyms : []))
+      setGymMachines(
+        exercise.defaultMachineByGym && typeof exercise.defaultMachineByGym === 'object'
+          ? { ...exercise.defaultMachineByGym }
+          : {}
+      )
     }
   }, [open, exercise])
+
+  // Per-gym status setter — moves a gym between 'untagged' / 'available' /
+  // 'hidden'. Status is mutually exclusive across gymTags + gymHidden, so
+  // setting one branch always clears the other.
+  const setGymStatus = (gymId, status) => {
+    setGymTags(prev => {
+      const next = new Set(prev)
+      if (status === 'available') next.add(gymId)
+      else next.delete(gymId)
+      return next
+    })
+    setGymHidden(prev => {
+      const next = new Set(prev)
+      if (status === 'hidden') next.add(gymId)
+      else next.delete(gymId)
+      return next
+    })
+    // Stop carrying a machine value for a gym the user just hid — silently
+    // drop it so the field shape stays minimal on save. (User can re-toggle
+    // and re-type if they change their mind.)
+    if (status === 'hidden') {
+      setGymMachines(prev => {
+        if (!(gymId in prev)) return prev
+        const next = { ...prev }
+        delete next[gymId]
+        return next
+      })
+    }
+  }
+
+  // Setting a machine name is a strong "this exists here" signal — promote
+  // the gym to 'available' regardless of prior status (including hidden).
+  // Clearing the input doesn't auto-toggle status — user keeps their choice.
+  const setGymMachine = (gymId, value) => {
+    const trimmed = (value || '').slice(0, 40)
+    setGymMachines(prev => {
+      const next = { ...prev }
+      if (!trimmed) delete next[gymId]
+      else next[gymId] = trimmed
+      return next
+    })
+    if (trimmed) {
+      setGymTags(prev => {
+        if (prev.has(gymId)) return prev
+        const next = new Set(prev)
+        next.add(gymId)
+        return next
+      })
+      setGymHidden(prev => {
+        if (!prev.has(gymId)) return prev
+        const next = new Set(prev)
+        next.delete(gymId)
+        return next
+      })
+    }
+  }
 
   if (!open || !exercise) return null
 
@@ -167,8 +250,49 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
     return next
   })
 
+  // Diff the gym editor state against the original exercise and call the
+  // existing per-field store actions for each delta. Each action handles
+  // its own minimal-shape cleanup (dropping empty arrays / maps), so we
+  // can pile changes on without worrying about residue.
+  const commitGymChanges = () => {
+    if (!exercise) return
+    const id = exercise.id
+    const origTags    = new Set(Array.isArray(exercise.sessionGymTags) ? exercise.sessionGymTags : [])
+    const origHidden  = new Set(Array.isArray(exercise.hiddenAtGyms) ? exercise.hiddenAtGyms : [])
+    const origSkip    = new Set(Array.isArray(exercise.skipGymTagPrompt) ? exercise.skipGymTagPrompt : [])
+    const origMachines = (exercise.defaultMachineByGym && typeof exercise.defaultMachineByGym === 'object')
+      ? exercise.defaultMachineByGym : {}
+
+    // sessionGymTags diff
+    for (const g of origTags) if (!gymTags.has(g)) removeExerciseGymTagAction(id, g)
+    for (const g of gymTags) if (!origTags.has(g)) addExerciseGymTagAction(id, g)
+
+    // hiddenAtGyms diff
+    for (const g of origHidden) if (!gymHidden.has(g)) removeHiddenAtGymAction(id, g)
+    for (const g of gymHidden) if (!origHidden.has(g)) addHiddenAtGymAction(id, g)
+
+    // Hidden gyms imply skipGymTagPrompt (mirrors the mid-session "Hide for
+    // this gym" button behavior in BbLogger). We never auto-remove from
+    // skipGymTagPrompt — a user who hid + later un-hid likely still doesn't
+    // want the auto-tag prompt to fire there.
+    for (const g of gymHidden) if (!origSkip.has(g)) addSkipGymTagPromptAction(id, g)
+
+    // defaultMachineByGym diff
+    const allKeys = new Set([...Object.keys(origMachines), ...Object.keys(gymMachines)])
+    for (const g of allKeys) {
+      const a = (origMachines[g] || '').trim()
+      const b = (gymMachines[g] || '').trim()
+      if (a !== b) setDefaultMachineByGymAction(id, g, b)
+    }
+  }
+
   const handleSave = () => {
     if (!canSave) return
+    // Always commit gym edits first — a Save here means "persist everything",
+    // including the gym section, regardless of which type-specific block also
+    // updated. Per-action calls are idempotent and short-circuit when a value
+    // matches the existing one, so a no-op gym edit costs nothing.
+    commitGymChanges()
     if (isWeightTraining) {
       onSave(exercise.id, {
         name:              name.trim(),
@@ -491,6 +615,106 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
           Unilateral by default (doubles volume at save time)
         </label>
         </>
+        )}
+
+        {/* Per-gym editor — surfaces every prompt the user sees mid-session
+            (auto-tag prompt + Machine chip) so they can set everything in
+            one pass and silence the noise. Hidden when the user has zero
+            gyms configured (no point) and on hyrox-round entries (round
+            templates aren't gym-scoped). */}
+        {!isHyroxRound && settingsGyms.length > 0 && (
+          <>
+            <p className="text-xs text-c-dim font-medium mb-1">Gyms</p>
+            <p className="text-[10px] text-c-muted mb-2">
+              Set availability and your machine of choice per gym. Skips the mid-session prompts.
+            </p>
+            <div className="space-y-2 mb-5">
+              {settingsGyms.map(g => {
+                const tagged = gymTags.has(g.id)
+                const hidden = gymHidden.has(g.id)
+                const status = hidden ? 'hidden' : tagged ? 'available' : 'untagged'
+                const isDefault = g.id === defaultGymId
+                const showMachineInput = isMachineEquipment(equipment) && !hidden
+                const machineValue = gymMachines[g.id] || ''
+                // Mirrors the three buttons in GymTagPrompt (Recommendation.jsx)
+                // so the library reads the same as the mid-session prompt:
+                //   Yes, tag it       → accent-filled (matches prompt's primary)
+                //   Not this time     → bg-item neutral (matches prompt's secondary)
+                //   Hide for this gym → red ghost (matches prompt's destructive)
+                // Selected = render exactly like the prompt button; unselected =
+                // same styling at 35% opacity so the user can read every option.
+                const PROMPT_BTNS = {
+                  available: {
+                    label: 'Yes, tag it',
+                    style: { background: theme.hex, color: theme.contrastText, border: `1px solid ${theme.hex}` },
+                  },
+                  untagged: {
+                    label: 'Not this time',
+                    className: 'bg-item text-c-secondary border border-subtle',
+                  },
+                  hidden: {
+                    label: 'Hide for this gym',
+                    style: { background: 'transparent', border: '1px solid rgba(248, 113, 113, 0.4)', color: 'rgb(248, 113, 113)' },
+                  },
+                }
+                const StatusBtn = ({ value }) => {
+                  const active = status === value
+                  const cfg = PROMPT_BTNS[value]
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setGymStatus(g.id, value)}
+                      className={`px-2 py-1 rounded-md text-[10px] font-semibold leading-tight transition-opacity flex-1 whitespace-nowrap ${cfg.className || ''}`}
+                      style={{ ...(cfg.style || {}), opacity: active ? 1 : 0.35 }}
+                      aria-pressed={active}
+                    >
+                      {cfg.label}
+                    </button>
+                  )
+                }
+                return (
+                  <div key={g.id} className="bg-item rounded-xl px-3 py-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-xs font-semibold text-c-primary truncate">{g.label}</span>
+                        {isDefault && (
+                          <span
+                            className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shrink-0"
+                            style={{ color: theme.hex, background: `${theme.hex}1a` }}
+                          >
+                            Default
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 mb-2">
+                      <StatusBtn value="available" />
+                      <StatusBtn value="untagged" />
+                      <StatusBtn value="hidden" />
+                    </div>
+                    {showMachineInput && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-c-muted shrink-0">Machine</span>
+                        <input
+                          type="text"
+                          value={machineValue}
+                          onChange={e => setGymMachine(g.id, e.target.value)}
+                          placeholder="e.g. Hoist"
+                          maxLength={40}
+                          className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-card border border-white/10 text-xs text-c-primary placeholder-c-faint focus:outline-none focus:border-white/20"
+                        />
+                      </div>
+                    )}
+                    {hidden && (
+                      <p className="text-[10px] text-c-muted italic">
+                        This exercise won't appear in workouts logged here.
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
         )}
 
         <div className="flex gap-2">

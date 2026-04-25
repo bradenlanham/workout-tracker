@@ -9,6 +9,7 @@ import {
   getExerciseHistory, recommendNextLoad, buildReadiness, buildFatigueSignals,
   detectAnomalies, formatRec, getInstancesForExercise,
   shouldPromptGymTag, isExerciseAvailableAtGym, isExerciseHiddenAtGym,
+  getDefaultMachineForGym,
   toLocalDateStr, isMachineEquipment, recommendPlatesForWeight,
   classifyRepRange, inferRepRange,
   getMostRecentSupersetPartners,
@@ -2967,6 +2968,16 @@ export default function BbLogger() {
     return isExerciseHiddenAtGym(lib, seedGymId)
   }
 
+  // Resolve the user's library-set default Machine for the current seed gym.
+  // Wins over historical session values so explicit intent (set in
+  // ExerciseEditSheet → Gyms) beats inferred history. Falls through to the
+  // session-history fallback for exercises with no library default at this gym.
+  const libraryMachineFor = (name) => {
+    if (!seedGymId) return ''
+    const lib = libraryByName.get(normalizeExerciseName(name))
+    return getDefaultMachineForGym(lib, seedGymId) || ''
+  }
+
   const templateExercises = groups.flatMap(group =>
     group.exercises.flatMap((e, i) => {
       const name = typeof e === 'string' ? e : e.name
@@ -2992,7 +3003,7 @@ export default function BbLogger() {
         barDefault: (lastExDataByName[name]?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
         unilateral: !!lastExDataByName[name]?.unilateral,
         plateLoaded: !!(lastExDataByName[name]?.plates),
-        equipmentInstance: lastExDataByName[name]?.equipmentInstance || '',
+        equipmentInstance: libraryMachineFor(name) || lastExDataByName[name]?.equipmentInstance || '',
       }]
     })
   )
@@ -3025,7 +3036,7 @@ export default function BbLogger() {
             barDefault: (lastEx?.sets || []).find(s => s?.barWeight != null)?.barWeight ?? 45,
             unilateral: !!lastEx?.unilateral,
             plateLoaded: !!(lastEx?.plates),
-            equipmentInstance: lastEx?.equipmentInstance || '',
+            equipmentInstance: libraryMachineFor(ex.name) || lastEx?.equipmentInstance || '',
           })
         }
       }
