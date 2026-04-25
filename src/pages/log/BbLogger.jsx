@@ -3851,14 +3851,27 @@ export default function BbLogger() {
     return `${m}:${String(s).padStart(2, '0')}`
   }
 
+  // Pull active superset members out of their template sections and render
+  // them as a dedicated "Active Superset" group at the top of the pending
+  // area, sorted by supersetOrder (= selection order). The user's mental
+  // model is "I picked A, then B, then C — show me A, B, C in that order"
+  // — even when those exercises live in different workout sections.
+  const activeSupersetExes = pendingExes
+    .filter(ex => ex.supersetGroupId && ex.supersetActive)
+    .sort((a, b) => (a.supersetOrder ?? 0) - (b.supersetOrder ?? 0))
+  const activeSupersetIds = new Set(activeSupersetExes.map(e => e.id))
+  const remainingPending = pendingExes.filter(ex => !activeSupersetIds.has(ex.id))
+
   const renderGroups = []
   if (completedExes.length > 0)
     renderGroups.push({ label: 'Completed', exercises: completedExes, isCompleted: true })
+  if (activeSupersetExes.length > 0)
+    renderGroups.push({ label: 'Active Superset', exercises: activeSupersetExes, isActiveSuperset: true })
   groups.forEach(g => {
-    const groupExes = pendingExes.filter(ex => ex.group === g.label)
+    const groupExes = remainingPending.filter(ex => ex.group === g.label)
     if (groupExes.length) renderGroups.push({ label: g.label, exercises: groupExes })
   })
-  const customPending = pendingExes.filter(ex => !groups.some(g => g.label === ex.group))
+  const customPending = remainingPending.filter(ex => !groups.some(g => g.label === ex.group))
   if (customPending.length) renderGroups.push({ label: 'Added', exercises: customPending })
 
   return (
@@ -3971,19 +3984,28 @@ export default function BbLogger() {
       <div className="px-4 pt-3 space-y-2">
         {renderGroups.map(group => {
           const groupExes = group.exercises
-          // In the COMPLETED section, fold consecutive same-supersetGroupId
-          // members into a single cluster wrapper that visually links them.
-          // The completedExes sort ensures group members are adjacent + in
-          // cycle order, so this single-pass walk picks them up cleanly.
+          // Two cases produce cluster wrappers (single bordered container
+          // visually linking members):
+          //   - COMPLETED section: fold consecutive same-supersetGroupId
+          //     finished members into one cluster.
+          //   - ACTIVE SUPERSET section: a single cluster covers the whole
+          //     group (members already sorted by supersetOrder).
           const renderItems = []
-          if (group.isCompleted) {
+          if (group.isActiveSuperset) {
+            renderItems.push({
+              type: 'cluster',
+              groupId: groupExes[0]?.supersetGroupId,
+              exercises: groupExes.map((ex, i) => ({ ex, idx: i })),
+              variant: 'active',
+            })
+          } else if (group.isCompleted) {
             for (let i = 0; i < groupExes.length; i++) {
               const ex = groupExes[i]
               const lastItem = renderItems[renderItems.length - 1]
               if (ex.supersetGroupId && lastItem?.type === 'cluster' && lastItem.groupId === ex.supersetGroupId) {
                 lastItem.exercises.push({ ex, idx: i })
               } else if (ex.supersetGroupId) {
-                renderItems.push({ type: 'cluster', groupId: ex.supersetGroupId, exercises: [{ ex, idx: i }] })
+                renderItems.push({ type: 'cluster', groupId: ex.supersetGroupId, exercises: [{ ex, idx: i }], variant: 'completed' })
               } else {
                 renderItems.push({ type: 'single', ex, idx: i })
               }
@@ -4022,30 +4044,54 @@ export default function BbLogger() {
             registerFieldRef,
           })
 
+          // Hide the entire group when ALL its renderItems are completed
+          // clusters whose members would return null (numpad open + no
+          // member owns the active field). Otherwise the user sees an empty
+          // cluster header strip with no cards inside — pure noise.
+          const numpadFieldKey = numpadConfig?.fieldKey || ''
+          const visibleItems = renderItems.filter(item => {
+            if (item.type === 'single') return true
+            if (item.variant === 'active') return true  // active superset always shows
+            // Completed cluster: at least one member must render
+            if (!numpadIsOpen) return true
+            return item.exercises.some(({ ex }) => numpadFieldKey.includes(ex.name))
+          })
+          if (visibleItems.length === 0) return null
+
           return (
             <div key={group.label}>
-              {/* Hide section labels when numpad is open to maximize space */}
-              {!numpadIsOpen && (
+              {/* Hide section labels when numpad is open to maximize space.
+                  Active Superset gets its label from the cluster wrapper, not
+                  here, so we skip the GroupLabel for that variant. */}
+              {!numpadIsOpen && !group.isActiveSuperset && (
                 <GroupLabel
                   label={group.isCompleted ? '✓ Completed' : group.label}
                   isCompleted={group.isCompleted}
                 />
               )}
               <div className="space-y-2">
-                {renderItems.map(item => {
+                {visibleItems.map(item => {
                   if (item.type === 'single') {
                     return <ExerciseItem {...exerciseCardProps(item.ex, item.idx)} />
                   }
-                  // Cluster: indigo left-bordered container with a small
+                  // Cluster: indigo bordered container with a small
                   // "↔ Superset" label so the visual reads as ONE unit.
+                  // Active variant uses brighter accent + cycle-position copy.
+                  const isActive = item.variant === 'active'
                   return (
                     <div
                       key={`cluster-${item.groupId}`}
-                      className="rounded-xl border border-indigo-500/40 bg-indigo-500/[0.04] p-2 space-y-2"
+                      className={`rounded-xl p-2 space-y-2 ${
+                        isActive
+                          ? 'border-2 border-indigo-500/60 bg-indigo-500/[0.07]'
+                          : 'border border-indigo-500/40 bg-indigo-500/[0.04]'
+                      }`}
                     >
                       <div className="flex items-center gap-1.5 px-1 pt-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-300">
                         <span aria-hidden>↔</span>
-                        <span>Superset · {item.exercises.length} exercises</span>
+                        <span>
+                          {isActive ? 'Active Superset' : 'Superset'} · {item.exercises.length} exercises
+                        </span>
                       </div>
                       {item.exercises.map(({ ex, idx }) => (
                         <ExerciseItem {...exerciseCardProps(ex, idx)} />
