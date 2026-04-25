@@ -1218,6 +1218,192 @@ export function migrateLibraryToV8(library) {
   return [...patched, ...missing]
 }
 
+// ── Unit conversions (Batch 38, design doc §11) ────────────────────────────
+//
+// User-facing input units stay imperial: lbs for weight (no kg-weighted
+// plates at U.S. commercial gyms) + miles for runs. Metric values are
+// derived alongside at save time so HYROX features (race-pace, race-weight
+// rehearsal) and future unit-toggle UI can read them without reconversion.
+// 3-decimal precision per §11.2.
+
+export const LBS_TO_KG = 0.45359237
+export const MILES_TO_METERS = 1609.344
+
+// Round to 3 decimals to keep storage tidy (§11.2). Helper exists so all
+// metric derivations land at the same precision.
+function round3(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null
+  return Math.round(n * 1000) / 1000
+}
+
+export function lbsToKg(lbs) {
+  if (lbs == null) return null
+  const n = Number(lbs)
+  if (!Number.isFinite(n)) return null
+  return round3(n * LBS_TO_KG)
+}
+
+export function kgToLbs(kg) {
+  if (kg == null) return null
+  const n = Number(kg)
+  if (!Number.isFinite(n)) return null
+  return round3(n / LBS_TO_KG)
+}
+
+export function milesToMeters(mi) {
+  if (mi == null) return null
+  const n = Number(mi)
+  if (!Number.isFinite(n)) return null
+  return Math.round(n * MILES_TO_METERS) // meters: integer per §11.2
+}
+
+export function metersToMiles(m) {
+  if (m == null) return null
+  const n = Number(m)
+  if (!Number.isFinite(n)) return null
+  return round3(n / MILES_TO_METERS)
+}
+
+// ── Session shapes (Batch 38, design doc §4 + §11) ─────────────────────────
+//
+// LoggedSet schema (additive on the existing weight-training shape):
+//   {
+//     type: 'warmup' | 'working',
+//     reps: number,
+//     weight: number,                // lbs (canonical for weight-training)
+//     rawWeight: number,             // per-side load when unilateral
+//     weightKg?: number,             // Batch 38: derived at save time
+//     rawWeightKg?: number,          //   "         "        "
+//     isNewPR: boolean,
+//     plates?, barWeight?, plateMultiplier?,
+//     drops?: LoggedSet[],           // Batch 22 nested drops
+//     // Batch 38 — running / hyrox-station optional dimension fields:
+//     distanceMiles?: number,
+//     distanceMeters?: number,
+//     timeSec?: number,
+//     intensity?: 'easy'|'moderate'|'hard'|'allout',
+//   }
+//
+// LoggedHyroxRound (new in Batch 38, lives inside LoggedExercise.rounds[]
+// for type=hyrox-round library entries):
+//   {
+//     roundIndex: number,            // 1-based for display
+//     legs: [
+//       { type: 'run',     distanceMiles, distanceMeters, timeSec, completedAt },
+//       { type: 'station', stationId, distanceMeters?, timeSec?, weight?, weightKg?, reps?, completedAt },
+//     ],                              // v1: length 2 (run → station). §4.5 generalizes.
+//     restAfterSec: number,
+//     completedAt: number,
+//   }
+//
+// LoggedExercise for type=hyrox-round carries `rounds: LoggedHyroxRound[]`
+// + session-level prescription overrides (`prescribedRoundCount`,
+// `prescribedStationId`, `prescribedRunDistanceMeters`). The B38 migration
+// doesn't synthesize any of this — no HYROX data exists pre-v9 — but the
+// shape is documented here so B41+ surfaces stay consistent.
+
+// Batch 38 v8 → v9 session migration. Two passes — sessions, then cardio.
+//
+// Sessions pass: walks every weight-training set (top-level + nested drops)
+// and adds derived `weightKg` / `rawWeightKg` alongside the existing lbs
+// fields. Idempotent — sets that already carry weightKg are skipped, so
+// re-running on v9 data is a no-op (returns the same array reference if no
+// fields were added). Pre-Batch-22 flat-drops are no longer expected at the
+// top level (v5 migration nested them), but we defensively check the parent
+// type guard anyway.
+//
+// Doesn't touch HYROX rounds (`session.data.exercises[].rounds[]`) because
+// no v8 data has them yet — those are written natively in v9-shape from B43
+// onward.
+export function migrateSessionsToV9(sessions) {
+  if (!Array.isArray(sessions)) return sessions
+  let changed = 0
+  const out = sessions.map(s => {
+    if (!s || typeof s !== 'object' || !s.data || !Array.isArray(s.data.exercises)) return s
+    let sessionChanged = false
+    const exercises = s.data.exercises.map(ex => {
+      if (!ex || !Array.isArray(ex.sets)) return ex
+      let exChanged = false
+      const sets = ex.sets.map(set => {
+        if (!set || typeof set !== 'object') return set
+        const patch = {}
+        if (typeof set.weight === 'number' && typeof set.weightKg !== 'number') {
+          patch.weightKg = lbsToKg(set.weight)
+        }
+        if (typeof set.rawWeight === 'number' && typeof set.rawWeightKg !== 'number') {
+          patch.rawWeightKg = lbsToKg(set.rawWeight)
+        }
+        // Nested drops (Batch 22 bundled shape)
+        let dropsChanged = false
+        const drops = Array.isArray(set.drops)
+          ? set.drops.map(d => {
+              if (!d || typeof d !== 'object') return d
+              const dpatch = {}
+              if (typeof d.weight === 'number' && typeof d.weightKg !== 'number') {
+                dpatch.weightKg = lbsToKg(d.weight)
+              }
+              if (typeof d.rawWeight === 'number' && typeof d.rawWeightKg !== 'number') {
+                dpatch.rawWeightKg = lbsToKg(d.rawWeight)
+              }
+              if (Object.keys(dpatch).length > 0) {
+                dropsChanged = true
+                return { ...d, ...dpatch }
+              }
+              return d
+            })
+          : set.drops
+        if (Object.keys(patch).length > 0 || dropsChanged) {
+          exChanged = true
+          return dropsChanged
+            ? { ...set, ...patch, drops }
+            : { ...set, ...patch }
+        }
+        return set
+      })
+      if (exChanged) {
+        sessionChanged = true
+        return { ...ex, sets }
+      }
+      return ex
+    })
+    if (sessionChanged) {
+      changed++
+      return { ...s, data: { ...s.data, exercises } }
+    }
+    return s
+  })
+  return changed > 0 ? out : sessions
+}
+
+// Batch 38 v8 → v9 cardio migration. Adds `distanceMiles` + `distanceMeters`
+// alongside the existing free-form `distance` + `distanceUnit` fields when
+// the unit is 'miles' (Running / Walking / Treadmill per CardioLogger's
+// getDistanceUnit). Other units ('floors' for Stairmaster; null for
+// Stairmaster/Bike/custom types) are left as-is — they're not length axes.
+// Idempotent.
+export function migrateCardioSessionsToV9(cardioSessions) {
+  if (!Array.isArray(cardioSessions)) return cardioSessions
+  let changed = 0
+  const out = cardioSessions.map(c => {
+    if (!c || typeof c !== 'object') return c
+    if (c.distanceUnit !== 'miles') return c
+    if (typeof c.distance !== 'number') return c
+    const patch = {}
+    if (typeof c.distanceMiles !== 'number') {
+      patch.distanceMiles = round3(c.distance)
+    }
+    if (typeof c.distanceMeters !== 'number') {
+      patch.distanceMeters = milesToMeters(c.distance)
+    }
+    if (Object.keys(patch).length > 0) {
+      changed++
+      return { ...c, ...patch }
+    }
+    return c
+  })
+  return changed > 0 ? out : cardioSessions
+}
+
 // Per-session top set for an exercise — the working set with the highest
 // e1RM. Skips warmups; drop sets count (same per-side load as the parent
 // working set is fine for fit purposes). Returns chronological ascending.

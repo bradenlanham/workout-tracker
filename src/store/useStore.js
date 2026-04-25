@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, defaultDimensionsForType, classifyRepRange, toLocalDateStr } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateSessionsToV9, migrateCardioSessionsToV9, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, defaultDimensionsForType, classifyRepRange, toLocalDateStr } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -846,7 +846,10 @@ const useStore = create(
             // Run the v5 bundling migration on imported sessions so a backup
             // from a pre-v5 install lands in the current schema. Idempotent
             // on already-bundled data, so re-imports + v5 backups are safe.
-            const migratedSessions = migrateSessionsToV5(data.sessions)
+            const sessionsV5 = migrateSessionsToV5(data.sessions)
+            // Batch 38: chain v9 on imported sessions so pre-v9 backups
+            // gain derived weightKg / rawWeightKg. Idempotent.
+            const migratedSessions = migrateSessionsToV9(sessionsV5)
             // Batch 30: run v6 + v7 library migrations on imported library
             // so pre-v7 backups land in the current schema (per-exercise
             // defaultRepRange + repRangeUserSet flag). Idempotent.
@@ -855,6 +858,9 @@ const useStore = create(
             const libV6 = migrateLibraryToV6(data.exerciseLibrary || [])
             const libV7 = migrateLibraryToV7(libV6)
             const migratedLibrary = migrateLibraryToV8(libV7)
+            // Batch 38: derive distanceMiles / distanceMeters on imported
+            // cardio sessions where distanceUnit === 'miles'. Idempotent.
+            const migratedCardio = migrateCardioSessionsToV9(data.cardioSessions || [])
             set({
               sessions: migratedSessions,
               settings: data.settings || get().settings,
@@ -863,7 +869,7 @@ const useStore = create(
               splits: data.splits || [],
               activeSplitId: data.activeSplitId || null,
               exerciseLibrary: migratedLibrary,
-              cardioSessions: data.cardioSessions || [],
+              cardioSessions: migratedCardio,
               customCardioTypes: data.customCardioTypes || [],
               restDaySessions: data.restDaySessions || [],
             })
@@ -877,7 +883,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 8,
+      version: 9,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -911,6 +917,12 @@ const useStore = create(
       //   canonical ids are already present (user's manual creation wins).
       //   Foundation for the hybrid training v1 workstream — no UI changes
       //   ship in this batch; B38 / B39 / B41+ build on top of this schema.
+      //   V8→V9 (Batch 38): additive — every weight-training set (top-level
+      //   + nested drops) gains derived `weightKg` / `rawWeightKg` alongside
+      //   the existing lbs fields. Cardio sessions with `distanceUnit:'miles'`
+      //   gain derived `distanceMiles` + `distanceMeters`. No HYROX rounds
+      //   exist pre-v9 so no backfill there. Idempotent — sets that already
+      //   carry weightKg are skipped.
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -942,6 +954,14 @@ const useStore = create(
         }
         if (version < 8 && Array.isArray(persistedState.exerciseLibrary)) {
           persistedState.exerciseLibrary = migrateLibraryToV8(persistedState.exerciseLibrary)
+        }
+        if (version < 9) {
+          if (Array.isArray(persistedState.sessions)) {
+            persistedState.sessions = migrateSessionsToV9(persistedState.sessions)
+          }
+          if (Array.isArray(persistedState.cardioSessions)) {
+            persistedState.cardioSessions = migrateCardioSessionsToV9(persistedState.cardioSessions)
+          }
         }
         return persistedState
       },

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 37 — Hybrid Training v1 foundation: library schema + 8-station catalog)
+> Last updated: April 25, 2026 (Batch 38 — Hybrid Training v1 foundation: session schema + unit conversions + v8→v9 migration)
 
 ## Rules for Claude
 
@@ -127,6 +127,22 @@ src/
 │                              #   Falls back to type-only result when no muscle/
 │                              #   equipment keyword matches but classifyType
 │                              #   returns a non-default type.
+│                              # lbsToKg / kgToLbs / milesToMeters / metersToMiles:
+│                              #   Batch 38 — unit conversions per design doc
+│                              #   §11.2 (1 lb = 0.45359237 kg, 1 mi = 1609.344
+│                              #   m). 3-decimal precision; defensive against
+│                              #   null / non-numeric / undefined.
+│                              # migrateSessionsToV9(sessions): Batch 38 — v8→v9
+│                              #   session migration, idempotent. Walks every
+│                              #   weight-training set (top-level + nested
+│                              #   drops) and derives weightKg + rawWeightKg
+│                              #   alongside the existing lbs fields. Sets
+│                              #   already carrying weightKg are skipped.
+│                              # migrateCardioSessionsToV9(cardioSessions):
+│                              #   Batch 38 — cardio v8→v9 migration. Adds
+│                              #   distanceMiles + distanceMeters when
+│                              #   distanceUnit === 'miles'. 'floors' / null
+│                              #   units pass through unchanged.
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -524,7 +540,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 
 ## Data Persistence
 
-- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 8`.
+- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 9`.
 - Custom `merge` function in the persist config handles schema evolution: new fields get defaults, existing user settings are preserved via deep merge, existing users auto-skip onboarding.
 - `migrate` hook handles versioned schema changes.
   - V1→V2 (Batch 14): backfills `rawWeight` on every set and recomputes `isNewPR` via `migrateSessionsToV2()` in helpers.js.
@@ -1792,6 +1808,33 @@ First batch of the Hybrid Training v1 workstream (B37–B46) — see `hybrid-tra
 496. **`hybrid-b37-sanity.mjs` at worktree root.** 124/124 pass. Covers: classifyType across 25 cases (4 types + edge cases — empty string, null, non-string defaults to weight-training); defaultDimensionsForType across 5 cases; predictExerciseMeta extension across 10 cases (existing behavior preserved + station/round type-only fallback + DB Shrug Traps regression check from Batch 26); HYROX_STATIONS catalog integrity (8 stations, each with id/name/dimensions/raceStandard, all `sta_*` convention); buildHyroxStationLibraryEntry shape; migrateLibraryToV8 across synthetic v7 input + idempotency (re-run returns same reference) + user-collision case (pre-existing custom `sta_skierg` preserved, only 7 new stations seeded) + defensive cases (null/undefined/non-array). Real-data spot check section gracefully skips when `workout-backup-2026-04-24.json` isn't in the worktree.
 
 497. **No UI surface this batch, no preview verification.** Per design — B37 is the data-layer foundation. UI work lands in B39 (library list type-axis filter + create modal) and B41+ (HYROX section preview, Start overlay, round logger, summary, hybrid finish). Build passes (`npx vite build --outDir /tmp/test-build` → 794.79 KB bundle / 214.28 KB gzipped, +9.18 KB / +2.23 KB vs Batch 36 — accounted for by the 22-entry TYPE_KEYWORD_MAP, the 9 new HYROX entries on EXERCISE_KEYWORD_MAP, the 8-station catalog, and the migrateLibraryToV8 + classifyType + defaultDimensionsForType helpers).
+
+### Batch 38 (April 25, 2026) — Hybrid Training v1 foundation: session schema + unit conversions + v8→v9 migration
+
+Second batch of the Hybrid Training v1 workstream (B37–B46). Adds the dimension-aware session schema and the unit-conversion layer that lets HYROX features read metric values without conversion lag (race-pace coaching, race-weight rehearsal, future unit-toggle UI). Like B37, no UI surface lands this batch — the schema is invisible to existing flows; B41+ surfaces consume it.
+
+498. **Unit-conversion helpers (`helpers.js`).** Four pure functions + two exported constants:
+    - `LBS_TO_KG = 0.45359237`, `MILES_TO_METERS = 1609.344`.
+    - `lbsToKg(lbs)` / `kgToLbs(kg)` — round to 3-decimal precision per design doc §11.2. Defensive against null / undefined / non-numeric input (returns null).
+    - `milesToMeters(mi)` — returns integer meters per §11.2 (no fractional meters in storage).
+    - `metersToMiles(m)` — 3-decimal precision so `1609 → 1.000`, `500 → 0.311`.
+    Mirrors the existing helper pattern (no class, no shared state, defensive guards on every input).
+
+499. **`migrateSessionsToV9(sessions)` in `helpers.js`.** Walks every session's exercises' sets — top-level + nested drops — and adds derived `weightKg` (and `rawWeightKg` when present) alongside the existing lbs fields. Idempotent: sets that already carry `weightKg` are skipped, so re-running on v9 data is a no-op (returns same array reference if no fields were added). Defensive against null / non-array / malformed inputs. No HYROX rounds (`session.data.exercises[].rounds[]`) exist pre-v9 yet — those get written natively in v9-shape from B43 onward.
+
+500. **`migrateCardioSessionsToV9(cardioSessions)` in `helpers.js`.** Walks cardio sessions; for entries with `distanceUnit === 'miles'` (Running / Walking / Treadmill per CardioLogger's `getDistanceUnit`), adds derived `distanceMiles` + `distanceMeters`. Other units (`'floors'` for Stairmaster; `null` for Bike / custom types) are left as-is — they're not length axes. Idempotent.
+
+501. **LoggedSet + LoggedHyroxRound shapes documented inline (`helpers.js`).** Block comment above the v9 migration documents the dimension-aware schema:
+    - **`LoggedSet`** gains optional `weightKg`, `rawWeightKg`, `distanceMiles`, `distanceMeters`, `timeSec`, `intensity`. Pre-v9 sets without these fields render as before (back-compat).
+    - **`LoggedHyroxRound`** — new type, lives inside `LoggedExercise.rounds[]` for type=`hyrox-round` library entries. Shape: `{ roundIndex, legs: [{type:'run', distanceMiles, distanceMeters, timeSec, completedAt}, {type:'station', stationId, distanceMeters?, timeSec?, weight?, weightKg?, reps?, completedAt}], restAfterSec, completedAt }`. v1 locks `legs[]` to length 2 (run → station); §4.5 generalizes to N legs for future round structures.
+    - **`LoggedExercise`** for type=`hyrox-round` carries `rounds: LoggedHyroxRound[]` + session-level prescription overrides (`prescribedRoundCount`, `prescribedStationId`, `prescribedRunDistanceMeters`).
+    No code creates these shapes yet — B43 is the first batch to write a `LoggedHyroxRound`. Documenting now keeps B43+ surfaces aligned.
+
+502. **Persist version bumped `8 → 9` (`useStore.js`).** New `if (version < 9)` block runs `migrateSessionsToV9(persistedState.sessions)` + `migrateCardioSessionsToV9(persistedState.cardioSessions)`. Additive — no fields removed, no schema break for existing UIs. `importData` chains v9 after v5 on imported sessions and after the cardio array assignment so pre-v9 backups land in the current schema.
+
+503. **`hybrid-b38-sanity.mjs` at worktree root.** 50/50 pass. Covers: conversion-constant accuracy (`LBS_TO_KG` to 9 decimals, `MILES_TO_METERS` to 9 decimals); `lbsToKg` / `kgToLbs` across 8 + 4 cases (real values, 0, null/undefined, numeric strings, non-numeric); `milesToMeters` / `metersToMiles` across 7 + 4 cases (1mi, 0.5mi, 5K-distance, SkiErg-500m, edge cases); `migrateSessionsToV9` synthetic v8 data covering warmup/working/drops/unilateral with weight + rawWeight; idempotency (same reference returned); defensive handling (null/undefined/non-array/empty/malformed); `migrateCardioSessionsToV9` with mixed units (miles/floors/null/null-distance); idempotency; real-data spot-check section gracefully skips when backup absent.
+
+504. **No UI surface this batch, no preview verification.** Per design — B38 is the second data-layer foundation pass. The full 117-entry library + the new dimensioned-set schema are now both in place; B39 lights up the first visible UI (library list type-axis filter + create-exercise modal type selector). Build passes (`npx vite build --outDir /tmp/test-build` → 796.64 KB bundle / 214.73 KB gzipped, +1.85 KB / +0.45 KB vs Batch 37 — accounted for by the four conversion helpers + the two v9 migrations).
 
 ---
 
