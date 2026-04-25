@@ -22,7 +22,7 @@ import SupersetSheet from '../../components/SupersetSheet'
 import { RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt } from './Recommendation'
 import ReadinessCheckIn from './ReadinessCheckIn'
 import SessionGymPill from './SessionGymPill'
-import HyroxSectionPreview from './HyroxSectionPreview'
+import HyroxSectionPreview, { HyroxAddOnCard } from './HyroxSectionPreview'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -4116,6 +4116,35 @@ export default function BbLogger() {
               <div className="space-y-2">
                 {visibleItems.map(item => {
                   if (item.type === 'single') {
+                    // Batch 47 — non-weight-training entries (running,
+                    // hyrox-station) in NON-HYROX sections render as compact
+                    // Add-on cards with a Mark done toggle. ExerciseItem
+                    // assumes weight/reps and renders garbled UI for
+                    // running / station types. Routing them here keeps
+                    // Thursday's Primary (Light Movement) + Optional (Sled
+                    // Push / Pull / Farmers Carry) completable without
+                    // needing weight/reps inputs.
+                    const lib = exerciseLibraryAll.find(
+                      e => e.id === item.ex.exerciseId || e.name === item.ex.name
+                    )
+                    const isAddOn = lib?.type === 'running' || lib?.type === 'hyrox-station'
+                    if (isAddOn) {
+                      return (
+                        <HyroxAddOnCard
+                          key={item.ex.id}
+                          exercise={item.ex}
+                          onComplete={(ex) => {
+                            setExercises(prev => prev.map(e => {
+                              if (e.id !== ex.id) return e
+                              return {
+                                ...e,
+                                completedAt: e.completedAt ? 0 : Date.now(),
+                              }
+                            }))
+                          }}
+                        />
+                      )
+                    }
                     return <ExerciseItem {...exerciseCardProps(item.ex, item.idx)} />
                   }
                   // Cluster: indigo bordered container with a small

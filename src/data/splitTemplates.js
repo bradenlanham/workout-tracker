@@ -156,17 +156,17 @@ const HYROX_HYBRID_WORKOUTS = [
     emoji: '🚶‍♀️',
     sections: [
       {
-        label: 'Lift',
+        label: 'Primary',
         exercises: [
-          { name: 'Farmers Carry', type: 'hyrox-station', rec: { note: 'Optional, light only — recovery, no intensity.' } },
+          { name: 'Light Movement', type: 'running', rec: { note: '20–30 min walk, incline, or bike' } },
         ],
       },
       {
-        label: 'HYROX',
+        label: 'Optional',
         exercises: [
-          { name: 'Light Movement', type: 'running', rec: { note: '20–30 min walk, incline, or bike' } },
-          { name: 'Sled Push', type: 'hyrox-station', rec: { note: 'Optional, light only — technique focus' } },
-          { name: 'Sled Pull', type: 'hyrox-station', rec: { note: 'Optional, light only — technique focus' } },
+          { name: 'Sled Push', type: 'hyrox-station', rec: { note: 'Light only — technique focus' } },
+          { name: 'Sled Pull', type: 'hyrox-station', rec: { note: 'Light only — technique focus' } },
+          { name: 'Farmers Carry', type: 'hyrox-station', rec: { note: 'Light only — recovery, no intensity.' } },
         ],
       },
     ],

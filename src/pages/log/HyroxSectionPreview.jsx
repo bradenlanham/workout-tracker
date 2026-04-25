@@ -26,7 +26,11 @@ const YELLOW_FAINT = 'rgba(234, 179, 8, 0.12)'
 // (running drills, optional skill-work stations). Renders compact info-only
 // card with name + rec text + "✓ Mark complete" button so users can check
 // them off without going through the full round logger.
-function HyroxAddOnCard({ exercise, onComplete }) {
+//
+// Batch 47 — Exported so BbLogger's render-loop can route running and
+// hyrox-station entries in NON-HYROX sections (e.g. Thursday's Primary +
+// Optional) through the same add-on treatment.
+export function HyroxAddOnCard({ exercise, onComplete }) {
   const isDone = !!exercise?.completedAt
   const recText = formatRec(exercise?.rec)
   return (
