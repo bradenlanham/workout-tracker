@@ -625,6 +625,13 @@ const useStore = create(
       // Batch 17f — seed a fresh create-mode draft from a split template
       // (used by ChooseStartingPoint when the user taps a template card).
       // Returns true if the template id resolved, false otherwise.
+      //
+      // Batch 45 followup #2 — `silent: true` marks this draft as
+      // template-seeded so SplitCanvas's mount effect knows there's
+      // nothing to "restore" on first paint. The flag is naturally
+      // dropped on the user's first auto-save (setSplitDraft writes
+      // a payload without silent), so a subsequent return visit after
+      // real edits will surface the banner correctly.
       loadTemplate: (templateId) => {
         const draft = loadTemplateForDraft(templateId)
         if (!draft) return false
@@ -633,6 +640,7 @@ const useStore = create(
             originalId: null,
             draft,
             updatedAt: Date.now(),
+            silent: true,
           },
         })
         return true

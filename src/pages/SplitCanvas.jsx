@@ -113,7 +113,11 @@ export default function SplitCanvas() {
     if (d.emoji    !== undefined) setEmoji(d.emoji || '🏋️')
     if (d.workouts !== undefined) setWorkouts(normalizeWorkouts(d.workouts))
     if (d.rotation !== undefined) setRotation(Array.isArray(d.rotation) ? [...d.rotation] : [])
-    setShowDraftBanner(true)
+    // Batch 45 followup #2 — suppress banner for template-seeded drafts.
+    // loadTemplate sets silent:true so the user doesn't see "Unsaved draft
+    // restored" on first tap of a template (there's nothing to recover —
+    // it's the template content from 2 seconds ago).
+    if (!splitDraft.silent) setShowDraftBanner(true)
     // Banner is informational only at this point — Keep dismisses, Discard
     // reverts to the underlying split (or blank) and nulls the store draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
