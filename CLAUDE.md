@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 43 — Hybrid Training v1: round logger + gym-clock timer + intra-leg comparison)
+> Last updated: April 25, 2026 (Batch 44 — Hybrid Training v1: post-round flash + rest countdown between rounds)
 
 ## Rules for Claude
 
@@ -2033,6 +2033,83 @@ Seventh batch of the Hybrid Training v1 workstream and the **third user-visible 
 551. **Live preview verified** (port 5177, mobile 375×812, synthetic Brooke Tuesday split + injected prior session with two rounds: Run 800m @ 240/248s + SkiErg 1000m @ 350/360s). Round 1 run leg shows "ROUND 1 · RUN" / "800m Run" / "800m · 0.50 mi" subtitle / RUN CLOCK at 0:04 (later ROUND CLOCK after the dual-clock fix) / comparison band `−3:50 vs your last 800m run / 4:00 last time` in green. Tap Done → stamps `{run, 800m, timeSec:16}` and advances to round 1 station. Station leg: "ROUND 1 · STATION" / "SkiErg" / "Race standard" / ROUND CLOCK keeps running (e.g. 0:23 = 19s run + 4s station) / Done button shows segment-only 0:03 / `R1 run 0:19` chip in recent splits / `−5:37 vs your last SkiErg / 6:00 last time` (anchored to most-recent SkiErg leg = R2's 360s = 6:00). Tap Done → stamps station with segment-only time, advances to round 2 run. Round 2: ROUND CLOCK + segment clock both reset to 0:00, "R1 total 0:33" chip in recent splits (16+17=33). Comparison band `−2:52 vs your last 800m run / 4:00 last time`. BottomNav + HamburgerMenu + RestTimer all correctly hidden on `/log/hyrox/*`. Console clean of new errors (only pre-existing key-via-spread `<ExerciseItem>` warnings from BbLogger.jsx, documented known caveat).
 
 552. **Build.** `npx vite build --outDir /tmp/test-build` → 847.49 KB bundle / 228.57 KB gzipped (+15.30 KB / +3.94 KB vs Batch 42, accounted for by `getStationHistory` + `getRunLegHistory` + `computePaceFromHistory` + `buildIntraLegComparison` (4 helpers, ~5 KB); `GymClock` component (~2.5 KB); `HyroxRoundLogger` (~7.5 KB)).
+
+### Batch 44 (April 25, 2026) — Hybrid Training v1: post-round flash + rest countdown between rounds
+
+Eighth batch of the Hybrid Training v1 workstream and the **fourth user-visible HYROX surface**. Wires two transient overlays between non-final rounds: PostRoundFlash for ~2.5s with a station-anchored comparison headline, then RestBetweenRoundsTimer counting DOWN from prescribed rest. Final round skips both — the user is funneled directly to `/summary` (B45). Branch shipped to `claude/hybrid-b44-rest-countdown` — NOT auto-merged to main, awaiting user review.
+
+553. **`computeRoundDelta(roundIndex, completedLegs, sessions, prescription)` in `helpers.js`.** Composes the headline + subheadline rendered on PostRoundFlash. Three branches per design doc §14.2:
+    - **`'round-position'`** — same exerciseId (round template) + same stationId at the same roundIndex in a prior session. Headline `"Round N done · M:SS"` with subheadline `"X faster than last time"` (round-total delta — sum of run + station for the round). Same-exact-match path, most specific.
+    - **`'station-anchored'`** — fallback when branch 1 doesn't match (rotation pool, different round position, different template). Honors the headline B43 invariant: stations are the comparison primitive. Headline `"Round N done · {Station} M:SS"` with subheadline `"X faster than your last {Station}"` (station-leg delta against most-recent prior leg of same station, dimensions matching when possible; widens to all-station when exact dims unavailable).
+    - **`'cold'`** — station has no prior history at all. Headline `"Round N done · M:SS"` with `subheadline: null` and `deltaSec: null`.
+    Returns `{ headline, subheadline, mode, deltaSec }`. Pure — defensive against null/empty/malformed inputs at every layer (returns null for invalid roundIndex / completedLegs; returns 'cold' result when sessions array is null/empty so the cold path always composes a round-total).
+
+554. **`PostRoundFlash.jsx` (new, `src/pages/log/`).** Full-screen yellow-on-black overlay at z-70. Renders for ~2.5s after a non-final round's station leg is stamped Done. Layout:
+    - Yellow `Round complete` chip (echoes the round logger header for visual continuity).
+    - 30px headline ("Round N done · 5:42" or "Round N done · SkiErg 5:34").
+    - 16px subheadline ("0:18 faster than last time" / "0:14 faster than your last SkiErg") — hidden on cold-start.
+    - Bottom-fixed muted hint: `Tap to continue · rest is next`.
+    Yellow radial-glow background matching the StartHyroxOverlay treatment (B42). 3-line CSS keyframe fade-in animation (matches B42's headline pattern). Tap anywhere or wait `durationMs` to advance — both call `onAdvance`. Pure presentational; parent owns the phase transition + absolute timestamp for background-survival.
+
+555. **`RestBetweenRoundsTimer.jsx` (new, `src/pages/log/`).** Full-screen yellow countdown clock at z-70. Auto-fires after PostRoundFlash dismisses (or skipped). Layout:
+    - Top: yellow `Rest between rounds` chip + "Round N+1 of M starts soon" subline.
+    - Center: the existing `GymClock` component with `mode='rest'` + remaining seconds passed via `elapsedSec`. Eyebrow auto-renders "REST". Walk-it-off hint underneath.
+    - Bottom: `Skip rest` (white ghost) + `+ 30 sec` (yellow filled) buttons.
+    100ms tick mirrors B43's HyroxRoundLogger pattern. Auto-completes via `useEffect` when `remainingMs <= 0` — fires `onComplete` which advances to the next round. Pure tick math: `remainingSec = max(0, (restEndTimestamp - now) / 1000)`. Background-survives reload because parent uses absolute `restEndTimestamp`.
+
+556. **`GymClock` extended for low-time visual urgency** (`src/components/GymClock.jsx`). When `mode='rest'` AND `total <= 5` seconds remaining, the digit color shifts from `#FEF08A` (yellow-200) to `#FCD34D` (amber-300). Small visual cue for "almost done" that costs nothing — no animation, no API change, pure render-side. Existing `mode='up'` callsites unaffected. Eyebrow + softer wash from B43 unchanged.
+
+557. **Phase state machine on `activeSession.hyrox`** (`HyroxRoundLogger.jsx`). Five new fields layered onto the B43 shape (no persist version bump — additive):
+    - `phase: 'logging' | 'flash' | 'rest'` (default `'logging'`).
+    - `flashStartTimestamp: ms | null` — set on station-Done of non-final round, cleared on flash-advance.
+    - `restStartTimestamp: ms | null` — set on flash-advance, cleared on rest-complete (B45 reads this for `restAfterSec` derivation when composing `rounds[]` for session save).
+    - `restEndTimestamp: ms | null` — absolute target for the countdown. Add-30s shifts it forward, skip clears it. Background-survives reload.
+    Initial seed includes the full set as null/`'logging'` for a clean B45 read; the existing B43 hydrate path keeps existing-session fields intact when the user is mid-flow.
+
+558. **handleDone for non-final station leg rewritten.** B43 advanced directly to next-round's run leg (resetting both clocks + URL + currentRoundIdx in one transition). B44 splits this into THREE transitions:
+    - **Station-Done (non-final) → flash**: stamp the leg into `completedLegs`, set `phase: 'flash'`, set `flashStartTimestamp: Date.now()`. Round/leg clocks NOT reset. URL stays at `/round/N/station` so reload mid-flash returns to the flash overlay.
+    - **handleFlashAdvance: flash → rest**: reads `prescription.restSec`, sets `phase: 'rest'`, `restStartTimestamp: now`, `restEndTimestamp: now + restSec * 1000`. Reload mid-rest returns to the rest overlay.
+    - **advanceToNextRound (rest-complete OR skip-rest): rest → logging**: resets both clocks, advances `currentRoundIdx + 1`, flips `currentLeg` to `'run'`, clears phase fields, navigates URL to `/round/N+1/run`.
+    Each transition is idempotent — the handler bails if the current phase isn't what it expects, so PostRoundFlash's auto-advance + tap-to-continue + RestBetweenRoundsTimer's auto-complete-at-zero + skip-button can't double-fire and corrupt state.
+
+559. **`handleAddRestSeconds(deltaSec)`.** Bumps `restEndTimestamp += deltaSec * 1000`. Validates that `phase === 'rest'` before mutating (prevents stray taps from extending nonexistent rest). Verified live: 86s remaining + tap +30 → 116s remaining (exact 30s shift on the absolute timestamp).
+
+560. **Render branch in HyroxRoundLogger return.** New early-return blocks BEFORE the main logger UI:
+    - `if (hyrox.phase === 'flash')` → render `<PostRoundFlash delta={computeRoundDelta(...)} durationMs={Math.max(0, FLASH_DURATION_MS - elapsedFlashMs)} onAdvance={handleFlashAdvance} />`. The `durationMs` math means a reload-after-flash-already-elapsed renders for 0ms then auto-advances synchronously.
+    - `if (hyrox.phase === 'rest')` → render `<RestBetweenRoundsTimer restEndTimestamp={...} onSkip={handleSkipRest} onAddSeconds={handleAddRestSeconds} onComplete={handleRestComplete} />`. Reload-after-rest-elapsed similarly auto-completes immediately.
+    Both overlays are full-screen z-70, so the underlying logger UI is fully covered. The B43 round/segment-clock useEffects keep ticking under the hood (negligible cost) and resume rendering correctly when phase flips back to `'logging'`.
+
+561. **Final round behavior unchanged.** When `currentRoundIdx >= roundCount - 1` AND the user taps Done on the station leg, `handleDone`'s pre-existing isFinalRound branch runs: stamps the leg, sets `hyrox.completedAt`, navigates straight to `/log/hyrox/:id/summary`. No flash, no rest. The phase fields stay at `'logging'` through the transition. Verified live: 4-round walkthrough end-to-end, R4 station Done → URL `/summary` immediately, phase still `'logging'`, completedLegs has all 8 entries.
+
+562. **`hybrid-b44-sanity.mjs` at worktree root.** 70/70 pass. Covers:
+    - **Test 1 — Branch 1 'round-position'**: faster path (delta=-20s, "faster than last time"), slower path (+50s, "slower"), match path (0s, "Matched last time").
+    - **Test 2 — Branch 2 'station-anchored' across templates**: Saturday template's R0 SkiErg compares to Friday R1 SkiErg (cross-template aggregation), delta=-30s.
+    - **Test 3 — Branch 2 fallback within same template, different position**: Friday R2 with SkiErg compares to Friday R1 SkiErg (R2 of prior had Sled Push, so branch 1 fails → branch 2 fires).
+    - **Test 4 — Branch 3 'cold start'**: no prior history at all, mode='cold', subheadline=null, deltaSec=null. Also lift-only-prior case.
+    - **Test 5 — Defensive cases**: null/negative/non-number roundIndex; null/non-array/empty completedLegs; mismatched roundIndex; null sessions; null prescription. All handled gracefully.
+    - **Test 6 — Rest countdown decrement math**: 0s/30s/89.5s/90s/120s (clamp)/-5s.
+    - **Test 7 — Add 30s shifts restEndTimestamp**: +30 / +60 / remaining bumps by 30.
+    - **Test 8 — Final round detection**: 5/5 cases across roundCount=1/4/5/6.
+    - **Test 9 — Phase state-transition shapes**: station-Done → flash (clocks NOT reset), flash → rest (restStart + restEnd set), rest → logging (clocks reset, currentRoundIdx + 1, phase fields cleared, completedLegs preserved).
+    - **Test 10 — Skip rest = rest-complete**: identical state shape regardless of timing.
+
+563. **Live preview verified** (port 5178, mobile 375×812, synthetic Brooke Tuesday split + injected prior session). Walked through:
+    - Round 1: run leg → station leg → tap Done → flash overlay renders with `Round 1 done · 0:20` + `9:30 faster than last time` (round-position branch, today's 20s vs prior R0's 590s) + tap-to-continue hint.
+    - Tap dialog → phase flips to `'rest'` → REST gym clock at 1:42 (102s remaining of 120s). Skip rest + + 30 sec buttons visible. URL still `/round/1/station`.
+    - Tap +30s → `restEndTimestamp` shifts forward by 30000ms (verified: 86s → 116s remaining). Tap Skip rest → phase=`'logging'`, currentRoundIdx=1, currentLeg='run', clocks reset, URL `/round/2/run`.
+    - Continued through R2, R3 (each producing flash → rest → advance), then R4 final station Done → URL `/summary` immediately (no flash, no rest, phase stays `'logging'`, completedLegs.length=8).
+    - **Reload mid-rest**: phase + restEndTimestamp survived; rest dialog re-rendered with countdown picking up at 95s remaining (was 104s, ~9s elapsed during reload + load). URL stayed at `/round/2/station` (correct — round hasn't advanced).
+    - No new console errors — only the pre-existing `<ExerciseItem>` key-via-spread warnings from BbLogger.jsx that predate B41 (documented known caveat).
+
+564. **Files modified.**
+    - `src/utils/helpers.js` — `computeRoundDelta` + extended block comment.
+    - `src/components/GymClock.jsx` — `digitColor` prop on `DigitBox` + final-5s amber treatment in `mode='rest'`.
+    - `src/pages/log/PostRoundFlash.jsx` (new) — flash overlay component.
+    - `src/pages/log/RestBetweenRoundsTimer.jsx` (new) — rest countdown component.
+    - `src/pages/log/HyroxRoundLogger.jsx` — phase state machine + new handlers + flash/rest render branches.
+    - `hybrid-b44-sanity.mjs` (new, worktree root) — 70-assertion sanity script.
+
+565. **Build.** `npx vite build --outDir /tmp/test-build` → 855.59 KB bundle / 230.49 KB gzipped (+8.10 KB / +1.92 KB vs Batch 43, accounted for by `computeRoundDelta` (+1.5 KB), `PostRoundFlash` (+2.5 KB), `RestBetweenRoundsTimer` (+2.5 KB), and the HyroxRoundLogger phase-state-machine wiring (~1.5 KB) + GymClock prop addition (~0.1 KB)).
 
 ---
 

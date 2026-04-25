@@ -4,8 +4,13 @@
 // glyphs, all wrapped in a black surround with yellow inset glow + label
 // eyebrow. Counts UP by default (round in progress); set `mode='rest'` to
 // shift the eyebrow + softer wash for the rest-between-rounds takeover
-// (B44 wires the actual countdown). Pure presentational — parent owns the
-// elapsedSec state + interval; this component only renders.
+// (B44 wires the actual countdown — parent computes remaining seconds and
+// passes via `elapsedSec`). Pure presentational — parent owns the elapsedSec
+// state + interval; this component only renders.
+//
+// B44: in `mode='rest'`, the final 5 seconds bump the digit color to a
+// brighter amber so the user gets a visual "almost done" cue. No animation,
+// just a color swap — keeps the visual language calm.
 //
 // Design doc §17.1: monospace 38px digits in #FEF08A (yellow-200), 56px min
 // box width so 3-digit second values fit, 8px border radius, 0.3 yellow
@@ -23,8 +28,9 @@ import { formatDuration } from '../utils/helpers'
 
 const YELLOW_500 = '#EAB308'
 const YELLOW_200 = '#FEF08A'
+const AMBER_300 = '#FCD34D'  // brighter / warmer for the final seconds
 
-function DigitBox({ value, label }) {
+function DigitBox({ value, label, digitColor = YELLOW_200 }) {
   return (
     <div
       className="flex flex-col items-center"
@@ -43,7 +49,7 @@ function DigitBox({ value, label }) {
           fontSize: 38,
           fontWeight: 500,
           letterSpacing: '-0.04em',
-          color: YELLOW_200,
+          color: digitColor,
           lineHeight: 1,
         }}
       >
@@ -103,6 +109,11 @@ export default function GymClock({
   // §17.3 — softer wash on rest mode.
   const wrapperBg = mode === 'rest' ? 'rgba(234, 179, 8, 0.04)' : '#000'
 
+  // B44 — final-5s warmer color in rest mode so users feel the urgency
+  // without animation. Other modes always use the standard yellow-200.
+  const digitColor =
+    mode === 'rest' && total > 0 && total <= 5 ? AMBER_300 : YELLOW_200
+
   return (
     <div
       role="timer"
@@ -129,11 +140,11 @@ export default function GymClock({
         {eyebrow}
       </span>
       <div className="flex items-start" style={{ gap: 6 }}>
-        <DigitBox value={String(h).padStart(2, '0')} label="HRS" />
+        <DigitBox value={String(h).padStart(2, '0')} label="HRS" digitColor={digitColor} />
         <Colon />
-        <DigitBox value={String(m).padStart(2, '0')} label="MIN" />
+        <DigitBox value={String(m).padStart(2, '0')} label="MIN" digitColor={digitColor} />
         <Colon />
-        <DigitBox value={String(s).padStart(2, '0')} label="SEC" />
+        <DigitBox value={String(s).padStart(2, '0')} label="SEC" digitColor={digitColor} />
       </div>
     </div>
   )

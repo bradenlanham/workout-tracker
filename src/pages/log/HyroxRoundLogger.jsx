@@ -34,15 +34,25 @@
 //   │   Edit time · Skip station               │  ← secondary actions
 //   └─────────────────────────────────────────┘
 //
-// Done flow per implementation plan B43.3:
+// Done flow per implementation plan B43.3 + B44:
 // - Done on RUN leg → stamp `timeSec` + `distanceMeters` + `distanceMiles`
 //   from prescription, advance to STATION leg of same round (no clock
 //   reset; round clock keeps running).
 // - Done on STATION leg of NON-final round → stamp `timeSec` + station-
-//   specific dimensions, advance to next round's RUN leg with timer
-//   reset. (B44 wires the post-round flash + rest countdown between.)
+//   specific dimensions, then enter the B44 transient phases: PostRoundFlash
+//   for ~2.5s, then RestBetweenRoundsTimer counting down from prescribed
+//   `restSec`. Round/leg clocks DO NOT reset until rest hits zero (or skip).
 // - Done on STATION leg of FINAL round → stamp the leg, mark hyrox
-//   complete, route to a B45 summary stub at /log/hyrox/:id/summary.
+//   complete, route to the summary at /log/hyrox/:id/summary. Final round
+//   skips both flash + rest entirely per design doc §15 + plan B44.
+//
+// B44 phase state machine on `activeSession.hyrox`:
+//   phase: 'logging' (default — render this component's normal layout)
+//        | 'flash'   (PostRoundFlash overlay, 2.5s auto-advance)
+//        | 'rest'    (RestBetweenRoundsTimer overlay, countdown)
+//   flashStartTimestamp: ms — when phase entered 'flash'
+//   restEndTimestamp:    ms — absolute target for the countdown (background-survive)
+//   restStartTimestamp:  ms — when phase entered 'rest' (B45 reads this for restAfterSec)
 //
 // Intra-leg comparison band per §14.1: station-anchored. A SkiErg leg's
 // reference is every prior SkiErg leg the user has logged, regardless of
@@ -53,12 +63,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import GymClock from '../../components/GymClock'
+import PostRoundFlash from './PostRoundFlash'
+import RestBetweenRoundsTimer from './RestBetweenRoundsTimer'
 import {
   buildIntraLegComparison,
+  computeRoundDelta,
   formatDuration,
   metersToMiles,
 } from '../../utils/helpers'
 import { HYROX_STATIONS } from '../../data/hyroxStations'
+
+const FLASH_DURATION_MS = 2500
 
 const YELLOW = '#EAB308'
 const YELLOW_BRIGHT = '#FACC15'
@@ -285,6 +300,13 @@ export default function HyroxRoundLogger() {
         isPaused: false,
         pauseStartedAt: null,
         completedLegs: [],
+        // B44 — phase state machine for the post-round flash + rest sequence.
+        // Logging is the default; non-final station-Done flips to 'flash',
+        // then 'rest', then back to 'logging' after rest completes.
+        phase: 'logging',
+        flashStartTimestamp: null,
+        restStartTimestamp: null,
+        restEndTimestamp: null,
       }
       saveActiveSession({
         ...(activeSession || {}),
@@ -480,14 +502,69 @@ export default function HyroxRoundLogger() {
       return
     }
 
-    // Non-final round — advance to next round's run leg, RESET both clocks.
-    // (B44 will inject the rest countdown between; for B43 we just hop.)
-    const nextRound = hyrox.currentRoundIdx + 1
-    const nowTs = Date.now()
+    // Non-final round — B44 enters the post-round flash phase. Round/leg
+    // clocks are NOT reset yet; they reset when rest completes (or skips)
+    // in `handleRestComplete` below. URL also stays at /round/N/station so
+    // a reload mid-flash or mid-rest restores into the correct overlay.
     saveActiveSession({
       ...activeSession,
       hyrox: {
         ...hyrox,
+        completedLegs: updatedCompleted,
+        phase: 'flash',
+        flashStartTimestamp: Date.now(),
+        restStartTimestamp: null,
+        restEndTimestamp: null,
+        isPaused: false,
+        pauseStartedAt: null,
+      },
+    })
+  }, [hyrox, activeSession, saveActiveSession, elapsedSec, navigate, exerciseId])
+
+  // ── B44 phase-transition handlers ──────────────────────────────────────
+  //
+  // Each handler reads the current phase from the live store snapshot and
+  // bails if the phase has already advanced. Necessary because PostRoundFlash
+  // and RestBetweenRoundsTimer both have auto-advance timers AND tap/skip
+  // affordances — without an idempotent guard, two firings would shove
+  // restEndTimestamp forward (extending rest) or advance two rounds at once.
+
+  const handleFlashAdvance = useCallback(() => {
+    const cur = activeSession?.hyrox
+    if (!cur || cur.phase !== 'flash') return
+    const restSec =
+      typeof cur.prescription?.restSec === 'number' && cur.prescription.restSec > 0
+        ? cur.prescription.restSec
+        : 0
+    const nowTs = Date.now()
+    saveActiveSession({
+      ...activeSession,
+      hyrox: {
+        ...cur,
+        phase: 'rest',
+        flashStartTimestamp: null,
+        restStartTimestamp: nowTs,
+        restEndTimestamp: nowTs + restSec * 1000,
+      },
+    })
+  }, [activeSession, saveActiveSession])
+
+  const advanceToNextRound = useCallback(() => {
+    const cur = activeSession?.hyrox
+    if (!cur) return
+    if (cur.phase !== 'rest' && cur.phase !== 'flash') return
+    const nextRound = cur.currentRoundIdx + 1
+    const totalRounds = cur.prescription?.roundCount
+    if (typeof totalRounds === 'number' && nextRound >= totalRounds) {
+      // Defensive — should never reach here for the final round (final round
+      // routes straight to summary from handleDone). Bail rather than corrupt.
+      return
+    }
+    const nowTs = Date.now()
+    saveActiveSession({
+      ...activeSession,
+      hyrox: {
+        ...cur,
         currentRoundIdx: nextRound,
         currentLeg: 'run',
         roundStartTimestamp: nowTs,
@@ -495,14 +572,45 @@ export default function HyroxRoundLogger() {
         totalPausedMs: 0,
         isPaused: false,
         pauseStartedAt: null,
-        completedLegs: updatedCompleted,
+        phase: 'logging',
+        flashStartTimestamp: null,
+        restStartTimestamp: null,
+        restEndTimestamp: null,
       },
     })
     navigate(
       `/log/hyrox/${encodeURIComponent(exerciseId)}/round/${nextRound + 1}/run`,
       { replace: true }
     )
-  }, [hyrox, activeSession, saveActiveSession, elapsedSec, navigate, exerciseId])
+  }, [activeSession, saveActiveSession, navigate, exerciseId])
+
+  const handleRestComplete = useCallback(() => {
+    advanceToNextRound()
+  }, [advanceToNextRound])
+
+  const handleSkipRest = useCallback(() => {
+    advanceToNextRound()
+  }, [advanceToNextRound])
+
+  const handleAddRestSeconds = useCallback(
+    (deltaSec) => {
+      const cur = activeSession?.hyrox
+      if (!cur || cur.phase !== 'rest') return
+      const delta = typeof deltaSec === 'number' && deltaSec > 0 ? deltaSec : 0
+      if (delta === 0) return
+      const newEnd =
+        (typeof cur.restEndTimestamp === 'number' ? cur.restEndTimestamp : Date.now()) +
+        delta * 1000
+      saveActiveSession({
+        ...activeSession,
+        hyrox: {
+          ...cur,
+          restEndTimestamp: newEnd,
+        },
+      })
+    },
+    [activeSession, saveActiveSession]
+  )
 
   const handleSkip = useCallback(() => {
     // Skip the current leg — stamp 0s and advance per the same rules as
@@ -568,6 +676,50 @@ export default function HyroxRoundLogger() {
           Go back
         </button>
       </div>
+    )
+  }
+
+  // ── B44 phase overlays ────────────────────────────────────────────────
+  //
+  // Render PostRoundFlash or RestBetweenRoundsTimer based on hyrox.phase.
+  // Both are full-screen z-70 overlays — the normal logging UI underneath
+  // stays mounted but is fully covered. Reload during either phase reads
+  // phase from activeSession.hyrox and lands back on the right overlay.
+
+  if (hyrox.phase === 'flash') {
+    const elapsedFlashMs =
+      typeof hyrox.flashStartTimestamp === 'number'
+        ? Math.max(0, Date.now() - hyrox.flashStartTimestamp)
+        : 0
+    const remainingFlashMs = Math.max(0, FLASH_DURATION_MS - elapsedFlashMs)
+    const delta = computeRoundDelta(
+      hyrox.currentRoundIdx,
+      hyrox.completedLegs,
+      sessions,
+      {
+        exerciseId: hyrox.exerciseId,
+        stationId: hyrox.prescription?.stationId,
+      }
+    )
+    return (
+      <PostRoundFlash
+        delta={delta}
+        durationMs={remainingFlashMs}
+        onAdvance={handleFlashAdvance}
+      />
+    )
+  }
+
+  if (hyrox.phase === 'rest') {
+    return (
+      <RestBetweenRoundsTimer
+        restEndTimestamp={hyrox.restEndTimestamp}
+        totalRounds={hyrox.prescription?.roundCount}
+        nextRoundIdx={hyrox.currentRoundIdx + 1}
+        onSkip={handleSkipRest}
+        onAddSeconds={handleAddRestSeconds}
+        onComplete={handleRestComplete}
+      />
     )
   }
 

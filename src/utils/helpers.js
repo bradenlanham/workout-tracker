@@ -2792,6 +2792,147 @@ export function buildIntraLegComparison(opts) {
   return null
 }
 
+// ── Batch 44: Post-round delta for the flash overlay ──────────────────────
+//
+// `computeRoundDelta(roundIndex, completedLegs, sessions, prescription)` —
+// composes the headline + subheadline rendered on PostRoundFlash after a
+// non-final round's station leg is stamped Done. Three branching modes per
+// design doc §14.2 + plan B44:
+//
+//   1. 'round-position' — same exerciseId (round template) + same stationId
+//      at the same roundIndex in a prior session. Headline reads "Round N
+//      done · M:SS" with subheadline "X faster than last week" (round-total
+//      delta — sum of run + station for the round).
+//
+//   2. 'station-anchored' — fallback when branch 1 doesn't match (rotation
+//      pool, different round position, different template). Honors the
+//      headline B43 invariant: stations are the comparison primitive.
+//      Headline "Round N done · {Station} M:SS" with subheadline "X faster
+//      than your last {Station}" (station-leg delta against most-recent
+//      prior leg of same station, dimensions matching when possible).
+//
+//   3. 'cold' — station has no prior history at all. Headline "Round N
+//      done · M:SS", subheadline null (no delta to report).
+//
+// Returns `{ headline, subheadline, mode, deltaSec }`. Pure — caller passes
+// the just-stamped legs from `activeSession.hyrox.completedLegs` plus the
+// store's `sessions[]`. The prescription contains exerciseId + stationId so
+// branch 1 / branch 2 lookups don't need to re-derive them.
+
+export function computeRoundDelta(roundIndex, completedLegs, sessions, prescription) {
+  if (typeof roundIndex !== 'number' || roundIndex < 0) return null
+  if (!Array.isArray(completedLegs) || completedLegs.length === 0) return null
+
+  // Filter to JUST the legs from the round we just finished.
+  const thisRoundLegs = completedLegs.filter(l => l?.roundIndex === roundIndex)
+  if (thisRoundLegs.length === 0) return null
+
+  const thisRunLeg = thisRoundLegs.find(l => l?.type === 'run')
+  const thisStationLeg = thisRoundLegs.find(l => l?.type === 'station')
+  const thisRoundTotalSec = thisRoundLegs.reduce(
+    (sum, l) => sum + (typeof l?.timeSec === 'number' ? l.timeSec : 0),
+    0
+  )
+
+  const stationId = prescription?.stationId || thisStationLeg?.stationId || null
+  const stationName = stationId
+    ? (HYROX_STATIONS.find(s => s.id === stationId)?.name || null)
+    : null
+  const exerciseId = prescription?.exerciseId || null
+
+  // ── Branch 1: same template + same station + same round position ─────
+  if (exerciseId && stationId && thisStationLeg && Array.isArray(sessions)) {
+    const priorMeta = getLastHyroxRoundSession(sessions, exerciseId)
+    if (priorMeta?.loggedExercise?.rounds) {
+      const priorRound = priorMeta.loggedExercise.rounds.find(
+        r => r?.roundIndex === roundIndex
+      )
+      if (priorRound?.legs) {
+        const priorStation = priorRound.legs.find(l => l?.type === 'station')
+        if (
+          priorStation?.stationId === stationId &&
+          typeof priorStation.timeSec === 'number'
+        ) {
+          const priorRoundTotal = priorRound.legs.reduce(
+            (sum, l) => sum + (typeof l?.timeSec === 'number' ? l.timeSec : 0),
+            0
+          )
+          if (priorRoundTotal > 0) {
+            const deltaSec = thisRoundTotalSec - priorRoundTotal
+            const headline = `Round ${roundIndex + 1} done · ${formatDuration(thisRoundTotalSec)}`
+            let subheadline
+            if (deltaSec === 0) {
+              subheadline = 'Matched last time'
+            } else if (deltaSec < 0) {
+              subheadline = `${formatDuration(Math.abs(deltaSec))} faster than last time`
+            } else {
+              subheadline = `${formatDuration(deltaSec)} slower than last time`
+            }
+            return {
+              mode: 'round-position',
+              headline,
+              subheadline,
+              deltaSec,
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── Branch 2: station-anchored — most recent prior leg of this station ─
+  if (
+    stationId &&
+    thisStationLeg &&
+    typeof thisStationLeg.timeSec === 'number' &&
+    Array.isArray(sessions)
+  ) {
+    // Try exact-dimension match first; fall back to all this station.
+    const stationDims = {}
+    if (typeof thisStationLeg.distanceMeters === 'number') {
+      stationDims.distanceMeters = thisStationLeg.distanceMeters
+    }
+    if (typeof thisStationLeg.weight === 'number') {
+      stationDims.weight = thisStationLeg.weight
+    }
+    if (typeof thisStationLeg.reps === 'number') {
+      stationDims.reps = thisStationLeg.reps
+    }
+    let priorHistory = getStationHistory(sessions, stationId, stationDims)
+    if (priorHistory.length === 0) {
+      priorHistory = getStationHistory(sessions, stationId, {})
+    }
+    if (priorHistory.length > 0) {
+      const mostRecent = priorHistory[0]
+      const deltaSec = thisStationLeg.timeSec - mostRecent.timeSec
+      const stationLabel = stationName || 'station'
+      const headline = `Round ${roundIndex + 1} done · ${stationLabel} ${formatDuration(thisStationLeg.timeSec)}`
+      let subheadline
+      if (deltaSec === 0) {
+        subheadline = `Matched your last ${stationLabel}`
+      } else if (deltaSec < 0) {
+        subheadline = `${formatDuration(Math.abs(deltaSec))} faster than your last ${stationLabel}`
+      } else {
+        subheadline = `${formatDuration(deltaSec)} slower than your last ${stationLabel}`
+      }
+      return {
+        mode: 'station-anchored',
+        headline,
+        subheadline,
+        deltaSec,
+      }
+    }
+  }
+
+  // ── Branch 3: cold start — round total only, no comparison ───────────
+  return {
+    mode: 'cold',
+    headline: `Round ${roundIndex + 1} done · ${formatDuration(thisRoundTotalSec)}`,
+    subheadline: null,
+    deltaSec: null,
+  }
+}
+
 // `formatDuration(sec)` — `M:SS` or `H:MM:SS` for the HYROX preview card's
 // last-session total time line. Defensive; returns empty string for null /
 // non-numeric / negative.
