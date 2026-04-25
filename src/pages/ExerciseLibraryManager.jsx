@@ -1,18 +1,35 @@
 // Batch 16j — Manage Exercise Library page.
 // Batch 16l — added workout + usage filter chips so users don't have to
 // wade through all 109 entries every time.
+// Batch 39 — type-axis filter (All · Lift · Run · HYROX), row stripes per
+// type, type-aware last-set summary, source-axis chips moved into a ⋯
+// overflow on the topbar, "+ New exercise" entry point right next to Done.
 //
 // Route: /exercises. Linked from HamburgerMenu ("My Exercises"). Lists
-// library entries filtered by source (All / Custom / Built-in / Untagged)
-// AND by workout context (Any / [each workout in active split] / Never
-// logged). Tapping an entry opens ExerciseEditSheet.
+// library entries filtered by type (All/Lift/Run/HYROX) AND by workout
+// context (Any / [each workout in active split] / Logged / Never logged),
+// with source-axis (All/Custom/Built-in/Untagged) tucked into the overflow
+// so it stays available for the sweep-out moments without crowding the
+// primary filter row.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { perSideLoad, formatDate, normalizeExerciseName } from '../utils/helpers'
+import {
+  formatDate, normalizeExerciseName,
+  getTypeColor, getTypeLabel, getTypeFilterBucket, formatLastSetSummary,
+} from '../utils/helpers'
 import ExerciseEditSheet from '../components/ExerciseEditSheet'
+import CreateExerciseModal from '../components/CreateExerciseModal'
+
+const TYPE_FILTERS = [
+  { id: 'all',   label: 'All' },
+  { id: 'lift',  label: 'Lift' },
+  { id: 'run',   label: 'Run' },
+  { id: 'hyrox', label: 'HYROX' },
+]
 
 const SOURCE_FILTERS = [
   { id: 'all',      label: 'All'       },
@@ -47,6 +64,73 @@ function lastLoggedFor(sessions, exerciseId) {
   return best
 }
 
+// Source-filter overflow popover — anchored ⋯ button on the topbar.
+// Opens a small portal panel with the four source-axis pills + a count
+// badge per option. Outside-click + Escape dismiss. Mirrors the
+// SplitManager OverflowMenu pattern from Batch 17c.
+function SourceFilterOverflow({ open, anchorRef, onClose, sourceFilter, setSourceFilter, sourceCounts, theme }) {
+  const [pos, setPos] = useState({ top: 0, right: 0 })
+
+  useEffect(() => {
+    if (!open || !anchorRef.current) return
+    const r = anchorRef.current.getBoundingClientRect()
+    setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) })
+  }, [open, anchorRef])
+
+  useEffect(() => {
+    if (!open) return
+    const onDocDown = (e) => {
+      if (anchorRef.current && anchorRef.current.contains(e.target)) return
+      onClose()
+    }
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    const t = setTimeout(() => {
+      document.addEventListener('mousedown', onDocDown)
+      document.addEventListener('touchstart', onDocDown)
+      document.addEventListener('keydown', onKey)
+    }, 0)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('touchstart', onDocDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open, onClose, anchorRef])
+
+  if (!open) return null
+
+  return createPortal(
+    <div
+      className="fixed bg-card rounded-xl border border-white/10 shadow-2xl p-2"
+      style={{ top: pos.top, right: pos.right, zIndex: 60, minWidth: 180 }}
+    >
+      <p className="text-[10px] uppercase tracking-wider text-c-faint px-2 pt-1 pb-1.5">Source</p>
+      <div className="flex flex-col">
+        {SOURCE_FILTERS.map(f => {
+          const n = sourceCounts[f.id] || 0
+          if (f.id === 'tagging' && n === 0) return null
+          const selected = sourceFilter === f.id
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => { setSourceFilter(f.id); onClose() }}
+              className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs text-c-primary hover:bg-hover"
+            >
+              <span className="font-semibold flex items-center gap-1.5">
+                {selected && <span style={{ color: theme.hex }}>•</span>}
+                <span className={selected ? '' : 'pl-3'}>{f.label}</span>
+              </span>
+              <span className="text-c-muted tabular-nums">{n}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 export default function ExerciseLibraryManager() {
   const navigate = useNavigate()
   const {
@@ -55,21 +139,23 @@ export default function ExerciseLibraryManager() {
     settings,
     splits,
     activeSplitId,
+    addExerciseToLibrary,
     updateExerciseInLibrary,
     deleteExerciseFromLibrary,
   } = useStore()
   const theme = getTheme(settings.accentColor)
   const activeSplit = splits?.find(s => s.id === activeSplitId)
 
+  const [typeFilter,    setTypeFilter]    = useState('all')   // 'all' | 'lift' | 'run' | 'hyrox'
   const [sourceFilter,  setSourceFilter]  = useState('all')
-  const [workoutFilter, setWorkoutFilter] = useState('any')  // 'any' | workoutId | 'logged' | 'never'
+  const [workoutFilter, setWorkoutFilter] = useState('any')   // 'any' | workoutId | 'logged' | 'never'
   const [search,        setSearch]        = useState('')
   const [editingId,     setEditingId]     = useState(null)
+  const [creating,      setCreating]      = useState(false)
+  const [overflowOpen,  setOverflowOpen]  = useState(false)
+  const overflowRef = useRef(null)
 
   // Build a lookup: exerciseIds referenced by each workout in the active split.
-  // section.exercises items can be strings or {name, rec} objects (Batch 13),
-  // so we unwrap the name and resolve against the library by id, canonical
-  // name, or alias — same approach the v2→v3 migration uses.
   const exerciseIdsByWorkout = useMemo(() => {
     const byNormalized = new Map()
     for (const ex of exerciseLibrary || []) {
@@ -111,7 +197,13 @@ export default function ExerciseLibraryManager() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return (exerciseLibrary || []).filter(e => {
-      // Source filter
+      // Type-axis filter (Batch 39 — primary axis)
+      if (typeFilter !== 'all') {
+        const bucket = getTypeFilterBucket(e.type || 'weight-training')
+        if (bucket !== typeFilter) return false
+      }
+
+      // Source filter (overflow axis)
       if (sourceFilter === 'custom'  && e.isBuiltIn)    return false
       if (sourceFilter === 'builtin' && !e.isBuiltIn)   return false
       if (sourceFilter === 'tagging' && !e.needsTagging) return false
@@ -133,7 +225,7 @@ export default function ExerciseLibraryManager() {
       if (!!a.needsTagging !== !!b.needsTagging) return a.needsTagging ? -1 : 1
       return (a.name || '').localeCompare(b.name || '')
     })
-  }, [exerciseLibrary, sourceFilter, workoutFilter, search, exerciseIdsByWorkout, loggedIds])
+  }, [exerciseLibrary, typeFilter, sourceFilter, workoutFilter, search, exerciseIdsByWorkout, loggedIds])
 
   const editing = editingId ? filtered.find(e => e.id === editingId) || exerciseLibrary.find(e => e.id === editingId) : null
 
@@ -145,6 +237,17 @@ export default function ExerciseLibraryManager() {
     deleteExerciseFromLibrary(id)
     setEditingId(null)
   }
+  const handleCreate = (payload) => {
+    try {
+      addExerciseToLibrary(payload)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('addExerciseToLibrary failed:', err.message)
+      alert(err.message)
+      return
+    }
+    setCreating(false)
+  }
 
   const sourceCounts = useMemo(() => ({
     all:     (exerciseLibrary || []).length,
@@ -152,6 +255,19 @@ export default function ExerciseLibraryManager() {
     builtin: (exerciseLibrary || []).filter(e =>  e.isBuiltIn).length,
     tagging: (exerciseLibrary || []).filter(e =>  e.needsTagging).length,
   }), [exerciseLibrary])
+
+  // Type-axis counts — drives the primary filter row's badge numbers.
+  const typeCounts = useMemo(() => {
+    const out = { all: 0, lift: 0, run: 0, hyrox: 0 }
+    for (const e of exerciseLibrary || []) {
+      const bucket = getTypeFilterBucket(e.type || 'weight-training')
+      out.all += 1
+      if (bucket === 'lift')  out.lift += 1
+      if (bucket === 'run')   out.run += 1
+      if (bucket === 'hyrox') out.hyrox += 1
+    }
+    return out
+  }, [exerciseLibrary])
 
   const workoutCounts = useMemo(() => {
     const counts = {
@@ -166,36 +282,59 @@ export default function ExerciseLibraryManager() {
   return (
     <div className="min-h-screen bg-base text-c-primary pb-24" style={{ paddingTop: 'max(2rem, env(safe-area-inset-top, 2rem))' }}>
       <div className="px-4 max-w-lg mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <div>
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <div className="min-w-0">
             <h1 className="text-xl font-bold">My Exercises</h1>
             <p className="text-xs text-c-muted mt-0.5">{filtered.length} of {sourceCounts.all} shown</p>
           </div>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="text-xs text-c-muted active:text-c-secondary"
-          >
-            Done
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${theme.bg}`}
+              style={{ color: theme.contrastText }}
+            >
+              + New
+            </button>
+            <button
+              ref={overflowRef}
+              type="button"
+              onClick={() => setOverflowOpen(o => !o)}
+              className="w-9 h-9 rounded-lg bg-item text-c-secondary flex items-center justify-center text-base font-bold"
+              aria-label="More filters"
+            >
+              ⋯
+            </button>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="text-xs text-c-muted active:text-c-secondary px-1"
+            >
+              Done
+            </button>
+          </div>
         </div>
 
-        {/* Source filter chips */}
+        {/* Batch 39 — primary type-axis filter row */}
         <div className="flex flex-wrap gap-1.5 mb-2">
-          {SOURCE_FILTERS.map(f => {
-            const n = sourceCounts[f.id] || 0
-            if (f.id === 'tagging' && n === 0) return null
-            const selected = sourceFilter === f.id
+          {TYPE_FILTERS.map(f => {
+            const n = typeCounts[f.id] || 0
+            if (f.id !== 'all' && n === 0) return null
+            const selected = typeFilter === f.id
+            const accent = f.id === 'all'   ? theme.hex
+                        : f.id === 'lift'  ? '#60A5FA'
+                        : f.id === 'run'   ? '#34D399'
+                        : '#EAB308'  // hyrox
             return (
               <button
                 key={f.id}
                 type="button"
-                onClick={() => setSourceFilter(f.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  selected ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
-                }`}
-                style={selected ? { color: theme.contrastText } : undefined}
+                onClick={() => setTypeFilter(f.id)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                style={selected
+                  ? { background: accent, color: '#0a0a0a' }
+                  : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)', border: `1px solid ${accent}26` }}
               >
-                {f.label} <span className="opacity-70 ml-0.5">{n}</span>
+                {f.label} <span className="opacity-70 ml-0.5 tabular-nums">{n}</span>
               </button>
             )
           })}
@@ -264,38 +403,55 @@ export default function ExerciseLibraryManager() {
         <div className="space-y-1.5">
           {filtered.map(e => {
             const last = lastLoggedFor(sessions, e.id)
+            const type = e.type || 'weight-training'
+            const typeColor = getTypeColor(type)
+            const typeLabel = getTypeLabel(type)
+            const lastSummary = last ? formatLastSetSummary(last.set, type) : null
             return (
               <button
                 key={e.id}
                 type="button"
                 onClick={() => setEditingId(e.id)}
-                className="w-full bg-card rounded-xl p-3 text-left active:bg-hover"
+                className="w-full bg-card rounded-xl text-left active:bg-hover relative overflow-hidden"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-sm text-c-primary truncate">{e.name}</p>
-                      {e.needsTagging && (
-                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/15 border border-amber-500/40 rounded px-1.5 py-0.5">
-                          Tag
+                {/* Batch 39 — left-edge type stripe (3px). */}
+                <div
+                  className="absolute left-0 top-0 bottom-0"
+                  style={{ width: 3, background: typeColor }}
+                />
+                <div className="pl-4 pr-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-semibold text-sm text-c-primary truncate">{e.name}</p>
+                        <span
+                          className="shrink-0 text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
+                          style={{ color: typeColor, background: `${typeColor}14`, border: `1px solid ${typeColor}40` }}
+                        >
+                          {typeLabel}
                         </span>
-                      )}
-                      {!e.isBuiltIn && !e.needsTagging && (
-                        <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-c-faint">
-                          Custom
-                        </span>
+                        {e.needsTagging && (
+                          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/15 border border-amber-500/40 rounded px-1.5 py-0.5">
+                            Tag
+                          </span>
+                        )}
+                        {!e.isBuiltIn && !e.needsTagging && (
+                          <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-c-faint">
+                            Custom
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-c-muted mt-0.5 truncate">
+                        {summaryText(e) || <span className="italic">Needs setup</span>}
+                      </p>
+                      {lastSummary && (
+                        <p className="text-[11px] text-c-faint mt-0.5">
+                          Last logged: {lastSummary} · {formatDate(last.date)}
+                        </p>
                       )}
                     </div>
-                    <p className="text-xs text-c-muted mt-0.5 truncate">
-                      {summaryText(e) || <span className="italic">Needs setup</span>}
-                    </p>
-                    {last && (
-                      <p className="text-[11px] text-c-faint mt-0.5">
-                        Last logged: {perSideLoad(last.set) || '—'}{last.set.reps ? ` × ${last.set.reps}` : ''} · {formatDate(last.date)}
-                      </p>
-                    )}
+                    <span className="text-c-faint shrink-0">›</span>
                   </div>
-                  <span className="text-c-faint shrink-0">›</span>
                 </div>
               </button>
             )
@@ -314,6 +470,24 @@ export default function ExerciseLibraryManager() {
         onSave={handleSave}
         onDelete={handleDelete}
         onCancel={() => setEditingId(null)}
+        theme={theme}
+      />
+
+      <CreateExerciseModal
+        open={creating}
+        initialName=""
+        onSave={handleCreate}
+        onCancel={() => setCreating(false)}
+        theme={theme}
+      />
+
+      <SourceFilterOverflow
+        open={overflowOpen}
+        anchorRef={overflowRef}
+        onClose={() => setOverflowOpen(false)}
+        sourceFilter={sourceFilter}
+        setSourceFilter={setSourceFilter}
+        sourceCounts={sourceCounts}
         theme={theme}
       />
     </div>

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 38 — Hybrid Training v1 foundation: session schema + unit conversions + v8→v9 migration)
+> Last updated: April 25, 2026 (Batch 39 — Hybrid Training v1: library list type-axis filter + CreateExerciseModal + ExerciseEditSheet type-aware)
 
 ## Rules for Claude
 
@@ -1835,6 +1835,50 @@ Second batch of the Hybrid Training v1 workstream (B37–B46). Adds the dimensio
 503. **`hybrid-b38-sanity.mjs` at worktree root.** 50/50 pass. Covers: conversion-constant accuracy (`LBS_TO_KG` to 9 decimals, `MILES_TO_METERS` to 9 decimals); `lbsToKg` / `kgToLbs` across 8 + 4 cases (real values, 0, null/undefined, numeric strings, non-numeric); `milesToMeters` / `metersToMiles` across 7 + 4 cases (1mi, 0.5mi, 5K-distance, SkiErg-500m, edge cases); `migrateSessionsToV9` synthetic v8 data covering warmup/working/drops/unilateral with weight + rawWeight; idempotency (same reference returned); defensive handling (null/undefined/non-array/empty/malformed); `migrateCardioSessionsToV9` with mixed units (miles/floors/null/null-distance); idempotency; real-data spot-check section gracefully skips when backup absent.
 
 504. **No UI surface this batch, no preview verification.** Per design — B38 is the second data-layer foundation pass. The full 117-entry library + the new dimensioned-set schema are now both in place; B39 lights up the first visible UI (library list type-axis filter + create-exercise modal type selector). Build passes (`npx vite build --outDir /tmp/test-build` → 796.64 KB bundle / 214.73 KB gzipped, +1.85 KB / +0.45 KB vs Batch 37 — accounted for by the four conversion helpers + the two v9 migrations).
+
+### Batch 39 (April 25, 2026) — Hybrid Training v1: library list type-axis + CreateExerciseModal + ExerciseEditSheet type-aware
+
+Third batch of the Hybrid Training v1 workstream and the **first user-visible UI** of the workstream. Surfaces the type system from B37 across the three library-management screens. Branched on `claude/hybrid-b39-library-ui` and pushed to GitHub for Vercel preview review — NOT auto-merged to main.
+
+505. **Type-aware display helpers (`helpers.js`).** Four pure functions:
+    - `getTypeColor(type)` — brand color per design doc §12.4: weight-training → `#60A5FA` (blue-400), running → `#34D399` (emerald-400), hyrox-station + hyrox-round → `#EAB308` (yellow-500). Defaults to blue for legacy / null inputs.
+    - `getTypeLabel(type)` — short uppercase label: WEIGHT / RUN / HYROX (both station + round share HYROX since they're a unit on the user's mental model).
+    - `getTypeFilterBucket(type)` — maps the 4 type values onto the 3-axis filter (lift / run / hyrox). Both station + round → 'hyrox'.
+    - `formatLastSetSummary(set, type)` — type-aware "last logged" summary text. Weight-training: `185 × 10` (uses `perSideLoad` for unilateral). Running: `1.2 mi · 12:30`. HYROX station: `100 lb · 50m` (depending on which dimensions are present). HYROX round: returns null (rounds[] not in the flat `set` shape — B43 ships the writer). Returns null when no fields are renderable.
+
+506. **`addExerciseToLibrary` extended for type-aware validation (`useStore.js`).** Pre-Batch-39 the action assumed weight-training shape (rejected empty primaryMuscles + missing equipment). Now:
+    - Accepts a `type` field; defaults to `'weight-training'` for back-compat.
+    - Validates against the 4-type enum.
+    - **Rejects `hyrox-station`** — the 8-station catalog is closed in v1 and auto-seeded by the v8 migration. Users can only edit existing entries, not create custom stations.
+    - **Requires `roundConfig`** with at minimum a `stationId` OR `rotationPool` for `hyrox-round`. Other shapes are caught at edit time by the form, but we guard at the store too.
+    - Skip-tagging path stays for `weight-training` only (running / hyrox-round bypass §3.2.1 muscle/equipment requirements; their dimensions don't apply).
+    - Backfills `dimensions` via the existing `defaultDimensionsForType(type)` import when caller doesn't supply one.
+
+507. **`CreateExerciseModal` rewritten with 4-option type selector (`src/components/CreateExerciseModal.jsx`).** Top of form gets a type chip row (Weight / Run / HYROX round / HYROX station), each chip painted in the type's brand color when selected. Form fields swap based on selected type:
+    - **Weight**: existing fields unchanged (name, primaryMuscles, equipment, defaultUnilateral) + the existing 300ms predictExerciseMeta auto-fill. Skip-for-now stays exactly as before.
+    - **Run**: name + equipment chip row (Treadmill / Outdoor / Bike / Other) + intensity-tracking checkbox + a "Distance and time logged per session" hint. No muscle groups (running entries default to `['Full Body']`).
+    - **HYROX round**: name + station-mode toggle (Single station / Rotates from pool) → station chips from the 8-catalog (single-pick OR multi-select pool) → run-leg distance stepper (100m–5000m, 100m increments) → round-count chips (3/4/5/6/8) → rest-between-rounds chips (1:00 / 1:30 / 2:00 / 3:00). Save commits a roundConfig object: `{runDimensions: {distance: {default, unit:'m'}}, stationId | rotationPool, defaultRoundCount, defaultRestSeconds}`.
+    - **HYROX station**: read-only catalog block. Lists the 8 pre-seeded stations + pointer to the HYROX filter on `/exercises`. Save button replaced with "Got it" → closes the modal.
+    - Auto-predict on name now respects type: when the user hasn't touched the type chip and the predictor returns a non-default type, it pre-selects (e.g. typing "Easy Run" auto-flips type → Run after the 300ms debounce).
+
+508. **`ExerciseEditSheet` extended for type display + roundConfig editor (`src/components/ExerciseEditSheet.jsx`).** Header eyebrow becomes `[TYPE]·SOURCE` — a brand-colored type badge (WEIGHT / RUN / HYROX) next to the existing Built-in / Custom label. Body fields gate on type:
+    - **Weight-training**: existing form (muscles, equipment, load increment, rep range, unilateral) — unchanged.
+    - **Running**: name + equipment chips (Treadmill / Outdoor / Bike / Other). Muscle groups + load increment + rep range hidden. Distance/time noted as session-only.
+    - **HYROX station**: name editable, but a yellow read-only "Locked dimensions" panel below shows each axis (distance / time / weight / etc.) with required/optional + unit. Race standard (e.g. "1000 m") rendered beneath. Stations can't change their catalog dimensions, only their name (gym-specific machine instance variation lives on Batch 19's per-session chip, not the library row).
+    - **HYROX round**: full roundConfig editor mirroring the create modal — single/pool toggle + station picker + run-leg stepper + round-count + rest-between-rounds. Save persists the rebuilt roundConfig.
+    - Save-button enable rules + the helper hint copy ("Pick at least one muscle group…" etc.) are now type-conditional.
+
+509. **`ExerciseLibraryManager` (`/exercises`) gets type-axis primary filter + row stripes (`src/pages/ExerciseLibraryManager.jsx`).** Major UI refresh:
+    - **Type-axis filter chips** at the top: `All N · Lift N · Run N · HYROX N`. Selected chip uses the type's brand color (blue/green/yellow) instead of the user's accent. Hides chips with `0` count except All.
+    - **Source-axis chips moved into a `⋯` overflow** next to the new + New / Done buttons. Portal popover with the 4 source filters + counts; outside-click + Escape dismiss.
+    - **Per-row left-edge stripe** (3px) painted in the row's type color so the list scans visually by category at a glance.
+    - **Inline type tag** right of the exercise name — small uppercase pill (e.g. `HYROX`) with the type's brand-color treatment.
+    - **Type-aware "Last logged" summary** — feeds the entry's `type` into the new `formatLastSetSummary` helper. Weight entries continue to show `225 × 8`; HYROX/running entries fall back to nothing rendered until B43+ writes those dimensioned sets.
+    - **`+ New` button** in the topbar opens `CreateExerciseModal`. Previously the only entry to the modal was via the BbLogger Add panel — now `/exercises` has its own creation entry.
+
+510. **`hybrid-b39-sanity.mjs` at worktree root.** 45/45 pass. Covers: type color + label + filter-bucket maps across all 4 types + null/unknown defaults; formatLastSetSummary across weight-training / running / hyrox-station / hyrox-round shapes; classifyType + predictExerciseMeta integration spot-checks (Bench Press, Easy Run, SkiErg, HYROX Simulation Round, unknown name). Mirrors the existing hybrid-b37 / b38 sanity patterns.
+
+511. **Branch + Vercel preview.** Pushed `claude/hybrid-b39-library-ui` to GitHub — Vercel auto-deploys a preview URL. **Not auto-merged to main**: this is the first user-checkable UI batch, the user reviews before promoting. Build clean (`npx vite build --outDir /tmp/test-build` → 813.38 KB bundle / 218.90 KB gzipped, +16.74 KB / +4.17 KB vs Batch 38 — accounted for by the rewritten CreateExerciseModal + the type-aware ExerciseEditSheet branches + the new ExerciseLibraryManager type filter + the SourceFilterOverflow portal + the four helpers in helpers.js).
 
 ---
 

@@ -201,8 +201,38 @@ const useStore = create(
         if (!exercise?.name?.trim()) {
           throw new Error('addExerciseToLibrary: name required')
         }
+        // Batch 39 — type-aware validation. Default to 'weight-training' when
+        // the caller doesn't specify (back-compat for pre-Batch-37 callers).
+        const type = (typeof exercise.type === 'string' && exercise.type) || 'weight-training'
+        const validTypes = ['weight-training', 'running', 'hyrox-station', 'hyrox-round']
+        if (!validTypes.includes(type)) {
+          throw new Error(`addExerciseToLibrary: invalid type "${type}"`)
+        }
+        // Per spec + B39 plan: hyrox-station entries cannot be created
+        // freely — the 8-station catalog is closed. The catalog is auto-seeded
+        // on v8 migration, so users can only edit what's already there.
+        if (type === 'hyrox-station') {
+          throw new Error('addExerciseToLibrary: hyrox-station entries are seeded from the catalog and cannot be created custom in v1')
+        }
+        // hyrox-round entries need a roundConfig with at minimum a station
+        // (single OR rotationPool) and a runDimensions block. Other shapes
+        // are caught at edit time by the form, but we guard at the store too.
+        if (type === 'hyrox-round') {
+          const rc = exercise.roundConfig
+          if (!rc || typeof rc !== 'object') {
+            throw new Error('addExerciseToLibrary: hyrox-round requires roundConfig')
+          }
+          const hasStation = typeof rc.stationId === 'string' && rc.stationId
+          const hasPool    = Array.isArray(rc.rotationPool) && rc.rotationPool.length > 0
+          if (!hasStation && !hasPool) {
+            throw new Error('addExerciseToLibrary: hyrox-round roundConfig needs stationId or rotationPool')
+          }
+        }
         const skipTagging = exercise.needsTagging === true
-        if (!skipTagging) {
+        // weight-training + running types still go through §3.2.1 validation.
+        // hyrox-round bypasses muscle/equipment requirements (they don't apply).
+        const requiresTagging = type === 'weight-training' || type === 'running'
+        if (!skipTagging && requiresTagging) {
           if (!Array.isArray(exercise.primaryMuscles) || exercise.primaryMuscles.length === 0) {
             throw new Error('addExerciseToLibrary: at least one primaryMuscles value required')
           }
@@ -214,7 +244,9 @@ const useStore = create(
           id:                `ex_${generateId()}`,
           name:              exercise.name.trim(),
           aliases:           exercise.aliases || [],
-          primaryMuscles:    Array.isArray(exercise.primaryMuscles) ? exercise.primaryMuscles : [],
+          primaryMuscles:    Array.isArray(exercise.primaryMuscles)
+                               ? exercise.primaryMuscles
+                               : (type === 'hyrox-round' ? ['Full Body'] : []),
           equipment:         exercise.equipment || 'Other',
           isBuiltIn:         false,
           defaultUnilateral: !!exercise.defaultUnilateral,
@@ -222,11 +254,24 @@ const useStore = create(
           defaultRepRange:   exercise.defaultRepRange  || [8, 12],
           progressionClass:  exercise.progressionClass || 'isolation',
           needsTagging:      skipTagging,
+          // Batch 37 — type + dimensions on every entry; default per type.
+          type,
+          dimensions:        Array.isArray(exercise.dimensions) ? exercise.dimensions : null,
+          // Batch 39 — hyrox-round carries roundConfig {runDimensions,
+          // stationId | rotationPool, defaultRoundCount, defaultRestSeconds}.
+          ...(type === 'hyrox-round' && exercise.roundConfig
+            ? { roundConfig: { ...exercise.roundConfig } }
+            : {}),
           createdAt:         new Date().toISOString(),
           ...(Array.isArray(exercise.sessionGymTags) && exercise.sessionGymTags.length
             ? { sessionGymTags: [...exercise.sessionGymTags] } : {}),
           ...(Array.isArray(exercise.skipGymTagPrompt) && exercise.skipGymTagPrompt.length
             ? { skipGymTagPrompt: [...exercise.skipGymTagPrompt] } : {}),
+        }
+        // Backfill dimensions from defaultDimensionsForType if caller didn't
+        // supply (most callers won't — type implies the dimension shape).
+        if (!Array.isArray(newEx.dimensions)) {
+          newEx.dimensions = defaultDimensionsForType(type)
         }
         set(state => ({ exerciseLibrary: [...state.exerciseLibrary, newEx] }))
         return newEx

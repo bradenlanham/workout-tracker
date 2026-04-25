@@ -2248,6 +2248,108 @@ const EXERCISE_KEYWORD_MAP = [
   { kw: 'curl',               muscles: ['Biceps'],      equipment: 'Dumbbell',             type: 'weight-training' },
 ]
 
+// ── Batch 39: Type display + summary helpers (library list, edit sheet) ───
+//
+// Library entries get a 3-color stripe + tiny uppercase tag per type. UI
+// surfaces import these through a single helper so the color → type map
+// has one source of truth. Per design doc §12.4:
+//   Lift  → #60A5FA (blue-400)
+//   Run   → #34D399 (emerald-400)
+//   HYROX → #EAB308 (yellow-500)
+
+const TYPE_COLORS = {
+  'weight-training': '#60A5FA',
+  'running':         '#34D399',
+  'hyrox-station':   '#EAB308',
+  'hyrox-round':     '#EAB308',
+}
+
+const TYPE_LABELS = {
+  'weight-training': 'WEIGHT',
+  'running':         'RUN',
+  'hyrox-station':   'HYROX',
+  'hyrox-round':     'HYROX',
+}
+
+const TYPE_FILTER_BUCKETS = {
+  'weight-training': 'lift',
+  'running':         'run',
+  'hyrox-station':   'hyrox',
+  'hyrox-round':     'hyrox',
+}
+
+// Returns the brand color for an exercise's type. Defaults to weight-training
+// blue when the type is missing or unknown (legacy / pre-v8 entries).
+export function getTypeColor(type) {
+  return TYPE_COLORS[type] || TYPE_COLORS['weight-training']
+}
+
+// Returns the short uppercase label rendered next to the exercise name.
+export function getTypeLabel(type) {
+  return TYPE_LABELS[type] || TYPE_LABELS['weight-training']
+}
+
+// Returns the filter-axis bucket id for grouping in /exercises:
+// 'lift' / 'run' / 'hyrox'. Both station + round map to 'hyrox'.
+export function getTypeFilterBucket(type) {
+  return TYPE_FILTER_BUCKETS[type] || 'lift'
+}
+
+// Format the most-recent-logged-set summary line for the library list.
+// Type-aware: weight entries show `225 × 8`; running shows `1.2 mi · 12:30`;
+// HYROX stations show distance/time/reps appropriately. Returns null when
+// there's nothing renderable so the caller can pick a fallback string.
+//
+// HYROX rounds don't have a flat "last set" yet (B43 ships the writer);
+// returns null and the caller surfaces the type-tag display instead.
+export function formatLastSetSummary(set, type) {
+  if (!set || typeof set !== 'object') return null
+  const t = type || 'weight-training'
+
+  if (t === 'running') {
+    const mi = typeof set.distanceMiles === 'number' ? set.distanceMiles : null
+    const time = typeof set.timeSec === 'number' ? set.timeSec : null
+    if (mi != null && time != null) return `${mi.toFixed(1)} mi · ${formatSeconds(time)}`
+    if (mi != null) return `${mi.toFixed(1)} mi`
+    if (time != null) return formatSeconds(time)
+    return null
+  }
+
+  if (t === 'hyrox-station') {
+    const w  = typeof set.weight === 'number' ? set.weight : null
+    const r  = typeof set.reps === 'number' ? set.reps : null
+    const m  = typeof set.distanceMeters === 'number' ? set.distanceMeters : null
+    const tm = typeof set.timeSec === 'number' ? set.timeSec : null
+    const parts = []
+    if (w  != null) parts.push(`${w} lb`)
+    if (m  != null) parts.push(`${m}m`)
+    if (r  != null) parts.push(`${r} reps`)
+    if (tm != null) parts.push(formatSeconds(tm))
+    return parts.length > 0 ? parts.join(' · ') : null
+  }
+
+  if (t === 'hyrox-round') return null
+
+  // Weight-training (default). Use perSideLoad to honor unilateral entries.
+  const w = perSideLoad(set)
+  const r = typeof set.reps === 'number' ? set.reps : Number(set.reps) || 0
+  if (w > 0 && r > 0) return `${w} × ${r}`
+  if (w > 0) return `${w} lb`
+  if (r > 0) return `${r} reps`
+  return null
+}
+
+// Format seconds as M:SS (or H:MM:SS for ≥1 hour). Internal helper used by
+// the type-aware summary above.
+function formatSeconds(sec) {
+  const total = Math.max(0, Math.floor(sec))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 // Returns { primaryMuscles: string[], equipment: string, type: string } with a
 // best-effort guess. Returns null if no keyword matched AND classifyType also
 // returned the default 'weight-training' (i.e. nothing in the name suggests a
