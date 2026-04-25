@@ -22,6 +22,7 @@ import SupersetSheet from '../../components/SupersetSheet'
 import { RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt } from './Recommendation'
 import ReadinessCheckIn from './ReadinessCheckIn'
 import SessionGymPill from './SessionGymPill'
+import HyroxSectionPreview from './HyroxSectionPreview'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -4057,6 +4058,34 @@ export default function BbLogger() {
             return item.exercises.some(({ ex }) => numpadFieldKey.includes(ex.name))
           })
           if (visibleItems.length === 0) return null
+
+          // Batch 41 — HYROX section gets the immersive preview card per
+          // design doc §5.2 + mockup 1, replacing the standard card-list
+          // rendering. Match is case-insensitive so "HYROX" / "hyrox" /
+          // "Hyrox" all hit. Active-superset / Completed sections fall
+          // through to the existing path because they're not section-typed.
+          const isHyroxSection =
+            !group.isActiveSuperset &&
+            !group.isCompleted &&
+            typeof group.label === 'string' &&
+            group.label.trim().toLowerCase() === 'hyrox'
+          if (isHyroxSection) {
+            return (
+              <div key={group.label}>
+                <HyroxSectionPreview
+                  exercises={groupExes}
+                  sessions={sessions}
+                  onStart={(ex) => {
+                    // B42 ships the actual Start HYROX overlay. For B41 we
+                    // surface a placeholder so the user sees the button
+                    // wires somewhere; the real route lands next batch.
+                    // eslint-disable-next-line no-alert
+                    alert(`Round logger ships in Batch 42 — for now, ${ex.name} is wired but not interactive.`)
+                  }}
+                />
+              </div>
+            )
+          }
 
           return (
             <div key={group.label}>

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 40 — Hybrid Training v1: Brooke JSON v3 + split-import library extension)
+> Last updated: April 25, 2026 (Batch 41 — Hybrid Training v1: HYROX section preview card in workout view)
 
 ## Rules for Claude
 
@@ -1904,6 +1904,34 @@ Fourth batch of the Hybrid Training v1 workstream. Re-encodes Brooke's split as 
 521. **`hybrid-b40-sanity.mjs` at worktree root.** 65/65 pass. Covers: (1) brooke-hybrid-split.json v3 shape — 6 workouts, exact catalog station names, valid roundConfig on each hyrox-round; (2) `importLibraryEntryFromSplit` decision matrix across 8 input shapes; (3) `collectLibraryAdditionsFromSplit` dedup + error aggregation; (4) end-to-end empty-library import (pre-v8 user) — 3 hyrox-station errors + 3 rounds + 4 running + 27 weight-training creates; (5) end-to-end seeded-library import (post-v8 user) — 0 errors, stations resolve to catalog ids, all 3 round configs preserved through the import. Mirrors the existing hybrid-b37 / b38 / b39 sanity patterns.
 
 522. **No UI surface this batch, no preview verification.** Per design — B40 is the JSON + import data layer. UI work for the HYROX flow lands in B41+. Build passes (`npx vite build --outDir /tmp/test-build` → 815.72 KB bundle / 219.67 KB gzipped, +2.34 KB / +0.77 KB vs Batch 39 — accounted for by the two helpers + the importSplitWithLibrary action + the three call-site wirings).
+
+### Batch 41 (April 25, 2026) — Hybrid Training v1: HYROX section preview card in workout view
+
+Fifth batch of the Hybrid Training v1 workstream and the **first user-visible HYROX surface**. Workout view at `/log/bb/:type` learns to render any section labeled "HYROX" (case-insensitive) as a single immersive yellow preview card per design doc §5.2 + §12.4 + mockup 1, instead of the standard exercise-card list. Lift sections continue to render as cards. Branch shipped to `claude/hybrid-b41-section-preview` as a feature branch awaiting user review — Start HYROX button is wired to a placeholder alert pending B42's overlay surface.
+
+523. **`getLastHyroxRoundSession(sessions, exerciseIdOrName)` in `helpers.js`.** Walks completed bb-mode sessions newest-first, returns the most recent session that logged a hyrox-round exercise matching the given id or name, with derived `totalTimeSec` (sum of all leg `timeSec` + `restAfterSec` per round) + `roundCount`. Returns null when no prior session has rounds[]. Forward-compatible — pre-B43 (no rounds[] writer yet) the helper returns null on real-world data, but the synthetic-rounds sanity proves it'll work once B43 ships the writer.
+
+524. **`formatDuration(sec)` in `helpers.js`.** Renders `M:SS` for sub-1-hour durations and `H:MM:SS` for longer. Defensive against null / NaN / negative inputs (returns empty string). Used by the HYROX preview card's last-session summary line + the future round-logger gym clock display.
+
+525. **`HyroxSectionPreview.jsx` (new, `src/pages/log/`).** Renders the HYROX section as a stack of yellow gradient-wash cards — one per hyrox-round exercise in the section. Each card has:
+    - Yellow uppercase "HYROX" section label above (matches design doc §12.4 yellow takeover).
+    - Yellow gradient-wash card background (`linear-gradient(135deg, rgba(234,179,8,0.12) 0%, rgba(0,0,0,0.4) 65%)`) with a 1px yellow inset shadow.
+    - `INTERVALS · N ROUNDS` chip (yellow on yellow-tinted bg) above the round-template name.
+    - Three black-tinted prescription tiles in a row: `RUN LEG {distance}{unit}` / `STATION {name|Rotates(N)}` / `REST {M:SS}`.
+    - Last-session summary in the top-right (`Last: 16:45 · 4 rounds`) when prior history exists; hidden otherwise.
+    - Yellow filled `Start HYROX →` button with black text spanning the card width.
+    - Done state (when `exercise.rounds.length >= prescribedRoundCount`): muted dark card with `✓ done · {totalTime} · {delta} vs last`. Tap re-routes (B45 will wire to summary surface). Pre-B43 this state is unreachable in normal flow since no rounds get written yet.
+    - Rotation-pool stations show `Rotates (N)` with a 2-station preview subtitle.
+
+526. **BbLogger.jsx render-loop wiring** (`src/pages/log/BbLogger.jsx:4061+`). Surgical insertion at the top of each `renderGroups` iteration: when `group.label.trim().toLowerCase() === 'hyrox'` AND it's not active-superset / completed, render `<HyroxSectionPreview exercises={groupExes} sessions={sessions} onStart={...} />` and return. Otherwise fall through to the existing GroupLabel + card-list render. Start HYROX click currently fires a placeholder alert `"Round logger ships in Batch 42"` — B42 wires the actual `/log/hyrox/:exerciseId/start` overlay route.
+
+527. **`hybrid-b41-sanity.mjs` at worktree root.** 31/31 pass. Covers: `getLastHyroxRoundSession` across 9 input cases (null / empty / non-bb sessions / missing rounds / id match / name fallback / newest-first ordering / total-time accumulation including restAfterSec / roundCount); `formatDuration` across 9 ranges (0 / 45s / 60s / 1005s / 3600s + null/NaN/negative defensive cases + half-second rounding); HYROX section detection predicate across 11 cases (label "HYROX" / "hyrox" / "  HYROX  " / "Hyrox" matches; "Lift" / "Primary" / "HYROX Round" / null label do NOT match; isCompleted + isActiveSuperset block).
+
+528. **Live preview verified** (port 5174, mobile 375×812). Synthetic Brooke-like split imported via the file-input flow with a Tuesday workout containing both a Lift section (3 weight-training exercises) AND a HYROX section (1 hyrox-round entry, SkiErg @ 800m / 4 rounds / 2:00 rest). Result: `/log/bb/tue_test` renders with yellow-uppercase "HYROX" header below the Lift cards, the immersive yellow preview card with INTERVALS · 4 ROUNDS chip, "HYROX Run + SkiErg Round" title, three tiles (RUN LEG `800m` / STATION `SkiErg` / REST `2:00`), and the yellow `Start HYROX →` button. Lift section above renders as standard exercise cards (Cable Lateral Raise / DB Lateral Raise / Reverse Flies). Tap Start HYROX → alert("Round logger ships in Batch 42…"). Zero new console errors (the existing key-via-spread warnings on `<ExerciseItem>` predate B41 and aren't introduced by this change).
+
+529. **Build.** `npx vite build --outDir /tmp/test-build` → 821.18 KB bundle / 221.23 KB gzipped (+5.46 KB / +1.56 KB vs Batch 40, accounted for by the new HyroxSectionPreview component + getLastHyroxRoundSession + formatDuration helpers + the BbLogger render-loop branch).
+
+530. **Branch + handoff.** Pushed `claude/hybrid-b41-section-preview` to GitHub. **Not auto-merged to main** — first user-visible HYROX surface, awaiting your eyes. The Start HYROX button is wired to a placeholder alert; B42 ships the actual Start HYROX overlay (cycling headline + prescription editor + Begin round 1 → B43 round logger).
 
 ---
 

@@ -2496,6 +2496,72 @@ export function collectLibraryAdditionsFromSplit(splitData, library) {
   return { toCreate, errors }
 }
 
+// ── Batch 41: HYROX round session lookup ─────────────────────────────────
+//
+// `getLastHyroxRoundSession(sessions, exerciseIdOrName)` walks completed
+// bb-mode sessions newest-first, returns the most recent session that
+// logged a hyrox-round exercise matching the given id (preferred) or
+// name (fallback for pre-v3 safety). Returns the matched session +
+// the LoggedExercise row's rounds[] data + a derived total time / round
+// count for the section-preview card's "vs last session" line.
+//
+// Returns shape:
+//   { session, loggedExercise, totalTimeSec, roundCount, completedAt } | null
+//
+// Pre-B43 (no rounds[] writer exists yet), this returns null for any
+// real-world input — the helper is forward-compatible. Sanity script
+// covers synthetic rounds[] data so B43 doesn't surprise downstream.
+
+export function getLastHyroxRoundSession(sessions, exerciseIdOrName) {
+  if (!Array.isArray(sessions) || !exerciseIdOrName) return null
+  const target = String(exerciseIdOrName)
+  // Newest first.
+  const ordered = [...sessions]
+    .filter(s => s?.mode === 'bb' && Array.isArray(s?.data?.exercises))
+    .sort((a, b) => {
+      const da = a?.date ? new Date(a.date).getTime() : 0
+      const db = b?.date ? new Date(b.date).getTime() : 0
+      return db - da
+    })
+  for (const session of ordered) {
+    for (const ex of session.data.exercises) {
+      const idMatch = ex?.exerciseId && ex.exerciseId === target
+      const nameMatch = ex?.name && ex.name === target
+      if (!idMatch && !nameMatch) continue
+      if (!Array.isArray(ex.rounds) || ex.rounds.length === 0) continue
+      let total = 0
+      for (const round of ex.rounds) {
+        if (!round || !Array.isArray(round.legs)) continue
+        for (const leg of round.legs) {
+          if (typeof leg?.timeSec === 'number') total += leg.timeSec
+        }
+        if (typeof round.restAfterSec === 'number') total += round.restAfterSec
+      }
+      return {
+        session,
+        loggedExercise: ex,
+        totalTimeSec: total,
+        roundCount: ex.rounds.length,
+        completedAt: ex.completedAt || session.date || null,
+      }
+    }
+  }
+  return null
+}
+
+// `formatDuration(sec)` — `M:SS` or `H:MM:SS` for the HYROX preview card's
+// last-session total time line. Defensive; returns empty string for null /
+// non-numeric / negative.
+export function formatDuration(sec) {
+  if (typeof sec !== 'number' || !Number.isFinite(sec) || sec < 0) return ''
+  const total = Math.round(sec)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {
