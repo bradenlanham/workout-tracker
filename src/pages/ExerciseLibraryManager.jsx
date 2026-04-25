@@ -26,7 +26,7 @@ import CreateExerciseModal from '../components/CreateExerciseModal'
 
 const TYPE_FILTERS = [
   { id: 'all',   label: 'All' },
-  { id: 'lift',  label: 'Lift' },
+  { id: 'lift',  label: 'Weight Training' },
   { id: 'run',   label: 'Run' },
   { id: 'hyrox', label: 'HYROX' },
 ]
@@ -340,57 +340,61 @@ export default function ExerciseLibraryManager() {
           })}
         </div>
 
-        {/* Workout / usage filter chips */}
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          <button
-            type="button"
-            onClick={() => setWorkoutFilter('any')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              workoutFilter === 'any' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
-            }`}
-            style={workoutFilter === 'any' ? { color: theme.contrastText } : undefined}
-          >
-            Any workout
-          </button>
-          {(activeSplit?.workouts || []).map(w => {
-            const n = workoutCounts[w.id] || 0
-            if (n === 0) return null
-            const selected = workoutFilter === w.id
-            return (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => setWorkoutFilter(w.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  selected ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
-                }`}
-                style={selected ? { color: theme.contrastText } : undefined}
-              >
-                {w.name?.split(' — ')[0] || w.id} <span className="opacity-70 ml-0.5">{n}</span>
-              </button>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => setWorkoutFilter('logged')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              workoutFilter === 'logged' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
-            }`}
-            style={workoutFilter === 'logged' ? { color: theme.contrastText } : undefined}
-          >
-            Logged <span className="opacity-70 ml-0.5">{workoutCounts.logged}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setWorkoutFilter('never')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              workoutFilter === 'never' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
-            }`}
-            style={workoutFilter === 'never' ? { color: theme.contrastText } : undefined}
-          >
-            Never logged <span className="opacity-70 ml-0.5">{workoutCounts.never}</span>
-          </button>
-        </div>
+        {/* Workout / usage filter chips — only show on the All type filter; once
+            you've narrowed to Weight Training / Run / HYROX, the secondary axes
+            (workout, logged-status) usually clutter more than they help. */}
+        {typeFilter === 'all' && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            <button
+              type="button"
+              onClick={() => setWorkoutFilter('any')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                workoutFilter === 'any' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+              }`}
+              style={workoutFilter === 'any' ? { color: theme.contrastText } : undefined}
+            >
+              Any workout
+            </button>
+            {(activeSplit?.workouts || []).map(w => {
+              const n = workoutCounts[w.id] || 0
+              if (n === 0) return null
+              const selected = workoutFilter === w.id
+              return (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => setWorkoutFilter(w.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    selected ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+                  }`}
+                  style={selected ? { color: theme.contrastText } : undefined}
+                >
+                  {w.name?.split(' — ')[0] || w.id} <span className="opacity-70 ml-0.5">{n}</span>
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              onClick={() => setWorkoutFilter('logged')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                workoutFilter === 'logged' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+              }`}
+              style={workoutFilter === 'logged' ? { color: theme.contrastText } : undefined}
+            >
+              Logged <span className="opacity-70 ml-0.5">{workoutCounts.logged}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkoutFilter('never')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                workoutFilter === 'never' ? `${theme.bg} text-white` : 'bg-item text-c-secondary'
+              }`}
+              style={workoutFilter === 'never' ? { color: theme.contrastText } : undefined}
+            >
+              Never logged <span className="opacity-70 ml-0.5">{workoutCounts.never}</span>
+            </button>
+          </div>
+        )}
 
         <input
           type="text"
@@ -424,12 +428,18 @@ export default function ExerciseLibraryManager() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-semibold text-sm text-c-primary truncate">{e.name}</p>
-                        <span
-                          className="shrink-0 text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
-                          style={{ color: typeColor, background: `${typeColor}14`, border: `1px solid ${typeColor}40` }}
-                        >
-                          {typeLabel}
-                        </span>
+                        {/* Weight-training is the default type (~90% of rows) and
+                            the muscle/equipment line below already conveys it.
+                            Tag only the by-exception types so the eye picks them
+                            up against the unmarked weight-training default. */}
+                        {type !== 'weight-training' && (
+                          <span
+                            className="shrink-0 text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
+                            style={{ color: typeColor, background: `${typeColor}14`, border: `1px solid ${typeColor}40` }}
+                          >
+                            {typeLabel}
+                          </span>
+                        )}
                         {e.needsTagging && (
                           <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/15 border border-amber-500/40 rounded px-1.5 py-0.5">
                             Tag
