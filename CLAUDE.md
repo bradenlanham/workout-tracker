@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 42 — Hybrid Training v1: Start HYROX overlay + 30-headline bank + station picker)
+> Last updated: April 25, 2026 (Batch 43 — Hybrid Training v1: round logger + gym-clock timer + intra-leg comparison)
 
 ## Rules for Claude
 
@@ -1968,6 +1968,71 @@ Sixth batch of the Hybrid Training v1 workstream and the second user-visible HYR
 541. **Live preview verified** (port 5176, mobile 375×812, synthetic Brooke split with both round templates injected via localStorage). Tuesday Run+SkiErg overlay: yellow chip `HYROX · HYROX RUN + SKIERG ROUND`, headline rotates each open ("Lock in.", "One round at a time.", "Run it back."), 4 prescription rows pre-populated correctly (4 rounds / 800m / SkiErg / 2:00), Begin round 1 routes to `/log/hyrox/HYROX%20Run%20%2B%20SkiErg%20Round/round/1/run` with state `{exerciseId, roundCount: 4, runDistanceMeters: 800, restSec: 90 (overridden from 120 via the chip), stationId: "sta_skierg"}`. Friday Simulation overlay: separate headline ("Make her sweat."), pool sublabel "Rotates from pool (7)" under SkiErg, expanding the Station row reveals all 7 pool members (SkiErg / Sled Push / Sled Pull / Rowing / Farmers Carry / Sandbag Lunges / Wall Balls), tapping Sled Push overrides the prescription. Begin round 1 routes through with `stationId: "sta_sled_push"` correctly persisted in `location.state`. BottomNav + RestTimer + HamburgerMenu correctly hidden on the overlay route. Console clean of new errors — the only remaining errors are the pre-existing `<ExerciseItem>` key-via-spread warnings from BbLogger.jsx that predate B41 and are documented as known caveats.
 
 542. **Build.** `npx vite build --outDir /tmp/test-build` → 832.19 KB bundle / 224.63 KB gzipped (+11.01 KB / +3.40 KB vs Batch 41, accounted for by StartHyroxOverlay component + 30-headline bank + pickHeadline + pickHyroxStationForToday + the route registration + the HyroxRoundLoggerStub placeholder).
+
+### Batch 43 (April 25, 2026) — Hybrid Training v1: round logger + gym-clock timer + intra-leg comparison
+
+Seventh batch of the Hybrid Training v1 workstream and the **third user-visible HYROX surface**. Replaces B42's `HyroxRoundLoggerStub.jsx` placeholder with the real per-leg round logger (mockup 3): gym-clock digital timer per design doc §17 + intra-leg comparison band per §14.1 + Done · Stamp time auto-stamp per §5.4. Branch shipped to `claude/hybrid-b43-round-logger` — NOT auto-merged to main, awaiting user review.
+
+543. **Four new station-anchored helpers in `helpers.js`** (the headline B43 invariant per §14.1: stations are the comparison primitive, not round positions). All pure functions, defensive against null / non-array inputs, used by `HyroxRoundLogger`'s comparison band:
+    - `getStationHistory(sessions, stationId, dimensions = {})` — newest-first array of every station leg matching stationId across all sessions and round templates. Optional `{distanceMeters, weight, reps}` filters narrow to exact-dimension matches. Each result echoes `sessionId / sessionDate / exerciseId / exerciseName / roundIndex` so callers can build "vs your last SkiErg at 500m on Tuesday" framings. Sort: newest-first by sessionDate; **descending roundIndex within the same session** so within a single workout the LATER rounds (which happened more recently) rank ahead of earlier ones — required for "most recent leg" semantics.
+    - `getRunLegHistory(sessions, distanceMeters)` — same shape, run legs only. Cross-template aggregation by design.
+    - `computePaceFromHistory(history)` — average seconds per 100 meters across every prior leg with both `timeSec` AND `distanceMeters`. Dimension-agnostic pace fallback (§6.5). Returns null when history doesn't carry distance (e.g. wall-balls reps-only).
+    - `buildIntraLegComparison({legType, stationId, stationName, distanceMeters, weight, reps, currentTimeSec, sessions})` — composes the comparison band data per §14.1. Returns `{mode: 'exact' | 'pace', status: 'ahead' | 'behind' | 'neutral', label, lastTimeSec, deltaSec, paceSecPer100m, paceProjectedTimeSec}` OR null on cold start (§14.4 — band hides). Mode-`exact` fires when today's dimensions match a prior occurrence; mode-`pace` fires as fallback when station has prior history but the dimension combo is novel; null fires when station has zero prior legs.
+
+544. **`src/components/GymClock.jsx` (new)** — gym-clock digital timer per design doc §17. Three rectangular digit boxes (HRS / MIN / SEC) separated by colon glyphs, all wrapped in a black surround with 2px yellow border + inset glow + a label eyebrow. Pure presentational — parent owns the elapsed-seconds state and the 100ms tick. §17.1 spec exactly: `rgba(234,179,8,0.08)` digit-box bg, 56px min-width, 38px monospace `#FEF08A` numerals, 8px font-size yellow-700 label below. Colon: 32px monospace yellow-50% top-aligned. Wrapper: `inset 0 0 60px rgba(234,179,8,0.12)` glow. `mode='rest'` shifts the wash to a more subdued `rgba(234,179,8,0.04)` and the eyebrow defaults to "REST" (B44 will count down with this). `eyebrowOverride` prop lets the parent set "ROUND CLOCK" / "STATION CLOCK" / "RUN CLOCK" / "REST" explicitly.
+
+545. **`src/pages/log/HyroxRoundLogger.jsx` (new — replaces stub)** — the per-leg surface. Routes at `/log/hyrox/:exerciseId/round/:roundIdx/:leg`. Reads `location.state.prescription` from B42's overlay on FIRST mount; subsequent mounts (reload, back-arrow round-trip) read from `activeSession.hyrox`. Initialization happens inside a `useEffect` (NOT during render) so the Zustand setter doesn't fire mid-render and trip React's "Cannot update a component while rendering" warning (lesson learned from B42). Layout per implementation plan B43.1:
+    - Header: `← back` + yellow `HYROX · {round template}` chip + `⏸ pause` button. Back arrow auto-pauses so the user can dip out to a Lift exercise without burning round time.
+    - Round-progress dots — yellow filled = done, yellow ring = current, muted ring = upcoming. Per-dot aria-label.
+    - Round + leg label ("ROUND 2 · STATION") + headline (e.g. "SkiErg") + subtitle ("Race standard" / "1000m · 0.62 mi").
+    - Gym clock — rounds clock per §5.4 (continuous within a round, resets only on round-transition).
+    - Recent splits row — chips showing this round's run leg + up to 2 prior round totals.
+    - Intra-leg comparison band — green/amber/neutral per `buildIntraLegComparison`'s `status`.
+    - Green Done · Stamp `{segment time}` button.
+    - Skip {leg} secondary text link.
+    - Paused-state banner pill at the top (yellow on black).
+
+546. **Dual-clock pattern: round clock + segment clock.** Per design doc §5.4 the timer "keeps running" across legs within a round (visual continuity). Per the same section + plan B43.3, each leg's stamped `timeSec` is segment-specific (run-only / station-only). To satisfy both:
+    - `roundStartTimestamp` set when the round begins; **NOT reset on run→station transition**. Resets only on round-transition (station-Done of non-final round).
+    - `legStartTimestamp` resets on EVERY leg transition (run→station + round-transition).
+    - Visual gym clock reads `roundElapsedSec = (now - roundStartTimestamp - paused) / 1000` — the "round clock" the user perceives.
+    - Done-button label + handleDone stamp read `elapsedSec = (now - legStartTimestamp - paused) / 1000` — the segment time committed to the leg's `timeSec`.
+    - Both timestamps reset on round-transition + a fresh `totalPausedMs: 0`. `totalPausedMs` also resets on run→station transition so segment-clock arithmetic is clean within the same round.
+
+547. **`activeSession.hyrox` shape** (additive — no persist version bump):
+    ```
+    activeSession.hyrox = {
+      exerciseId,                  // round-template library id
+      prescription: {              // committed at Begin round 1 (B42 overlay)
+        roundCount, runDistanceMeters, restSec, stationId,
+      },
+      currentRoundIdx,             // 0-indexed
+      currentLeg,                  // 'run' | 'station'
+      roundStartTimestamp,         // ms — visual clock anchor
+      legStartTimestamp,           // ms — segment stamp anchor
+      totalPausedMs,
+      isPaused, pauseStartedAt,
+      completedLegs: [             // chronologically ordered, LoggedHyroxRound shape
+        { roundIndex, type:'run', distanceMeters, distanceMiles, timeSec, completedAt },
+        { roundIndex, type:'station', stationId, distanceMeters?, weight?, reps?, timeSec, completedAt },
+        ...
+      ],
+      completedAt,                 // set on station-Done of final round
+    }
+    ```
+
+548. **Done flow per implementation plan B43.3.** `handleDone` is a `useCallback` with `[hyrox, activeSession, saveActiveSession, elapsedSec, navigate, exerciseId]` deps so the closure always reads the latest segment-elapsed:
+    - **Run leg** → stamp `{type:'run', distanceMeters, distanceMiles, timeSec, completedAt}` (distance pulled from prescription, miles via `metersToMiles`); flip `currentLeg` to `'station'`; reset `legStartTimestamp = Date.now()`; **do NOT** reset `roundStartTimestamp`; `totalPausedMs: 0`. Update URL → `/round/N/station`.
+    - **Station leg of NON-final round** → stamp `{type:'station', stationId, ...raceStandardDimensions, timeSec, completedAt}` (distance/weight/reps pulled from the catalog station's `raceStandard`); reset BOTH timestamps; advance `currentRoundIdx`; flip back to `'run'`. Update URL → `/round/N+1/run`. (B44 wires the post-round flash + rest countdown between.)
+    - **Station leg of FINAL round** → stamp the leg; mark `hyrox.completedAt`; navigate to `/log/hyrox/:id/summary` (B45 surface — for B43 the route falls through to no-match since summary doesn't exist yet, which is fine — B45 wires the summary).
+
+549. **App.jsx route swap.** `import HyroxRoundLoggerStub` → `import HyroxRoundLogger`; route element swapped accordingly. Stub component file deleted from disk. `path="/log/hyrox/:exerciseId/round/:roundIdx/:leg"` unchanged.
+
+550. **`hybrid-b43-sanity.mjs` at worktree root.** 41/41 pass. Covers (1) `getStationHistory` cross-template aggregation with synthetic Tuesday + Friday + lift-only sessions (3 SkiErg legs across 2 templates correctly aggregated newest-first; sled push 1-leg lookup; cold-start empty array); (2) `getRunLegHistory` exact-distance match; (3) `computePaceFromHistory` 35.5 s/100m on synth SkiErg history; (4) `buildIntraLegComparison` exact-match `mode='exact'` + status direction (current 340 < last 360 = 'ahead'; 380 > 360 = 'behind'; 0 = 'neutral'); (5) cross-station rotation invariant (today's SkiErg compares against SkiErg history NOT against the round-position-prior Row leg); (6) pace fallback when distance mismatched; (7) cold-start band-hide; (8) run leg comparison + run pace fallback; (9) Done-flow state-transition rules across run→station, station-non-final→next-run, station-final→summary; (10) Brooke Tuesday + Friday integration spot-check.
+
+551. **Live preview verified** (port 5177, mobile 375×812, synthetic Brooke Tuesday split + injected prior session with two rounds: Run 800m @ 240/248s + SkiErg 1000m @ 350/360s). Round 1 run leg shows "ROUND 1 · RUN" / "800m Run" / "800m · 0.50 mi" subtitle / RUN CLOCK at 0:04 (later ROUND CLOCK after the dual-clock fix) / comparison band `−3:50 vs your last 800m run / 4:00 last time` in green. Tap Done → stamps `{run, 800m, timeSec:16}` and advances to round 1 station. Station leg: "ROUND 1 · STATION" / "SkiErg" / "Race standard" / ROUND CLOCK keeps running (e.g. 0:23 = 19s run + 4s station) / Done button shows segment-only 0:03 / `R1 run 0:19` chip in recent splits / `−5:37 vs your last SkiErg / 6:00 last time` (anchored to most-recent SkiErg leg = R2's 360s = 6:00). Tap Done → stamps station with segment-only time, advances to round 2 run. Round 2: ROUND CLOCK + segment clock both reset to 0:00, "R1 total 0:33" chip in recent splits (16+17=33). Comparison band `−2:52 vs your last 800m run / 4:00 last time`. BottomNav + HamburgerMenu + RestTimer all correctly hidden on `/log/hyrox/*`. Console clean of new errors (only pre-existing key-via-spread `<ExerciseItem>` warnings from BbLogger.jsx, documented known caveat).
+
+552. **Build.** `npx vite build --outDir /tmp/test-build` → 847.49 KB bundle / 228.57 KB gzipped (+15.30 KB / +3.94 KB vs Batch 42, accounted for by `getStationHistory` + `getRunLegHistory` + `computePaceFromHistory` + `buildIntraLegComparison` (4 helpers, ~5 KB); `GymClock` component (~2.5 KB); `HyroxRoundLogger` (~7.5 KB)).
 
 ---
 

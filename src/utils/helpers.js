@@ -2550,6 +2550,248 @@ export function getLastHyroxRoundSession(sessions, exerciseIdOrName) {
   return null
 }
 
+// ── Batch 43: Station-anchored history + intra-leg comparison ─────────────
+//
+// CRITICAL DESIGN PRIMITIVE (design doc §14.1, §6.5): the STATION is the
+// comparison anchor, not the round position. A SkiErg leg's prior history
+// is every prior SkiErg leg the user has logged, regardless of round
+// template (Tuesday's intervals vs Friday's simulation) or round position.
+// Cross-template aggregation by design.
+//
+// `getStationHistory(sessions, stationId, dimensions)` — newest-first array
+// of every station leg matching stationId across all sessions. When
+// `dimensions` filters are passed (`{distanceMeters, weight, reps}`), only
+// legs matching every provided field contribute. Empty / null filter
+// short-circuits to "all legs at this station". Each leg-result echoes the
+// originating session info (date, sessionId, exerciseId, roundIndex) so
+// downstream callers can build "vs your last SkiErg at 500m on Tuesday"
+// strings if needed.
+
+export function getStationHistory(sessions, stationId, dimensions = {}) {
+  if (!Array.isArray(sessions) || !stationId) return []
+  const matchDistance = typeof dimensions?.distanceMeters === 'number'
+  const matchWeight = typeof dimensions?.weight === 'number'
+  const matchReps = typeof dimensions?.reps === 'number'
+
+  const out = []
+  for (const session of sessions) {
+    if (session?.mode !== 'bb' || !Array.isArray(session?.data?.exercises)) continue
+    for (const ex of session.data.exercises) {
+      if (!Array.isArray(ex?.rounds) || ex.rounds.length === 0) continue
+      for (const round of ex.rounds) {
+        if (!round || !Array.isArray(round.legs)) continue
+        for (const leg of round.legs) {
+          if (leg?.type !== 'station') continue
+          if (leg?.stationId !== stationId) continue
+          if (typeof leg?.timeSec !== 'number') continue
+          if (matchDistance && leg.distanceMeters !== dimensions.distanceMeters) continue
+          if (matchWeight && leg.weight !== dimensions.weight) continue
+          if (matchReps && leg.reps !== dimensions.reps) continue
+          out.push({
+            ...leg,
+            sessionId: session.id,
+            sessionDate: session.date,
+            exerciseId: ex.exerciseId || null,
+            exerciseName: ex.name || null,
+            roundIndex: round.roundIndex,
+          })
+        }
+      }
+    }
+  }
+  // Sort newest-first by sessionDate; within the same session, later rounds
+  // happened more recently than earlier rounds, so descending roundIndex is
+  // the right tiebreaker (R4 appears before R1 of the same session).
+  out.sort((a, b) => {
+    const da = a.sessionDate ? new Date(a.sessionDate).getTime() : 0
+    const db = b.sessionDate ? new Date(b.sessionDate).getTime() : 0
+    if (db !== da) return db - da
+    return (b.roundIndex ?? 0) - (a.roundIndex ?? 0)
+  })
+  return out
+}
+
+// `getRunLegHistory(sessions, distanceMeters)` — same shape, run legs only.
+// Cross-template aggregation: a 1000m run leg in Friday's simulation is
+// comparable to a 1000m run leg in Tuesday's intervals.
+export function getRunLegHistory(sessions, distanceMeters) {
+  if (!Array.isArray(sessions)) return []
+  const matchDistance = typeof distanceMeters === 'number'
+
+  const out = []
+  for (const session of sessions) {
+    if (session?.mode !== 'bb' || !Array.isArray(session?.data?.exercises)) continue
+    for (const ex of session.data.exercises) {
+      if (!Array.isArray(ex?.rounds) || ex.rounds.length === 0) continue
+      for (const round of ex.rounds) {
+        if (!round || !Array.isArray(round.legs)) continue
+        for (const leg of round.legs) {
+          if (leg?.type !== 'run') continue
+          if (typeof leg?.timeSec !== 'number') continue
+          if (matchDistance && leg.distanceMeters !== distanceMeters) continue
+          out.push({
+            ...leg,
+            sessionId: session.id,
+            sessionDate: session.date,
+            exerciseId: ex.exerciseId || null,
+            exerciseName: ex.name || null,
+            roundIndex: round.roundIndex,
+          })
+        }
+      }
+    }
+  }
+  out.sort((a, b) => {
+    const da = a.sessionDate ? new Date(a.sessionDate).getTime() : 0
+    const db = b.sessionDate ? new Date(b.sessionDate).getTime() : 0
+    if (db !== da) return db - da
+    return (a.roundIndex ?? 0) - (b.roundIndex ?? 0)
+  })
+  return out
+}
+
+// `computePaceFromHistory(history)` — average seconds per 100 meters across
+// every prior leg with both timeSec and distanceMeters. Dimension-agnostic
+// pace fallback for the intra-leg band when today's exact distance has no
+// prior occurrence (design doc §6.5). Returns a number rounded to 0.1s/100m
+// or null when history doesn't carry distance (e.g. wall-balls reps-only).
+export function computePaceFromHistory(history) {
+  if (!Array.isArray(history) || history.length === 0) return null
+  let totalSec = 0
+  let totalMeters = 0
+  for (const leg of history) {
+    if (typeof leg?.timeSec !== 'number') continue
+    if (typeof leg?.distanceMeters !== 'number' || leg.distanceMeters <= 0) continue
+    totalSec += leg.timeSec
+    totalMeters += leg.distanceMeters
+  }
+  if (totalMeters === 0) return null
+  const pacePer100m = (totalSec / totalMeters) * 100
+  return Math.round(pacePer100m * 10) / 10
+}
+
+// `buildIntraLegComparison({ legType, stationId, distanceMeters, weight,
+// reps, currentTimeSec, sessions })` — composes the comparison band data
+// the round logger displays beneath the gym clock per design doc §14.1.
+//
+// Returns null on cold start (no matching prior history AND no pace
+// fallback) so the band hides per §14.4.
+//
+// Otherwise returns { mode, status, label, lastTimeSec, deltaSec,
+// paceSecPer100m, paceProjectedTimeSec } where:
+// - `mode` = 'exact' (matched dimensions, lastTimeSec valid) | 'pace' (pace
+//   fallback, paceProjectedTimeSec is the implied target).
+// - `status` = 'ahead' (currentTimeSec < target) | 'behind' (>) | 'neutral'
+//   (no current time yet, e.g. clock just started).
+// - `label` = "your last SkiErg at 500m" | "your average SkiErg pace" — the
+//   "vs X" framing per §14.1, rendered by the band.
+//
+// Caller passes `currentTimeSec` (live clock seconds) and re-renders on
+// every tick; this fn is pure and stateless so it can run inside an
+// existing useMemo / useEffect on the parent.
+
+export function buildIntraLegComparison(opts) {
+  const {
+    legType,                // 'run' | 'station'
+    stationId = null,
+    stationName = null,     // for label rendering ("SkiErg" not "sta_skierg")
+    distanceMeters = null,
+    weight = null,
+    reps = null,
+    currentTimeSec = 0,
+    sessions = [],
+  } = opts || {}
+
+  if (!Array.isArray(sessions) || sessions.length === 0) return null
+  if (legType !== 'run' && legType !== 'station') return null
+
+  // 1. Look for an EXACT match — same dimensions as today's leg.
+  let history = []
+  if (legType === 'run' && typeof distanceMeters === 'number') {
+    history = getRunLegHistory(sessions, distanceMeters)
+  } else if (legType === 'station' && stationId) {
+    const dims = {}
+    if (typeof distanceMeters === 'number') dims.distanceMeters = distanceMeters
+    if (typeof weight === 'number') dims.weight = weight
+    if (typeof reps === 'number') dims.reps = reps
+    history = getStationHistory(sessions, stationId, dims)
+  }
+
+  if (history.length > 0) {
+    const mostRecent = history[0]
+    const lastTimeSec = mostRecent.timeSec
+    const labelTarget = legType === 'run'
+      ? `your last ${distanceMeters}m run`
+      : `your last ${stationName || 'station'}${typeof distanceMeters === 'number' ? ` at ${distanceMeters}m` : ''}`
+    let status = 'neutral'
+    let deltaSec = 0
+    if (typeof currentTimeSec === 'number' && currentTimeSec > 0) {
+      deltaSec = currentTimeSec - lastTimeSec
+      status = currentTimeSec < lastTimeSec ? 'ahead' : (currentTimeSec > lastTimeSec ? 'behind' : 'neutral')
+    }
+    return {
+      mode: 'exact',
+      status,
+      label: labelTarget,
+      lastTimeSec,
+      deltaSec,
+      paceSecPer100m: null,
+      paceProjectedTimeSec: null,
+    }
+  }
+
+  // 2. Pace fallback — same station OR any-distance run, dimension-agnostic.
+  if (legType === 'station' && stationId) {
+    const allStation = getStationHistory(sessions, stationId, {})
+    const pace = computePaceFromHistory(allStation)
+    if (pace !== null && typeof distanceMeters === 'number' && distanceMeters > 0) {
+      const projected = (pace * distanceMeters) / 100
+      const labelTarget = `your avg ${stationName || 'station'} pace`
+      let status = 'neutral'
+      let deltaSec = 0
+      if (typeof currentTimeSec === 'number' && currentTimeSec > 0) {
+        deltaSec = currentTimeSec - projected
+        status = currentTimeSec < projected ? 'ahead' : (currentTimeSec > projected ? 'behind' : 'neutral')
+      }
+      return {
+        mode: 'pace',
+        status,
+        label: labelTarget,
+        lastTimeSec: null,
+        deltaSec,
+        paceSecPer100m: pace,
+        paceProjectedTimeSec: projected,
+      }
+    }
+  }
+  if (legType === 'run' && typeof distanceMeters === 'number' && distanceMeters > 0) {
+    const allRuns = getRunLegHistory(sessions, undefined)
+    const pace = computePaceFromHistory(allRuns)
+    if (pace !== null) {
+      const projected = (pace * distanceMeters) / 100
+      const labelTarget = 'your avg run pace'
+      let status = 'neutral'
+      let deltaSec = 0
+      if (typeof currentTimeSec === 'number' && currentTimeSec > 0) {
+        deltaSec = currentTimeSec - projected
+        status = currentTimeSec < projected ? 'ahead' : (currentTimeSec > projected ? 'behind' : 'neutral')
+      }
+      return {
+        mode: 'pace',
+        status,
+        label: labelTarget,
+        lastTimeSec: null,
+        deltaSec,
+        paceSecPer100m: pace,
+        paceProjectedTimeSec: projected,
+      }
+    }
+  }
+
+  // 3. Cold start — band hides.
+  return null
+}
+
 // `formatDuration(sec)` — `M:SS` or `H:MM:SS` for the HYROX preview card's
 // last-session total time line. Defensive; returns empty string for null /
 // non-numeric / negative.
