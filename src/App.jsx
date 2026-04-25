@@ -13,6 +13,7 @@ import Guide from './pages/Guide'
 import BbLogger from './pages/log/BbLogger'
 import StartHyroxOverlay from './pages/log/StartHyroxOverlay'
 import HyroxRoundLogger from './pages/log/HyroxRoundLogger'
+import HyroxSessionSummary from './pages/log/HyroxSessionSummary'
 import CardioLogger from './pages/CardioLogger'
 import TemplateEditor from './pages/TemplateEditor'
 import SplitManager from './pages/SplitManager'
@@ -57,6 +58,12 @@ function ThemedApp() {
               back-button semantics; the source of truth for which round/leg
               the user is on lives in activeSession.hyrox. */}
           <Route path="/log/hyrox/:exerciseId/round/:roundIdx/:leg" element={<HyroxRoundLogger />} />
+          {/* Batch 45 — HYROX session summary (mockup 4). Renders after the
+              final round's station-Done navigates here from HyroxRoundLogger.
+              Composes activeSession.hyrox.completedLegs into rounds[] and
+              persists them onto activeSession.data.exercises so the B41
+              section preview's ✓ done state lights up on Back-to-lift. */}
+          <Route path="/log/hyrox/:exerciseId/summary" element={<HyroxSessionSummary />} />
           <Route path="/cardio" element={<CardioLogger />} />
           <Route path="/history" element={<History />} />
           <Route path="/progress" element={<Progress />} />

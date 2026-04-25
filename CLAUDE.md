@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 44 — Hybrid Training v1: post-round flash + rest countdown between rounds)
+> Last updated: April 25, 2026 (Batch 45 — Hybrid Training v1: HYROX session summary + comparison chart + branching CTA)
 
 ## Rules for Claude
 
@@ -2110,6 +2110,49 @@ Eighth batch of the Hybrid Training v1 workstream and the **fourth user-visible 
     - `hybrid-b44-sanity.mjs` (new, worktree root) — 70-assertion sanity script.
 
 565. **Build.** `npx vite build --outDir /tmp/test-build` → 855.59 KB bundle / 230.49 KB gzipped (+8.10 KB / +1.92 KB vs Batch 43, accounted for by `computeRoundDelta` (+1.5 KB), `PostRoundFlash` (+2.5 KB), `RestBetweenRoundsTimer` (+2.5 KB), and the HyroxRoundLogger phase-state-machine wiring (~1.5 KB) + GymClock prop addition (~0.1 KB)).
+
+### Batch 45 (April 25, 2026) — Hybrid Training v1: HYROX session summary + comparison chart + branching CTA
+
+Ninth batch of the Hybrid Training v1 workstream and the **fifth user-visible HYROX surface** — the post-final-round summary screen (mockup 4). Replaces the no-route-match that B43+B44 left in place when station-Done on the final round navigated to `/log/hyrox/:id/summary`. Composes `activeSession.hyrox.completedLegs[]` into the saved-session `rounds[]` shape, persists into `activeSession.exercises` so B41's section preview lights up its `✓ done` state on Back-to-lift, then renders hero total time + fastest round + vs-last delta + per-round comparison chart (today yellow solid + station-anchored synthetic prior white dashed) + round breakdown table + branching CTA. Branch shipped to `claude/hybrid-b45-summary` — NOT auto-merged to main, awaiting user review.
+
+566. **Five new pure helpers in `helpers.js`** — all defensive against null / non-array / malformed inputs:
+    - **`composeHyroxRoundsForSave(completedLegs, prescription)`** → groups flat `completedLegs[]` by `roundIndex` into nested `LoggedHyroxRound[]` per the B38 schema. `restAfterSec` for round N derived from gap between this station's `completedAt` and the next round's earliest leg `completedAt`, MINUS the next leg's `timeSec` (so the rest figure represents actual rest + flash time, not double-counted run time). Final round → `restAfterSec: 0`. Strips `roundIndex` from individual legs (the round wraps it).
+    - **`getHyroxSessionTotalTime(rounds)`** → sum of every leg's `timeSec` + every round's `restAfterSec`. Mirrors `HyroxSectionPreview`'s done-state walker so the summary's hero total matches the section preview's "✓ done" stat exactly. Returns 0 on null / empty / malformed.
+    - **`buildSyntheticPriorSeries(todayRounds, sessions, prescription, currentSessionId)`** → per-round synthetic prior, station-anchored per design doc §14.3. For each `roundIndex`, looks up the most-recent prior **run leg** (by run distance) AND most-recent prior **station leg** (by stationId + dimensions). Falls through to **pace projection** when exact dims don't match (flagged via `priorPaceFallback: true` so the chart renders hollow circles vs filled). Returns `null` for a round when EITHER leg has no resolvable prior. Self-exclusion via `currentSessionId` filters out today's session if it's already in `sessions[]` (post-finish state).
+    - **`getHyroxBests(rounds, prescription)`** → cold-start sidebar data per §14.4. Returns `{ fastestRound, fastestRunLeg, fastestStationLeg }` with each value as `{ timeSec, label }` (e.g. `R2 SkiErg`, `R1 800m`).
+    - **`computeBranchingCta(workout, activeSessionExercises)`** → per §16.1, walks the workout's non-HYROX sections; any uncompleted lift (`completedAt: 0` or missing) → `{ label: 'Back to lift →', action: 'lift' }`. All complete or HYROX-only → `{ label: 'Finish workout →', action: 'finish' }`. Lift-section detection mirrors B41's predicate (label trimmed-lowercased ≠ `'hyrox'`).
+
+567. **`HyroxSessionSummary.jsx` (new, `src/pages/log/`).** Routes at `/log/hyrox/:exerciseId/summary`. Layout:
+    - **HYROX COMPLETE pill** at top — yellow brand `#EAB308`.
+    - **Round template name** centered.
+    - **Hero total time** rendered via `GymClock` with `mode='up'` + `eyebrowOverride='Total time'` — preserves the brand visual continuity from B43's round logger.
+    - **Two stat tiles**: Fastest round (with R-label subtitle); vs-last delta (negative green / positive amber) with `{prior totalTime} · {N} rounds` subtitle. Cold-start variant: VS LAST shows `—` + "No prior session".
+    - **Per-round comparison chart** — inline SVG ~280×140, today yellow solid `#EAB308` line + prior white dashed (`rgba(255,255,255,0.5)`). Filled circles on exact-match prior, hollow circles on pace-fallback prior, omitted entirely when prior is null. Y-axis shows `M:SS` ticks at min/max; x-axis labels `R1/R2/R3/R4`. Today/Prior legend in card header.
+    - **Cold-start variant** (when ALL today's stations are first-time logged): chart replaced with `Today's bests` sidebar — Fastest round / Fastest run leg / Fastest station leg with R-position labels.
+    - **Round breakdown table** — header row + one row per round. Columns: `RD / RUN + STATION / TOTAL / VS LAST`. The VS LAST cell uses `computeRoundDelta` (B44) — reuses the same three-branch logic the post-round flash overlay uses. Cold rounds show `—` + `· first time` annotation.
+    - **Branching CTA** at bottom — `Back to lift →` or `Finish workout →` per `computeBranchingCta`. Both navigate to `/log/bb/:type` (the lift-tap returns the user to the workout view; the finish-tap leaves the user on BbLogger where they tap the existing Finish session button — B46 will auto-open the finish modal).
+
+568. **Mount-only useEffect persists rounds[] into `activeSession.exercises`** (top-level — BbLogger's flat shape during a live session, NOT the nested `data.exercises` shape that `addSession` writes at finish-modal save time). Finds the HYROX placeholder exercise seeded by B41's `templateExercises` builder via id-or-name match, updates it in place with `rounds: composed`, `prescribedRoundCount`, `prescribedStationId`, `prescribedRunDistanceMeters`, and `completedAt`. Idempotent — skips when the matching exercise already has a non-empty `rounds[]` (re-mount after reload). Fires AFTER render commit (per B42's lesson) so Zustand subscribers don't trip the "Cannot update a component while rendering" warning. Reload mid-summary survives via the existing `activeSession` round-trip in localStorage.
+
+569. **Important schema caveat — BbLogger's `saveActiveSession` writes a FLAT shape** (`{type, exercises, sessionNotes, sessionStarted, ...}`) WITHOUT `hyrox`. So when the user taps Back-to-lift and BbLogger re-mounts, its first `saveActiveSession` write drops `activeSession.hyrox`. **The rounds[] persistence is preserved** because it lives in `activeSession.exercises` (not `hyrox`), so B41's section preview keeps showing ✓ done correctly. The hyrox-drop is fine in this batch since the round logger only consumes `hyrox` during a live session — once summary lands, hyrox's job is done. B46 will need to handle hybrid finish without depending on `hyrox`.
+
+570. **Route registration in `App.jsx`.** New `<Route path="/log/hyrox/:exerciseId/summary" element={<HyroxSessionSummary />} />` registered between the `/round/:roundIdx/:leg` route and `/cardio`. The fullscreen-flow predicate from B42 (`path.startsWith('/log/hyrox/')`) already hides BottomNav + RestTimer + HamburgerMenu on the summary route — no additional wiring needed.
+
+571. **`hybrid-b45-sanity.mjs` at worktree root.** 69/69 pass. Covers: composeHyroxRoundsForSave correctness (4-round single-station, restAfterSec gap math, final-round = 0, defensive cases incl. malformed legs); getHyroxSessionTotalTime walker; buildSyntheticPriorSeries across exact-match cross-template / mixed-history / pace fallback / cold-start / self-exclusion; getHyroxBests across 4-round dataset with varying times; computeBranchingCta across un-done lift / all-complete / HYROX-only / template-only / defensive (null workout, missing sections, "  hyrox  " whitespace, string-shape exercises); Brooke Tuesday integration spot-check (4 rounds composed + restAfterSec=30s + total=2490s=41:30).
+
+572. **Live preview verified** (port 5179, mobile 375×812). Three scenarios pass:
+    - **Brooke Tuesday with un-done Lift exercise**: summary renders HYROX COMPLETE pill, 41:20 hero clock, Fastest round 9:50 R2, vs-last +20:00 (today 4-round 41:20 vs prior 2-round 21:20), per-round chart with 4 today-yellow + 4 prior-dashed-white points, breakdown table with 4 rows showing −0:20/−0:40/−0:17/−0:13 (green) deltas, CTA reads `Back to lift →`. Tap → returns to `/log/bb/brk_tuesday`, B41 section preview now correctly shows `✓ done · 41:20 · +20:00 vs last` + `HYROX Run + SkiErg Round` for the HYROX section. Lift section's Cable Lateral Raise still un-done.
+    - **HYROX-only workout** (Lift section removed): CTA correctly reads `Finish workout →`.
+    - **Cold start** (sessions cleared): VS LAST tile shows `—` + "No prior session", chart replaced with `Today's bests` sidebar (Fastest round R2 9:50 / Fastest run leg R2 800m 4:05 / Fastest station leg R2 SkiErg 5:45), breakdown table all rows show `—` + `· first time` annotation.
+    - Zero new console errors — only pre-existing `<ExerciseItem>` key-via-spread warnings from `BbLogger.jsx:3806` that predate B41 (documented known caveat).
+
+573. **Files modified.**
+    - `src/utils/helpers.js` — 5 new helpers (composeHyroxRoundsForSave, getHyroxSessionTotalTime, buildSyntheticPriorSeries, getHyroxBests, computeBranchingCta).
+    - `src/pages/log/HyroxSessionSummary.jsx` (new) — full summary screen.
+    - `src/App.jsx` — route registration + import.
+    - `hybrid-b45-sanity.mjs` (new, worktree root) — 69-assertion sanity script.
+
+574. **Build.** `npx vite build --outDir /tmp/test-build` → 871.91 KB bundle / 234.64 KB gzipped (+16.32 KB / +4.15 KB vs Batch 44, accounted for by the 5 new helpers (~6 KB) + HyroxSessionSummary component including inline SVG chart + cold-start sidebar + round breakdown table (~10 KB) + route registration (~0.3 KB)).
 
 ---
 

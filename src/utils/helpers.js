@@ -2946,6 +2946,368 @@ export function formatDuration(sec) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+// ── Batch 45: HYROX session summary helpers ────────────────────────────────
+//
+// Five pure helpers for the post-final-round summary screen
+// (`HyroxSessionSummary.jsx` mockup 4). All defensive against null/non-array
+// inputs; each returns a stable shape so the summary's render branches can
+// guard on null/empty without exception.
+//
+// Design contract (design doc §14.3, §14.4, §16.1):
+//   - Comparisons are STATION-ANCHORED, not round-position-anchored. Today's
+//     R3 SkiErg compares against this user's most-recent prior SkiErg leg
+//     across ALL sessions/templates, not the prior session's R3.
+//   - Cold-start: when ALL today's stations are first-time, summary collapses
+//     the chart legend to "today" only and surfaces a sidebar of bests
+//     (fastest round / fastest run leg / fastest station leg).
+//   - Mixed-history: partial dashed series — only round positions with
+//     resolvable prior data render the dashed point. Today's R4 with a
+//     never-before-seen station gets `priorTotalSec: null`.
+//   - Pace fallback: if today's exact dimensions don't match any prior at the
+//     same station, derive a pace-projected target from the station's prior
+//     history at OTHER distances. Marked `priorPaceFallback: true` so the
+//     chart can render hollow vs filled circles per §14.4.
+//   - Branching CTA: walk workout's non-HYROX sections; any uncompleted lift
+//     means "Back to lift →"; all complete or HYROX-only means
+//     "Finish workout →" per §16.1.
+
+// `composeHyroxRoundsForSave(completedLegs, prescription)` — groups the flat
+// `activeSession.hyrox.completedLegs[]` array by `roundIndex` into the nested
+// `LoggedHyroxRound[]` shape per the B38 schema docblock:
+//   { roundIndex, legs: [{type:'run',...}, {type:'station',...}], restAfterSec, completedAt }
+//
+// `restAfterSec` for round N = the gap (in seconds) between this round's
+// station-leg `completedAt` and the next round's run-leg `completedAt`. That
+// includes the time spent in the post-round flash overlay + the actual rest
+// + any +30s extensions the user added. The final round has restAfterSec = 0
+// (no following round).
+//
+// Defensive:
+//   - missing legs (e.g. a skipped run-Done) → still produces a round entry
+//     with whatever legs ARE present.
+//   - non-array completedLegs → returns [].
+//   - prescription unused for shape — only consulted by the caller. Reserved
+//     here for future use (e.g. legs[].dimensions stamping).
+export function composeHyroxRoundsForSave(completedLegs, _prescription) {
+  if (!Array.isArray(completedLegs) || completedLegs.length === 0) return []
+
+  // Group legs by roundIndex.
+  const byRound = new Map()
+  for (const leg of completedLegs) {
+    if (!leg || typeof leg.roundIndex !== 'number' || leg.roundIndex < 0) continue
+    const idx = leg.roundIndex
+    if (!byRound.has(idx)) byRound.set(idx, [])
+    byRound.get(idx).push(leg)
+  }
+  if (byRound.size === 0) return []
+
+  // Sorted ascending by roundIndex.
+  const roundIndexes = [...byRound.keys()].sort((a, b) => a - b)
+  const rounds = []
+  for (let i = 0; i < roundIndexes.length; i++) {
+    const idx = roundIndexes[i]
+    const legs = byRound.get(idx)
+    // Drop the roundIndex from each leg before persisting (the wrapping round
+    // already carries it); strip the key while preserving everything else.
+    const cleanedLegs = legs.map(({ roundIndex: _ri, ...rest }) => rest)
+    const stationLeg = cleanedLegs.find(l => l?.type === 'station')
+
+    // restAfterSec: actual rest taken between this round's station finishing
+    // and the next round's run leg STARTING. We don't track run-started time
+    // directly — the flat completedLegs[] only carries completedAt (when each
+    // leg's Done was tapped). So we derive: gap = next_run.completedAt -
+    // this_station.completedAt, then SUBTRACT next_run.timeSec to back out the
+    // run leg's own duration. The remainder is the time the user spent in the
+    // post-round flash + rest countdown + any +30s extensions. Final round →
+    // 0 (no following round).
+    let restAfterSec = 0
+    const nextIdx = roundIndexes[i + 1]
+    if (typeof nextIdx === 'number') {
+      const stationDoneAt = stationLeg?.completedAt
+      const nextLegs = byRound.get(nextIdx) || []
+      // The earliest leg in the next round is typically its run leg (legs go
+      // run→station). Use that completedAt as the gap endpoint.
+      let earliestLeg = null
+      let earliestT = null
+      for (const leg of nextLegs) {
+        if (!leg?.completedAt) continue
+        const t = new Date(leg.completedAt).getTime()
+        if (!Number.isFinite(t)) continue
+        if (earliestT === null || t < earliestT) {
+          earliestT = t
+          earliestLeg = leg
+        }
+      }
+      if (stationDoneAt && earliestT !== null) {
+        const stationT = new Date(stationDoneAt).getTime()
+        if (Number.isFinite(stationT) && earliestT > stationT) {
+          const gapSec = (earliestT - stationT) / 1000
+          // Subtract the next leg's own timeSec — the gap covers
+          // rest + that leg, so restAfterSec = gap - leg time.
+          const legSec = typeof earliestLeg.timeSec === 'number' ? earliestLeg.timeSec : 0
+          restAfterSec = Math.max(0, Math.round(gapSec - legSec))
+        }
+      }
+    }
+
+    rounds.push({
+      roundIndex: idx,
+      legs: cleanedLegs,
+      restAfterSec,
+      completedAt: stationLeg?.completedAt
+        || cleanedLegs[cleanedLegs.length - 1]?.completedAt
+        || null,
+    })
+  }
+  return rounds
+}
+
+// `getHyroxSessionTotalTime(rounds)` — sum of every leg's `timeSec` + every
+// round's `restAfterSec`. Mirrors `HyroxSectionPreview`'s done-state walker
+// so the summary's hero total matches the section preview's "✓ done" stat.
+// Returns 0 on null / empty / malformed.
+export function getHyroxSessionTotalTime(rounds) {
+  if (!Array.isArray(rounds) || rounds.length === 0) return 0
+  let total = 0
+  for (const r of rounds) {
+    if (!r || !Array.isArray(r.legs)) continue
+    for (const leg of r.legs) {
+      if (typeof leg?.timeSec === 'number') total += leg.timeSec
+    }
+    if (typeof r.restAfterSec === 'number') total += r.restAfterSec
+  }
+  return total
+}
+
+// `buildSyntheticPriorSeries(todayRounds, sessions, prescription, currentSessionId)`
+// — per-round synthetic prior, station-anchored per §14.3. For each round in
+// `todayRounds`, look up the most-recent prior run leg matching the run
+// distance + the most-recent prior station leg matching the station's
+// dimensions. Sum the two for the round's "synthetic prior total."
+//
+// Self-exclusion: filters legs whose `sessionId === currentSessionId` so the
+// summary doesn't compare today against itself if the active session has
+// already been committed to `sessions[]`. Pre-commit (the typical path) the
+// active session isn't in `sessions[]` and self-exclusion is a no-op.
+//
+// Pace fallback (§14.4): if exact-distance match for the run leg or
+// exact-dimension match for the station leg returns nothing, fall through
+// to pace-projection — `pace × today's distance`. Flagged via
+// `priorPaceFallback: true` on the returned entry so the chart can render
+// hollow circles vs filled.
+//
+// Returns: `Array<{
+//   roundIndex,
+//   todayTotalSec,           // sum of today's run + station for this round
+//   priorTotalSec | null,    // null when no matching history
+//   priorPaceFallback,       // true when at least one leg used pace fallback
+//   status                   // 'ahead' | 'behind' | 'neutral' | null
+// }>`. status is 'ahead' when today < prior, 'behind' when today > prior.
+export function buildSyntheticPriorSeries(todayRounds, sessions, prescription, currentSessionId = null) {
+  if (!Array.isArray(todayRounds) || todayRounds.length === 0) return []
+  const sessionsArr = Array.isArray(sessions) ? sessions : []
+  const filteredSessions = currentSessionId
+    ? sessionsArr.filter(s => s?.id !== currentSessionId)
+    : sessionsArr
+
+  const series = []
+  for (const round of todayRounds) {
+    if (!round || !Array.isArray(round.legs)) continue
+    const roundIndex = typeof round.roundIndex === 'number' ? round.roundIndex : series.length
+    const runLeg = round.legs.find(l => l?.type === 'run')
+    const stationLeg = round.legs.find(l => l?.type === 'station')
+
+    const todayRunSec = typeof runLeg?.timeSec === 'number' ? runLeg.timeSec : 0
+    const todayStationSec = typeof stationLeg?.timeSec === 'number' ? stationLeg.timeSec : 0
+    const todayTotalSec = todayRunSec + todayStationSec
+
+    // Prior run leg — exact distance match first, then pace fallback.
+    let priorRunSec = null
+    let runPaceFallback = false
+    const runDistance = runLeg?.distanceMeters
+      ?? prescription?.runDistanceMeters
+      ?? null
+    if (typeof runDistance === 'number' && runDistance > 0) {
+      const exactRunHistory = getRunLegHistory(filteredSessions, runDistance)
+      if (exactRunHistory.length > 0) {
+        priorRunSec = exactRunHistory[0].timeSec
+      } else {
+        // Pace fallback — any-distance run pace × today's distance.
+        const allRuns = getRunLegHistory(filteredSessions)
+        const pace = computePaceFromHistory(allRuns)
+        if (pace !== null) {
+          priorRunSec = (pace * runDistance) / 100
+          runPaceFallback = true
+        }
+      }
+    }
+
+    // Prior station leg — exact dims first, then station-only, then pace.
+    let priorStationSec = null
+    let stationPaceFallback = false
+    const stationId = stationLeg?.stationId || prescription?.stationId || null
+    if (stationId) {
+      const stationDims = {}
+      if (typeof stationLeg?.distanceMeters === 'number') {
+        stationDims.distanceMeters = stationLeg.distanceMeters
+      }
+      if (typeof stationLeg?.weight === 'number') {
+        stationDims.weight = stationLeg.weight
+      }
+      if (typeof stationLeg?.reps === 'number') {
+        stationDims.reps = stationLeg.reps
+      }
+      const exactStation = getStationHistory(filteredSessions, stationId, stationDims)
+      if (exactStation.length > 0) {
+        priorStationSec = exactStation[0].timeSec
+      } else {
+        // No exact-dim match — try station-only history.
+        const allStation = getStationHistory(filteredSessions, stationId, {})
+        if (allStation.length > 0) {
+          // If today's station has distanceMeters AND prior history has it
+          // (different distance), pace-project. Otherwise fall back to most
+          // recent regardless.
+          const stationDistance = stationLeg?.distanceMeters ?? null
+          if (typeof stationDistance === 'number' && stationDistance > 0) {
+            const pace = computePaceFromHistory(allStation)
+            if (pace !== null) {
+              priorStationSec = (pace * stationDistance) / 100
+              stationPaceFallback = true
+            } else {
+              priorStationSec = allStation[0].timeSec
+            }
+          } else {
+            // No distance dimension on today's station (e.g. wall-balls reps-only).
+            // Use the most-recent prior leg's time as a flat reference — same as
+            // intra-leg comparison's pace-less fallback.
+            priorStationSec = allStation[0].timeSec
+          }
+        }
+      }
+    }
+
+    let priorTotalSec = null
+    if (priorRunSec !== null && priorStationSec !== null) {
+      priorTotalSec = priorRunSec + priorStationSec
+    } else if (priorRunSec !== null && stationLeg && stationId === null) {
+      // No station leg in today's round (data quality) — run-only series point.
+      priorTotalSec = priorRunSec
+    } else if (priorStationSec !== null && runLeg && (typeof runDistance !== 'number' || runDistance === 0)) {
+      // No run leg in today's round — station-only series point.
+      priorTotalSec = priorStationSec
+    }
+
+    let status = null
+    if (priorTotalSec !== null && todayTotalSec > 0) {
+      if (todayTotalSec < priorTotalSec) status = 'ahead'
+      else if (todayTotalSec > priorTotalSec) status = 'behind'
+      else status = 'neutral'
+    }
+
+    series.push({
+      roundIndex,
+      todayTotalSec,
+      priorTotalSec: priorTotalSec === null ? null : Math.round(priorTotalSec),
+      priorPaceFallback: runPaceFallback || stationPaceFallback,
+      status,
+    })
+  }
+  return series
+}
+
+// `getHyroxBests(rounds, prescription)` — cold-start sidebar data per §14.4.
+// Returns `{ fastestRound, fastestRunLeg, fastestStationLeg }` where each is
+// `{ timeSec, label } | null`. Label describes the round/leg position so
+// "Fastest round: R2 (5:42)" reads cleanly. For mixed-history sessions this
+// is unused — only the cold-start variant renders the sidebar.
+export function getHyroxBests(rounds, _prescription) {
+  if (!Array.isArray(rounds) || rounds.length === 0) {
+    return { fastestRound: null, fastestRunLeg: null, fastestStationLeg: null }
+  }
+
+  let fastestRound = null
+  let fastestRunLeg = null
+  let fastestStationLeg = null
+
+  for (const r of rounds) {
+    if (!r || !Array.isArray(r.legs)) continue
+    const roundIndex = typeof r.roundIndex === 'number' ? r.roundIndex : null
+    const roundLabel = roundIndex !== null ? `R${roundIndex + 1}` : 'Round'
+
+    let roundTotal = 0
+    for (const leg of r.legs) {
+      if (typeof leg?.timeSec !== 'number') continue
+      roundTotal += leg.timeSec
+      if (leg.type === 'run') {
+        const distLabel = typeof leg.distanceMeters === 'number'
+          ? ` ${leg.distanceMeters}m`
+          : ''
+        if (fastestRunLeg === null || leg.timeSec < fastestRunLeg.timeSec) {
+          fastestRunLeg = {
+            timeSec: leg.timeSec,
+            label: `${roundLabel}${distLabel}`,
+          }
+        }
+      } else if (leg.type === 'station') {
+        const stationName = leg.stationId
+          ? (HYROX_STATIONS.find(s => s.id === leg.stationId)?.name || 'Station')
+          : 'Station'
+        if (fastestStationLeg === null || leg.timeSec < fastestStationLeg.timeSec) {
+          fastestStationLeg = {
+            timeSec: leg.timeSec,
+            label: `${roundLabel} ${stationName}`,
+          }
+        }
+      }
+    }
+
+    if (roundTotal > 0 && (fastestRound === null || roundTotal < fastestRound.timeSec)) {
+      fastestRound = {
+        timeSec: roundTotal,
+        label: roundLabel,
+      }
+    }
+  }
+
+  return { fastestRound, fastestRunLeg, fastestStationLeg }
+}
+
+// `computeBranchingCta(workout, activeSessionExercises)` — branching CTA per
+// §16.1. Walks the current workout's sections; any non-HYROX section with an
+// uncompleted exercise → 'Back to lift →'. All lift work complete OR
+// HYROX-only workout → 'Finish workout →'.
+//
+// "Lift section" = any section whose label trimmed-lowercased ≠ 'hyrox'
+// (mirrors B41's predicate). "Uncompleted exercise" = the matching entry in
+// `activeSessionExercises` lacks a truthy `completedAt`. An exercise present
+// in the section template but missing from `activeSessionExercises` entirely
+// counts as uncompleted (template-only, never logged).
+//
+// Returns `{ label, action }` where action is 'lift' | 'finish'.
+export function computeBranchingCta(workout, activeSessionExercises) {
+  const exerciseList = Array.isArray(activeSessionExercises) ? activeSessionExercises : []
+  if (!workout || !Array.isArray(workout.sections) || workout.sections.length === 0) {
+    return { label: 'Finish workout →', action: 'finish' }
+  }
+
+  for (const section of workout.sections) {
+    const labelNorm = String(section?.label || '').trim().toLowerCase()
+    if (labelNorm === 'hyrox') continue
+    const sectionExes = Array.isArray(section?.exercises) ? section.exercises : []
+    for (const sectionEx of sectionExes) {
+      const name = typeof sectionEx === 'string'
+        ? sectionEx
+        : (sectionEx?.name || sectionEx?.exercise || null)
+      if (!name) continue
+      const match = exerciseList.find(ex => ex?.name === name)
+      if (!match || !match.completedAt) {
+        return { label: 'Back to lift →', action: 'lift' }
+      }
+    }
+  }
+  return { label: 'Finish workout →', action: 'finish' }
+}
+
 // ── Batch 42: Start HYROX overlay helpers ──────────────────────────────────
 
 // `pickHeadline(lastShownIndex)` — picks one of the 30 cycling headlines per
