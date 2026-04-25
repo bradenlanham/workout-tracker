@@ -1,4 +1,5 @@
 import { BB_WORKOUT_SEQUENCE } from '../data/exercises.js'
+import { HYROX_STATIONS, buildHyroxStationLibraryEntry } from '../data/hyroxStations.js'
 
 // ── Time helpers ─────────────────────────────────────────────────────────────
 
@@ -1096,6 +1097,127 @@ export function migrateLibraryToV7(library) {
   return changed > 0 ? out : library
 }
 
+// Batch 37 — Hybrid training v1 foundation.
+//
+// classifyType(name): keyword-based type prediction for the 4 type values
+// (weight-training | running | hyrox-station | hyrox-round). Mirrors
+// classifyRepRange's structure — ordered map, first match wins, default
+// 'weight-training'. Order matters: composite-round terms (most specific)
+// fire before station singletons, which fire before generic running keywords.
+// "Run + SkiErg Round" must classify as hyrox-round even though "skierg"
+// alone is hyrox-station — composites win.
+const TYPE_KEYWORD_MAP = [
+  // ── HYROX round composites (most specific — match before stations) ──
+  { kw: 'hyrox round',      type: 'hyrox-round' },
+  { kw: 'hyrox simulation', type: 'hyrox-round' },
+  { kw: 'simulation round', type: 'hyrox-round' },
+  { kw: 'run + skierg',     type: 'hyrox-round' },
+  { kw: 'run + sled',       type: 'hyrox-round' },
+  // ── HYROX stations (8 catalog) ──
+  { kw: 'skierg',           type: 'hyrox-station' },
+  { kw: 'ski erg',          type: 'hyrox-station' },
+  { kw: 'sled push',        type: 'hyrox-station' },
+  { kw: 'sled pull',        type: 'hyrox-station' },
+  { kw: 'burpee broad',     type: 'hyrox-station' },
+  { kw: 'farmers carry',    type: 'hyrox-station' },
+  { kw: 'farmer carry',     type: 'hyrox-station' },
+  { kw: 'sandbag lunge',    type: 'hyrox-station' },
+  { kw: 'wall ball',        type: 'hyrox-station' },
+  { kw: 'rowing',           type: 'hyrox-station' },
+  // ── Running / cardio ──
+  { kw: 'easy run',         type: 'running' },
+  { kw: 'incline walk',     type: 'running' },
+  { kw: 'easy bike',        type: 'running' },
+  { kw: 'treadmill',        type: 'running' },
+  { kw: 'outdoor run',      type: 'running' },
+  { kw: 'walk',             type: 'running' },
+  { kw: 'bike',             type: 'running' },
+  { kw: 'jog',              type: 'running' },
+  { kw: 'run',              type: 'running' },
+]
+
+export function classifyType(name) {
+  if (typeof name !== 'string') return 'weight-training'
+  const n = name.toLowerCase().trim()
+  if (!n) return 'weight-training'
+  for (const { kw, type } of TYPE_KEYWORD_MAP) {
+    if (n.includes(kw)) return type
+  }
+  return 'weight-training'
+}
+
+// defaultDimensionsForType(type): returns the dimension preset for non-station
+// types. Stations have locked per-station dimensions handled directly by
+// buildHyroxStationLibraryEntry in src/data/hyroxStations.js; this fallback
+// fires only if a hyrox-station entry is created without a catalog match
+// (shouldn't happen in v1 since the 8 are locked).
+//
+// Five axes: weight | reps | distance | time | intensity. `required` gates
+// set/round completion. `unit` is descriptive — canonical conversion via §11.
+export function defaultDimensionsForType(type) {
+  switch (type) {
+    case 'running':
+      return [
+        { axis: 'distance',  required: true,  unit: 'mi' },
+        { axis: 'time',      required: true,  unit: 's'  },
+        { axis: 'intensity', required: false             },
+      ]
+    case 'hyrox-station':
+      return [{ axis: 'time', required: true, unit: 's' }]
+    case 'hyrox-round':
+      // Round-template entries use roundConfig (B38), not dimensions[].
+      return []
+    case 'weight-training':
+    default:
+      return [
+        { axis: 'weight', required: true, unit: 'lbs' },
+        { axis: 'reps',   required: true             },
+      ]
+  }
+}
+
+// Batch 37 v7 → v8 library migration. Adds `type` + `dimensions` fields to
+// every existing entry (defaulting to weight-training) and seeds the 8 HYROX
+// station entries if not already present. Idempotent — re-running on a v8
+// state with all stations present and all entries typed produces the same
+// array (returns the same reference when nothing changes, matching the
+// migrateLibraryToV6 / V7 pattern).
+//
+// Note on station seeding: if a user manually created an exercise with one
+// of the canonical station ids (sta_skierg etc.) before v8 lands, it gets
+// preserved — we only seed station entries whose id is missing from the
+// current library. The user's custom entry wins.
+export function migrateLibraryToV8(library) {
+  if (!Array.isArray(library)) return library
+  let changed = 0
+
+  // Pass 1: type + dimensions on existing entries
+  const patched = library.map(e => {
+    if (!e || typeof e !== 'object') return e
+    const patch = {}
+    if (typeof e.type !== 'string') {
+      patch.type = 'weight-training'
+    }
+    if (!Array.isArray(e.dimensions)) {
+      patch.dimensions = defaultDimensionsForType(e.type || patch.type || 'weight-training')
+    }
+    if (Object.keys(patch).length > 0) {
+      changed++
+      return { ...e, ...patch }
+    }
+    return e
+  })
+
+  // Pass 2: seed missing stations
+  const existingIds = new Set(patched.map(e => e?.id).filter(Boolean))
+  const missing = HYROX_STATIONS
+    .filter(st => !existingIds.has(st.id))
+    .map(st => buildHyroxStationLibraryEntry(st))
+
+  if (missing.length === 0 && changed === 0) return library
+  return [...patched, ...missing]
+}
+
 // Per-session top set for an exercise — the working set with the highest
 // e1RM. Skips warmups; drop sets count (same per-side load as the parent
 // working set is fine for fit purposes). Returns chronological ascending.
@@ -1871,78 +1993,101 @@ export function detectAnomalies(history) {
 // treat the result as a suggestion: tapping any muscle/equipment chip should
 // override the prediction and stop future auto-fills on the same edit.
 const EXERCISE_KEYWORD_MAP = [
+  // ── HYROX stations (B37) — must match before generic fallbacks like "row" ──
+  { kw: 'skierg',             muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'ski erg',            muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'sled push',          muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'sled pull',          muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'burpee broad',       muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'farmers carry',      muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'farmer carry',       muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'sandbag lunge',      muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
+  { kw: 'wall ball',          muscles: ['Full Body'],   equipment: 'Other',                type: 'hyrox-station' },
   // ── Specific compound terms first ──
-  { kw: 'leg press',          muscles: ['Quads'],       equipment: 'Plate-loaded Machine' },
-  { kw: 'hack squat',         muscles: ['Quads'],       equipment: 'Plate-loaded Machine' },
-  { kw: 'leg extension',      muscles: ['Quads'],       equipment: 'Selectorized Machine' },
-  { kw: 'leg curl',           muscles: ['Hamstrings'],  equipment: 'Selectorized Machine' },
-  { kw: 'romanian deadlift',  muscles: ['Hamstrings'],  equipment: 'Barbell' },
-  { kw: 'rdl',                muscles: ['Hamstrings'],  equipment: 'Barbell' },
-  { kw: 'deadlift',           muscles: ['Back'],        equipment: 'Barbell' },
-  { kw: 'good morning',       muscles: ['Hamstrings'],  equipment: 'Barbell' },
-  { kw: 'calf raise',         muscles: ['Calves'],      equipment: 'Selectorized Machine' },
-  { kw: 'hip thrust',         muscles: ['Glutes'],      equipment: 'Barbell' },
-  { kw: 'glute bridge',       muscles: ['Glutes'],      equipment: 'Bodyweight' },
-  { kw: 'bench press',        muscles: ['Chest'],       equipment: 'Barbell' },
-  { kw: 'chest press',        muscles: ['Chest'],       equipment: 'Selectorized Machine' },
-  { kw: 'chest fly',          muscles: ['Chest'],       equipment: 'Cable' },
-  { kw: 'pec dec',            muscles: ['Chest'],       equipment: 'Selectorized Machine' },
-  { kw: 'pec deck',           muscles: ['Chest'],       equipment: 'Selectorized Machine' },
-  { kw: 'dips',               muscles: ['Chest'],       equipment: 'Bodyweight' },
-  { kw: 'push-up',            muscles: ['Chest'],       equipment: 'Bodyweight' },
-  { kw: 'pushup',             muscles: ['Chest'],       equipment: 'Bodyweight' },
-  { kw: 'push up',            muscles: ['Chest'],       equipment: 'Bodyweight' },
-  { kw: 'lat pulldown',       muscles: ['Back'],        equipment: 'Cable' },
-  { kw: 'pulldown',           muscles: ['Back'],        equipment: 'Cable' },
-  { kw: 'pull-up',            muscles: ['Back'],        equipment: 'Bodyweight' },
-  { kw: 'pullup',             muscles: ['Back'],        equipment: 'Bodyweight' },
-  { kw: 'pull up',            muscles: ['Back'],        equipment: 'Bodyweight' },
-  { kw: 'chin-up',            muscles: ['Back'],        equipment: 'Bodyweight' },
-  { kw: 'chinup',             muscles: ['Back'],        equipment: 'Bodyweight' },
-  { kw: 'face pull',          muscles: ['Shoulders'],   equipment: 'Cable' },
-  { kw: 'lateral raise',      muscles: ['Shoulders'],   equipment: 'Dumbbell' },
-  { kw: 'front raise',        muscles: ['Shoulders'],   equipment: 'Dumbbell' },
-  { kw: 'rear delt',          muscles: ['Shoulders'],   equipment: 'Selectorized Machine' },
-  { kw: 'overhead press',     muscles: ['Shoulders'],   equipment: 'Barbell' },
-  { kw: 'military press',     muscles: ['Shoulders'],   equipment: 'Barbell' },
-  { kw: 'shoulder press',     muscles: ['Shoulders'],   equipment: 'Dumbbell' },
-  { kw: 'shrug',              muscles: ['Traps'],       equipment: 'Dumbbell' },
-  { kw: 'bicep curl',         muscles: ['Biceps'],      equipment: 'Dumbbell' },
-  { kw: 'hammer curl',        muscles: ['Biceps'],      equipment: 'Dumbbell' },
-  { kw: 'preacher curl',      muscles: ['Biceps'],      equipment: 'Barbell' },
-  { kw: 'tricep pushdown',    muscles: ['Triceps'],     equipment: 'Cable' },
-  { kw: 'tricep extension',   muscles: ['Triceps'],     equipment: 'Dumbbell' },
-  { kw: 'skull crusher',      muscles: ['Triceps'],     equipment: 'Barbell' },
-  { kw: 'close grip bench',   muscles: ['Triceps'],     equipment: 'Barbell' },
-  { kw: 'plank',              muscles: ['Core'],        equipment: 'Bodyweight' },
-  { kw: 'crunch',             muscles: ['Core'],        equipment: 'Bodyweight' },
-  { kw: 'sit-up',             muscles: ['Core'],        equipment: 'Bodyweight' },
-  { kw: 'situp',              muscles: ['Core'],        equipment: 'Bodyweight' },
-  { kw: 'ab wheel',           muscles: ['Core'],        equipment: 'Other' },
-  { kw: 'leg raise',          muscles: ['Core'],        equipment: 'Bodyweight' },
-  { kw: 'russian twist',      muscles: ['Core'],        equipment: 'Bodyweight' },
+  { kw: 'leg press',          muscles: ['Quads'],       equipment: 'Plate-loaded Machine', type: 'weight-training' },
+  { kw: 'hack squat',         muscles: ['Quads'],       equipment: 'Plate-loaded Machine', type: 'weight-training' },
+  { kw: 'leg extension',      muscles: ['Quads'],       equipment: 'Selectorized Machine', type: 'weight-training' },
+  { kw: 'leg curl',           muscles: ['Hamstrings'],  equipment: 'Selectorized Machine', type: 'weight-training' },
+  { kw: 'romanian deadlift',  muscles: ['Hamstrings'],  equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'rdl',                muscles: ['Hamstrings'],  equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'deadlift',           muscles: ['Back'],        equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'good morning',       muscles: ['Hamstrings'],  equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'calf raise',         muscles: ['Calves'],      equipment: 'Selectorized Machine', type: 'weight-training' },
+  { kw: 'hip thrust',         muscles: ['Glutes'],      equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'glute bridge',       muscles: ['Glutes'],      equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'bench press',        muscles: ['Chest'],       equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'chest press',        muscles: ['Chest'],       equipment: 'Selectorized Machine', type: 'weight-training' },
+  { kw: 'chest fly',          muscles: ['Chest'],       equipment: 'Cable',                type: 'weight-training' },
+  { kw: 'pec dec',            muscles: ['Chest'],       equipment: 'Selectorized Machine', type: 'weight-training' },
+  { kw: 'pec deck',           muscles: ['Chest'],       equipment: 'Selectorized Machine', type: 'weight-training' },
+  { kw: 'dips',               muscles: ['Chest'],       equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'push-up',            muscles: ['Chest'],       equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'pushup',             muscles: ['Chest'],       equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'push up',            muscles: ['Chest'],       equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'lat pulldown',       muscles: ['Back'],        equipment: 'Cable',                type: 'weight-training' },
+  { kw: 'pulldown',           muscles: ['Back'],        equipment: 'Cable',                type: 'weight-training' },
+  { kw: 'pull-up',            muscles: ['Back'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'pullup',             muscles: ['Back'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'pull up',            muscles: ['Back'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'chin-up',            muscles: ['Back'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'chinup',             muscles: ['Back'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'face pull',          muscles: ['Shoulders'],   equipment: 'Cable',                type: 'weight-training' },
+  { kw: 'lateral raise',      muscles: ['Shoulders'],   equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'front raise',        muscles: ['Shoulders'],   equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'rear delt',          muscles: ['Shoulders'],   equipment: 'Selectorized Machine', type: 'weight-training' },
+  { kw: 'overhead press',     muscles: ['Shoulders'],   equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'military press',     muscles: ['Shoulders'],   equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'shoulder press',     muscles: ['Shoulders'],   equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'shrug',              muscles: ['Traps'],       equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'bicep curl',         muscles: ['Biceps'],      equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'hammer curl',        muscles: ['Biceps'],      equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'preacher curl',      muscles: ['Biceps'],      equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'tricep pushdown',    muscles: ['Triceps'],     equipment: 'Cable',                type: 'weight-training' },
+  { kw: 'tricep extension',   muscles: ['Triceps'],     equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'skull crusher',      muscles: ['Triceps'],     equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'close grip bench',   muscles: ['Triceps'],     equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'plank',              muscles: ['Core'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'crunch',             muscles: ['Core'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'sit-up',             muscles: ['Core'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'situp',              muscles: ['Core'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'ab wheel',           muscles: ['Core'],        equipment: 'Other',                type: 'weight-training' },
+  { kw: 'leg raise',          muscles: ['Core'],        equipment: 'Bodyweight',           type: 'weight-training' },
+  { kw: 'russian twist',      muscles: ['Core'],        equipment: 'Bodyweight',           type: 'weight-training' },
   // ── Generic compound fallbacks ──
-  { kw: 'squat',              muscles: ['Quads'],       equipment: 'Barbell' },
-  { kw: 'lunge',              muscles: ['Quads'],       equipment: 'Dumbbell' },
-  { kw: 'row',                muscles: ['Back'],        equipment: 'Cable' },
-  { kw: 'press',              muscles: ['Chest'],       equipment: 'Barbell' },
-  { kw: 'fly',                muscles: ['Chest'],       equipment: 'Cable' },
-  { kw: 'curl',               muscles: ['Biceps'],      equipment: 'Dumbbell' },
+  { kw: 'squat',              muscles: ['Quads'],       equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'lunge',              muscles: ['Quads'],       equipment: 'Dumbbell',             type: 'weight-training' },
+  { kw: 'row',                muscles: ['Back'],        equipment: 'Cable',                type: 'weight-training' },
+  { kw: 'press',              muscles: ['Chest'],       equipment: 'Barbell',              type: 'weight-training' },
+  { kw: 'fly',                muscles: ['Chest'],       equipment: 'Cable',                type: 'weight-training' },
+  { kw: 'curl',               muscles: ['Biceps'],      equipment: 'Dumbbell',             type: 'weight-training' },
 ]
 
-// Returns { primaryMuscles: string[], equipment: string } with a best-effort
-// guess. Returns null if no keyword matched so the caller can leave the
-// fields untouched and let the user pick themselves.
+// Returns { primaryMuscles: string[], equipment: string, type: string } with a
+// best-effort guess. Returns null if no keyword matched AND classifyType also
+// returned the default 'weight-training' (i.e. nothing in the name suggests a
+// specific class). Batch 37: extended to carry `type` so the CreateExerciseModal
+// type selector pre-fills alongside muscles + equipment.
+//
+// Type-only fallback: when the muscle/equipment map misses but classifyType
+// hits a non-weight-training keyword (e.g. "Easy Run" — no muscle keyword,
+// but classifyType returns 'running'), we return a partial result with
+// empty muscles + 'Other' equipment so the caller still gets the type cue.
 export function predictExerciseMeta(name) {
   if (typeof name !== 'string') return null
   const n = name.toLowerCase().trim()
   if (!n) return null
   for (const rule of EXERCISE_KEYWORD_MAP) {
     if (n.includes(rule.kw)) {
-      return { primaryMuscles: [...rule.muscles], equipment: rule.equipment }
+      return {
+        primaryMuscles: [...rule.muscles],
+        equipment:      rule.equipment,
+        type:           rule.type || 'weight-training',
+      }
     }
   }
-  return null
+  const t = classifyType(name)
+  if (t === 'weight-training') return null
+  return { primaryMuscles: [], equipment: 'Other', type: t }
 }
 
 // ── Misc ───────────────────────────────────────────────────────────────────

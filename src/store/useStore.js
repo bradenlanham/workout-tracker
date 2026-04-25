@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateLibraryToV6, migrateLibraryToV7, classifyRepRange, toLocalDateStr } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, defaultDimensionsForType, classifyRepRange, toLocalDateStr } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -8,6 +8,7 @@ import {
   BB_EXERCISE_GROUPS,
 } from '../data/exercises'
 import { EXERCISE_LIBRARY as BUILT_IN_RAW } from '../data/exerciseLibrary'
+import { HYROX_STATIONS, buildHyroxStationLibraryEntry } from '../data/hyroxStations'
 import { loadTemplateForDraft } from '../data/splitTemplates'
 
 // ── Exercise library seeding ───────────────────────────────────────────────────
@@ -26,7 +27,7 @@ export function builtInExerciseIdForName(name) {
 }
 
 function buildBuiltInLibrary() {
-  return BUILT_IN_RAW.map(raw => ({
+  const lifts = BUILT_IN_RAW.map(raw => ({
     id:                builtInExerciseIdForName(raw.name),
     name:              raw.name,
     aliases:           [],
@@ -47,8 +48,16 @@ function buildBuiltInLibrary() {
       : raw.equipment === 'Bodyweight' ? 'bodyweight'
       : 'isolation',
     needsTagging:      false,
+    // Batch 37: type + dimensions on every entry. Existing built-ins are all
+    // weight-training; the 8 HYROX stations are appended below.
+    type:              'weight-training',
+    dimensions:        defaultDimensionsForType('weight-training'),
     createdAt:         '2026-04-17',
   }))
+  // Batch 37: seed the 8 HYROX stations as built-in entries. Locked dimensions
+  // per station (see src/data/hyroxStations.js); type='hyrox-station'.
+  const stations = HYROX_STATIONS.map(buildHyroxStationLibraryEntry)
+  return [...lifts, ...stations]
 }
 
 // ── Built-in split factory ─────────────────────────────────────────────────────
@@ -841,8 +850,11 @@ const useStore = create(
             // Batch 30: run v6 + v7 library migrations on imported library
             // so pre-v7 backups land in the current schema (per-exercise
             // defaultRepRange + repRangeUserSet flag). Idempotent.
+            // Batch 37: chain v8 to add type + dimensions + seed the 8
+            // HYROX stations on imported libraries. Idempotent.
             const libV6 = migrateLibraryToV6(data.exerciseLibrary || [])
-            const migratedLibrary = migrateLibraryToV7(libV6)
+            const libV7 = migrateLibraryToV7(libV6)
+            const migratedLibrary = migrateLibraryToV8(libV7)
             set({
               sessions: migratedSessions,
               settings: data.settings || get().settings,
@@ -865,7 +877,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 7,
+      version: 8,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -893,6 +905,12 @@ const useStore = create(
       //   repRangeUserSet=true keep their current range — they're user
       //   overrides. Recommender subsequently reads either the override
       //   or inferRepRange(history, classificationDefault).
+      //   V7→V8 (Batch 37): additive — every library entry gains `type`
+      //   (default 'weight-training') and `dimensions` (default per type).
+      //   The 8 HYROX stations are seeded as built-in entries unless their
+      //   canonical ids are already present (user's manual creation wins).
+      //   Foundation for the hybrid training v1 workstream — no UI changes
+      //   ship in this batch; B38 / B39 / B41+ build on top of this schema.
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -921,6 +939,9 @@ const useStore = create(
         }
         if (version < 7 && Array.isArray(persistedState.exerciseLibrary)) {
           persistedState.exerciseLibrary = migrateLibraryToV7(persistedState.exerciseLibrary)
+        }
+        if (version < 8 && Array.isArray(persistedState.exerciseLibrary)) {
+          persistedState.exerciseLibrary = migrateLibraryToV8(persistedState.exerciseLibrary)
         }
         return persistedState
       },

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 24, 2026 (Batch 36 — Superset feature: SS chip + cycle through 2-3 exercises mid-session)
+> Last updated: April 25, 2026 (Batch 37 — Hybrid Training v1 foundation: library schema + 8-station catalog)
 
 ## Rules for Claude
 
@@ -49,7 +49,8 @@ src/
 ├── data/
 │   ├── exercises.js           # Built-in "BamBam's Blueprint" workout data (5 workouts, exercise groups)
 │   ├── exerciseLibrary.js     # 140+ exercises by muscle group for the exercise picker
-│   └── splitTemplates.js      # Batch 17f — 6 curated templates for ChooseStartingPoint (BamBam / FullBody×3 / Upper-Lower×4 / PPL×3 / PPL×6 / Bro / 5×5) + loadTemplateForDraft(id)
+│   ├── splitTemplates.js      # Batch 17f — 6 curated templates for ChooseStartingPoint (BamBam / FullBody×3 / Upper-Lower×4 / PPL×3 / PPL×6 / Bro / 5×5) + loadTemplateForDraft(id)
+│   └── hyroxStations.js       # Batch 37 — closed catalog of 8 HYROX stations (sta_skierg, sta_sled_push, sta_sled_pull, sta_burpee_broad, sta_row, sta_farmers, sta_sandbag_lunges, sta_wall_balls). Each carries id/name/dimensions/raceStandard. buildHyroxStationLibraryEntry(station) is the canonical converter consumed by buildBuiltInLibrary + migrateLibraryToV8.
 │
 ├── utils/
 │   └── helpers.js             # getNextBbWorkout, getLastBbSession, perSideLoad, getExercisePRs, isSetPR, isPR,
@@ -107,6 +108,25 @@ src/
 │                              #   rules. Empty / missing sessionGymTags = "available
 │                              #   everywhere", skipGymTagPrompt silences the
 │                              #   auto-tag prompt per (exercise, gym) pair.
+│                              # classifyType(name): Batch 37 — keyword-based type
+│                              #   classifier returning 'weight-training' |
+│                              #   'running' | 'hyrox-station' | 'hyrox-round'.
+│                              #   Order matters: composite-round terms ("hyrox
+│                              #   round", "run + skierg") fire before station
+│                              #   singletons ("skierg") so composites win.
+│                              # defaultDimensionsForType(type): Batch 37 —
+│                              #   dimension preset per type. Five axes:
+│                              #   weight | reps | distance | time | intensity.
+│                              # migrateLibraryToV8(library): Batch 37 — v7→v8
+│                              #   library migration, idempotent. Adds type +
+│                              #   dimensions to every entry, seeds the 8 HYROX
+│                              #   stations if missing, preserves any user-created
+│                              #   entry whose id collides with a station id.
+│                              # predictExerciseMeta(name): Batch 37 — extended
+│                              #   to return { primaryMuscles, equipment, type }.
+│                              #   Falls back to type-only result when no muscle/
+│                              #   equipment keyword matches but classifyType
+│                              #   returns a non-default type.
 │
 ├── components/
 │   ├── BottomNav.jsx          # 4-tab nav: Dashboard, Log, History, Progress (hidden during logging)
@@ -504,7 +524,7 @@ Each workout has 3 sections: "Primary" (always do), "Choose 1" (pick one), "If Y
 
 ## Data Persistence
 
-- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 4`.
+- **Zustand persist middleware** with localStorage key `workout-tracker-v1`, current persist `version: 8`.
 - Custom `merge` function in the persist config handles schema evolution: new fields get defaults, existing user settings are preserved via deep merge, existing users auto-skip onboarding.
 - `migrate` hook handles versioned schema changes.
   - V1→V2 (Batch 14): backfills `rawWeight` on every set and recomputes `isNewPR` via `migrateSessionsToV2()` in helpers.js.
@@ -1752,6 +1772,26 @@ User-requested mid-session superset feature. Tap the new SS chip on any expanded
     - Zero console errors throughout (one Rules-of-Hooks violation caught + fixed during dev: the `if (!open) return null` early return in SupersetSheet now lives below all useState/useEffect/useMemo calls).
 
 489. **Build.** `npx vite build --outDir /tmp/test-build` → 785.61 KB bundle / 212.05 KB gzipped (+10.92 KB / +3.46 KB vs Batch 35, accounted for by SupersetSheet component + parent handlers + chip + helper).
+
+### Batch 37 (April 25, 2026) — Hybrid Training v1 foundation: library schema + 8-station catalog
+
+First batch of the Hybrid Training v1 workstream (B37–B46) — see `hybrid-training-design-v1.md` and `hybrid-training-implementation-plan.md`. Adds the dimension model and type system to library entries WITHOUT changing any UI surface. The library list still renders the same cards; behind the scenes every entry now has a `type` and a `dimensions` array, and 8 HYROX station entries get auto-seeded. Foundation pass — every existing flow continues to work identically; the schema is just richer for B38+ to build on.
+
+490. **`src/data/hyroxStations.js` (new)** — closed catalog of 8 HYROX stations per design doc §3: `sta_skierg`, `sta_sled_push`, `sta_sled_pull`, `sta_burpee_broad`, `sta_row`, `sta_farmers`, `sta_sandbag_lunges`, `sta_wall_balls`. Each carries `id`, `name`, `dimensions[]` (locked per station), `raceStandard` (canonical race-day target — used by B42's Start HYROX overlay). `buildHyroxStationLibraryEntry(station)` exported as the canonical converter — consumed by both `buildBuiltInLibrary` (fresh installs) and `migrateLibraryToV8` (returning users on v7→v8 upgrade). Stations carry `primaryMuscles: ['Full Body']` (truthful for compound HYROX work — the 14-muscle taxonomy doesn't really map) and `equipment: 'Other'` (per-gym variation already handled by Batch 19's equipment instance string). Type=`hyrox-station`; the user can't create a 9th in v1.
+
+491. **`classifyType(name)` in `helpers.js`.** Keyword-based type prediction returning one of the 4 type values: `weight-training | running | hyrox-station | hyrox-round`. Mirrors `classifyRepRange` structure — ordered map, first match wins, defaults to `'weight-training'`. Order matters: composite-round terms ("hyrox round", "run + skierg") fire BEFORE station singletons ("skierg", "sled push") so "Run + SkiErg Round" classifies as hyrox-round even though "skierg" alone is hyrox-station. 22-keyword `TYPE_KEYWORD_MAP` covers the 8-station catalog + composite rounds + running keywords (easy run, treadmill, incline walk, easy bike, jog, etc.).
+
+492. **`defaultDimensionsForType(type)` in `helpers.js`.** Returns dimension preset per type: weight-training → `[weight+reps]`; running → `[distance+time+intensity?]`; hyrox-station fallback → `[time]` (catalog stations have locked dims, this fires only on a custom station — shouldn't happen in v1); hyrox-round → `[]` (round templates use `roundConfig`, not `dimensions`, per B38). Five axes: weight | reps | distance | time | intensity. `required: true` gates set/round completion; `unit` is descriptive — canonical conversion via §11.
+
+493. **`predictExerciseMeta` extended** (`helpers.js`). Now returns `{ primaryMuscles, equipment, type }` (was just `{primaryMuscles, equipment}`). Type-only fallback: when no muscle/equipment keyword fires but `classifyType(name)` returns a non-default type (e.g. "Easy Run" → 'running'), returns `{ primaryMuscles: [], equipment: 'Other', type }` so CreateExerciseModal still gets the type cue. `EXERCISE_KEYWORD_MAP` extended: 9 new HYROX-station entries at the top (specific-first ordering — must match before generic "row"/"press" fallbacks), and every existing entry gains `type: 'weight-training'` for explicitness.
+
+494. **`migrateLibraryToV8(library)` in `helpers.js`.** Idempotent v7→v8 library migration. Pass 1: every existing entry gains `type` (default 'weight-training') and `dimensions` (default per type). Pass 2: seeds the 8 HYROX stations IF their canonical ids aren't already present — a user who manually created an exercise with id `sta_skierg` predates v8 and wins. Returns same array reference when nothing changes (matches `migrateLibraryToV6` / `V7` pattern). Defensive against null/undefined/non-array inputs.
+
+495. **Persist version bumped `7 → 8` (`useStore.js`).** New `if (version < 8)` block appended to the migrate chain. `importData` chains `migrateLibraryToV8` after the v6 + v7 calls so pre-v8 backups land in the current schema. `buildBuiltInLibrary()` now emits `type: 'weight-training'` + `dimensions` on every lift entry, then concatenates the 8 HYROX stations via `HYROX_STATIONS.map(buildHyroxStationLibraryEntry)`. Fresh installs get the full 117-entry library (109 lifts + 8 stations) immediately on first load.
+
+496. **`hybrid-b37-sanity.mjs` at worktree root.** 124/124 pass. Covers: classifyType across 25 cases (4 types + edge cases — empty string, null, non-string defaults to weight-training); defaultDimensionsForType across 5 cases; predictExerciseMeta extension across 10 cases (existing behavior preserved + station/round type-only fallback + DB Shrug Traps regression check from Batch 26); HYROX_STATIONS catalog integrity (8 stations, each with id/name/dimensions/raceStandard, all `sta_*` convention); buildHyroxStationLibraryEntry shape; migrateLibraryToV8 across synthetic v7 input + idempotency (re-run returns same reference) + user-collision case (pre-existing custom `sta_skierg` preserved, only 7 new stations seeded) + defensive cases (null/undefined/non-array). Real-data spot check section gracefully skips when `workout-backup-2026-04-24.json` isn't in the worktree.
+
+497. **No UI surface this batch, no preview verification.** Per design — B37 is the data-layer foundation. UI work lands in B39 (library list type-axis filter + create modal) and B41+ (HYROX section preview, Start overlay, round logger, summary, hybrid finish). Build passes (`npx vite build --outDir /tmp/test-build` → 794.79 KB bundle / 214.28 KB gzipped, +9.18 KB / +2.23 KB vs Batch 36 — accounted for by the 22-entry TYPE_KEYWORD_MAP, the 9 new HYROX entries on EXERCISE_KEYWORD_MAP, the 8-station catalog, and the migrateLibraryToV8 + classifyType + defaultDimensionsForType helpers).
 
 ---
 
