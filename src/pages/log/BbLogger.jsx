@@ -957,14 +957,23 @@ function ExerciseItem({
   // ── Focus mode: when numpad is open, check if THIS exercise owns the active field.
   // If the numpad is open but the active field belongs to a different exercise,
   // this exercise should auto-collapse to save screen space.
-  // Batch 36: superset members are exempt — when a superset is live, all
-  // partner cards must stay mounted so the parent's cycle handler can focus
-  // their inputs as the user finishes each set.
+  // Batch 36: superset members behave differently from non-superset siblings.
+  //   - Non-superset, non-active-field-owner during numpad → return null
+  //     (existing behavior — entire card hides).
+  //   - Superset member, non-active-field-owner during numpad → STAY mounted
+  //     (so its weight/reps refs are reachable for cross-card focus) but
+  //     visually collapse the body via CSS so only the title row shows.
+  //     The active card still renders its full body, so the user sees ONE
+  //     exercise at a time, while the cycle's focusTargetSet can still
+  //     hand focus to a hidden partner's input (overflow:hidden + opacity:0
+  //     don't block programmatic .focus() the way display:none / visibility
+  //     do).
   const activeFieldKey = numpadCtx?.numpadConfig?.fieldKey || ''
   const ownsActiveField = activeFieldKey.includes(exercise.name)
   const numpadOpen = numpadCtx?.numpadIsOpen || false
-  const supersetExempt = !!(exercise.supersetGroupId && exercise.supersetActive)
-  const focusCollapsed = numpadOpen && !ownsActiveField && !supersetExempt
+  const supersetMember = !!(exercise.supersetGroupId && exercise.supersetActive)
+  const focusCollapsed = numpadOpen && !ownsActiveField
+  const bodyVisuallyHidden = focusCollapsed && supersetMember
 
   // Scope session history to the current workout type so that an exercise like
   // "Pull-ups" in Back Day and Full Body tracks PRs and notes independently.
@@ -1524,17 +1533,21 @@ function ExerciseItem({
     return ex?.notes || null
   })()
 
-  // When the numpad is open and another exercise owns the focus, hide this card entirely
-  if (focusCollapsed) return null
+  // When the numpad is open and another exercise owns the focus, hide this card
+  // entirely — UNLESS this exercise is part of an active superset, in which
+  // case we keep the card mounted (title row visible) and let the body
+  // collapse via CSS below so the cycle handler can still .focus() its
+  // inputs as a non-current partner.
+  if (focusCollapsed && !supersetMember) return null
 
-  // Batch 36 followup: completed superset members get an indigo left-border
-  // so adjacent group members visually read as a connected unit in the
-  // Completed section. Pairs with the supersetOrder tiebreak in the parent's
-  // sort so they cluster in correct cycle order.
+  // Batch 36 followup #3: completed superset members get a marker chip in
+  // the title row (`SS ✓`). The visual "these were done together" link is
+  // drawn at the parent render level via a cluster wrapper around adjacent
+  // members in the COMPLETED section — see the renderGroups loop below.
   const completedSupersetMember = !!(exercise.supersetGroupId && exercise.done)
 
   return (
-    <div className={`bg-card rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''} ${completedSupersetMember ? 'border-l-2 border-indigo-500/50' : ''}`}>
+    <div className={`bg-card rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''}`}>
 
       {/* ── Collapsed header ──────────────────────────────────────── */}
       <div className="flex items-center">
@@ -1671,7 +1684,17 @@ function ExerciseItem({
 
       {/* ── Expanded body ─────────────────────────────────────────────── */}
       {effectiveExpanded && (
-        <div className="px-4 pb-4 space-y-3">
+        <div
+          className="px-4 pb-4 space-y-3"
+          style={bodyVisuallyHidden ? {
+            maxHeight: 0,
+            paddingTop: 0,
+            paddingBottom: 0,
+            opacity: 0,
+            overflow: 'hidden',
+            pointerEvents: 'none',
+          } : undefined}
+        >
 
           {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine (wraps when tight) */}
           <div className="flex flex-wrap items-center gap-2">
@@ -3254,6 +3277,16 @@ export default function BbLogger() {
     // fallback the new SetRow's ref hadn't been registered yet by the time
     // rAF fires, so the focus call finds an undefined slot. Once registered,
     // .focus() succeeds; subsequent attempts are harmless no-ops.
+    //
+    // Critical: programmatic .focus() doesn't reliably fire React's synthetic
+    // onFocus event in React 18. The input's onFocus is what calls
+    // numpadCtx.openNumpad, which sets the numpad's active fieldKey — and
+    // that's what makes ownsActiveField flip to true on the target card,
+    // which in turn unhides the body via the bodyVisuallyHidden CSS gate.
+    // Without firing onFocus, the cycle target's body stays hidden behind
+    // CSS while DOM focus IS on its input. We invoke onFocus explicitly via
+    // React's internal __reactProps$ key as a belt-and-suspenders pair with
+    // .focus() so the numpad config updates synchronously with DOM focus.
     let landed = false
     let scrolled = false
     const tryFocus = () => {
@@ -3261,22 +3294,32 @@ export default function BbLogger() {
       const refs = exerciseFieldRefs.current[exId]
       const el = plateLoaded ? refs?.reps?.[setIdx] : refs?.weight?.[setIdx]
       if (el && typeof el.focus === 'function') {
+        // 1. DOM focus so subsequent typing goes here.
         el.focus({ preventScroll: true })
+        // 2. Fire React's onFocus handler explicitly — sets the numpad
+        //    config + flips ownsActiveField on this card.
+        const propsKey = Object.keys(el).find(k => k.startsWith('__reactProps'))
+        const onFocus = propsKey ? el[propsKey]?.onFocus : null
+        if (typeof onFocus === 'function') {
+          try { onFocus({}) } catch { /* ignore */ }
+        }
         if (document.activeElement === el) {
           landed = true
           // Smooth-scroll the target's card to the top of the viewport (offset
           // for the sticky header) so the user visually follows the cycle.
-          // Without this, focus jumps but the page stays put — hard to track
-          // which exercise is now active.
           if (!scrolled) {
             scrolled = true
-            const card = el.closest('.bg-card.rounded-2xl')
-            if (card) {
-              const headerEl = document.querySelector('.sticky.top-0.z-30')
-              const headerH = headerEl?.offsetHeight || 0
-              const cardTop = card.getBoundingClientRect().top + window.scrollY
-              window.scrollTo({ top: Math.max(0, cardTop - headerH - 8), behavior: 'smooth' })
-            }
+            // rAF after the body-visibility re-render so we measure post-shift
+            // coordinates, not the pre-shift layout.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              const card = el.closest('.bg-card.rounded-2xl')
+              if (card) {
+                const headerEl = document.querySelector('.sticky.top-0.z-30')
+                const headerH = headerEl?.offsetHeight || 0
+                const cardTop = card.getBoundingClientRect().top + window.scrollY
+                window.scrollTo({ top: Math.max(0, cardTop - headerH - 8), behavior: 'smooth' })
+              }
+            }))
           }
         }
       }
@@ -3432,6 +3475,23 @@ export default function BbLogger() {
       const completedAt = e.done ? (e.completedAt || stamp) : stamp
       return { ...e, done: true, completedAt, supersetActive: false }
     }))
+
+    // Close the numpad so focus mode releases all the partner cards.
+    // Without this, focusCollapsed stays true on the just-finished members
+    // (numpad still open + their supersetActive just flipped false → no
+    // longer supersetExempt), and the early-return at top of ExerciseItem
+    // hides them entirely — defeating the whole point of the cluster wrapper.
+    closeNumpad()
+
+    // Scroll back to the top so the just-finished superset cluster is in
+    // view at the top of the COMPLETED section. Use INSTANT scroll (not
+    // smooth) inside a setTimeout AFTER the numpad close + reorder animations
+    // settle — the numpad's hide + body input blur otherwise interrupts a
+    // smooth scroll mid-flight, leaving the user stuck at their previous
+    // scroll position.
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'instant' })
+    }, 60)
   }
 
   // ── Shared: build exercise data array ────────────────────────────────────
@@ -3910,6 +3970,58 @@ export default function BbLogger() {
       {/* ── Exercise groups ──────────────────────────────────────────────── */}
       <div className="px-4 pt-3 space-y-2">
         {renderGroups.map(group => {
+          const groupExes = group.exercises
+          // In the COMPLETED section, fold consecutive same-supersetGroupId
+          // members into a single cluster wrapper that visually links them.
+          // The completedExes sort ensures group members are adjacent + in
+          // cycle order, so this single-pass walk picks them up cleanly.
+          const renderItems = []
+          if (group.isCompleted) {
+            for (let i = 0; i < groupExes.length; i++) {
+              const ex = groupExes[i]
+              const lastItem = renderItems[renderItems.length - 1]
+              if (ex.supersetGroupId && lastItem?.type === 'cluster' && lastItem.groupId === ex.supersetGroupId) {
+                lastItem.exercises.push({ ex, idx: i })
+              } else if (ex.supersetGroupId) {
+                renderItems.push({ type: 'cluster', groupId: ex.supersetGroupId, exercises: [{ ex, idx: i }] })
+              } else {
+                renderItems.push({ type: 'single', ex, idx: i })
+              }
+            }
+          } else {
+            for (let i = 0; i < groupExes.length; i++) {
+              renderItems.push({ type: 'single', ex: groupExes[i], idx: i })
+            }
+          }
+
+          const exerciseCardProps = (ex, idx) => ({
+            key: ex.id,
+            exercise: ex,
+            lastSessionEx: lastExDataByName[ex.name],
+            allSessions: sessions,
+            workoutType: type,
+            onUpdate: updated => updateExercise(ex.id, updated),
+            theme,
+            isFirst: idx === 0,
+            isLast: idx === groupExes.length - 1,
+            onMoveUp: () => moveExercise(ex.id, 'up'),
+            onMoveDown: () => moveExercise(ex.id, 'down'),
+            reorderMode: false,
+            aggressivenessMultiplier: readiness?.aggressivenessMultiplier ?? 1,
+            suggestedMode: readiness?.suggestedMode ?? 'push',
+            fatigueSignals,
+            activeSessionId: startTimestamp.current || null,
+            currentGymId: gymId,
+            currentGymLabel,
+            onEditLibraryEntry: setEditingLibEntry,
+            allExercises: exercises,
+            onBeginSuperset: handleBeginSuperset,
+            onEndSuperset: handleEndSuperset,
+            onSupersetCycle: handleSupersetCycle,
+            onFinishSuperset: handleFinishSuperset,
+            registerFieldRef,
+          })
+
           return (
             <div key={group.label}>
               {/* Hide section labels when numpad is open to maximize space */}
@@ -3920,36 +4032,25 @@ export default function BbLogger() {
                 />
               )}
               <div className="space-y-2">
-                {group.exercises.map((ex, idx) => {
-                  const groupExes = group.exercises
+                {renderItems.map(item => {
+                  if (item.type === 'single') {
+                    return <ExerciseItem {...exerciseCardProps(item.ex, item.idx)} />
+                  }
+                  // Cluster: indigo left-bordered container with a small
+                  // "↔ Superset" label so the visual reads as ONE unit.
                   return (
-                    <ExerciseItem
-                      key={ex.id}
-                      exercise={ex}
-                      lastSessionEx={lastExDataByName[ex.name]}
-                      allSessions={sessions}
-                      workoutType={type}
-                      onUpdate={updated => updateExercise(ex.id, updated)}
-                      theme={theme}
-                      isFirst={idx === 0}
-                      isLast={idx === groupExes.length - 1}
-                      onMoveUp={() => moveExercise(ex.id, 'up')}
-                      onMoveDown={() => moveExercise(ex.id, 'down')}
-                      reorderMode={false}
-                      aggressivenessMultiplier={readiness?.aggressivenessMultiplier ?? 1}
-                      suggestedMode={readiness?.suggestedMode ?? 'push'}
-                      fatigueSignals={fatigueSignals}
-                      activeSessionId={startTimestamp.current || null}
-                      currentGymId={gymId}
-                      currentGymLabel={currentGymLabel}
-                      onEditLibraryEntry={setEditingLibEntry}
-                      allExercises={exercises}
-                      onBeginSuperset={handleBeginSuperset}
-                      onEndSuperset={handleEndSuperset}
-                      onSupersetCycle={handleSupersetCycle}
-                      onFinishSuperset={handleFinishSuperset}
-                      registerFieldRef={registerFieldRef}
-                    />
+                    <div
+                      key={`cluster-${item.groupId}`}
+                      className="rounded-xl border border-indigo-500/40 bg-indigo-500/[0.04] p-2 space-y-2"
+                    >
+                      <div className="flex items-center gap-1.5 px-1 pt-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-300">
+                        <span aria-hidden>↔</span>
+                        <span>Superset · {item.exercises.length} exercises</span>
+                      </div>
+                      {item.exercises.map(({ ex, idx }) => (
+                        <ExerciseItem {...exerciseCardProps(ex, idx)} />
+                      ))}
+                    </div>
                   )
                 })}
               </div>
