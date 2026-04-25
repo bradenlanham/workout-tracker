@@ -923,7 +923,7 @@ function ExerciseItem({
   onBeginSuperset = null,  // (triggerExId, partnerIds) => void
   onEndSuperset = null,    // (groupId) => void
   onSupersetCycle = null,  // (currentExId) => void — reps-Next advances to next partner
-  onSupersetDone = null,   // (currentExId) => void — markDone replacement in superset mode
+  onFinishSuperset = null, // (currentExId) => void — finishes the WHOLE group at once (decisive done in superset mode)
   registerFieldRef = null, // (exId, setIdx, field, el) => void — parent ref map for cross-exercise focus
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -1527,8 +1527,14 @@ function ExerciseItem({
   // When the numpad is open and another exercise owns the focus, hide this card entirely
   if (focusCollapsed) return null
 
+  // Batch 36 followup: completed superset members get an indigo left-border
+  // so adjacent group members visually read as a connected unit in the
+  // Completed section. Pairs with the supersetOrder tiebreak in the parent's
+  // sort so they cluster in correct cycle order.
+  const completedSupersetMember = !!(exercise.supersetGroupId && exercise.done)
+
   return (
-    <div className={`bg-card rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''}`}>
+    <div className={`bg-card rounded-2xl overflow-hidden ${exercise.done ? 'opacity-80' : ''} ${completedSupersetMember ? 'border-l-2 border-indigo-500/50' : ''}`}>
 
       {/* ── Collapsed header ──────────────────────────────────────── */}
       <div className="flex items-center">
@@ -1550,6 +1556,20 @@ function ExerciseItem({
             <div className="flex items-center gap-2 flex-wrap">
               {exercise.done && <span className="text-emerald-400 text-lg leading-none">✓</span>}
               <p className="font-semibold text-base truncate">{exercise.name}</p>
+              {/* Batch 36 followup: SS ✓ marker on completed-as-superset cards
+                  so the user sees at a glance that this exercise was part of a
+                  finished group. Renders only when the card is collapsed +
+                  done; expanded cards still show the live SS chip in the
+                  toolbar row. */}
+              {completedSupersetMember && (
+                <span
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 shrink-0"
+                  title="Completed as part of a superset"
+                >
+                  <span>SS</span>
+                  <span aria-hidden>✓</span>
+                </span>
+              )}
               {hasPR && !exercise.done && <span className="text-amber-400 text-sm">🏆</span>}
               {expanded && !exercise.done && settings.showRecPill && (
                 editingRec ? (
@@ -1975,7 +1995,7 @@ function ExerciseItem({
                     : () => addSet(true)
                   }
                   onDone={inActiveSuperset
-                    ? () => onSupersetDone?.(exercise.id)
+                    ? () => onFinishSuperset?.(exercise.id)
                     : stableMarkDone
                   }
                   setIndex={i}
@@ -2036,16 +2056,27 @@ function ExerciseItem({
           )}
 
           {!exercise.done ? (
-            <button
-              type="button"
-              onClick={inActiveSuperset
-                ? () => onSupersetDone?.(exercise.id)
-                : markDone
-              }
-              className="w-full py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-sm font-bold flex items-center justify-center gap-2"
-            >
-              <span>✓</span> Mark as Done
-            </button>
+            inActiveSuperset ? (
+              // In a live superset, the per-card finish action ends the WHOLE
+              // group at once and snaps every member to Completed together.
+              // Indigo styling matches the SS chip palette so the visual
+              // language is consistent.
+              <button
+                type="button"
+                onClick={() => onFinishSuperset?.(exercise.id)}
+                className="w-full py-3 rounded-xl bg-indigo-500/20 border border-indigo-500/50 text-indigo-200 text-sm font-bold flex items-center justify-center gap-2"
+              >
+                <span>↔</span> Finish superset
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={markDone}
+                className="w-full py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-sm font-bold flex items-center justify-center gap-2"
+              >
+                <span>✓</span> Mark as Done
+              </button>
+            )
           ) : (
             <button
               type="button"
@@ -3370,39 +3401,37 @@ export default function BbLogger() {
     focusTargetSet(next.id, nextTargetSetIdx, !!next.plateLoaded)
   }
 
-  // Mark the exercise done AND, if it was part of an active superset, advance
-  // the cycle to the next non-done member. If <2 non-done members remain
-  // after the done flip, clear supersetActive on all group members (auto-end).
-  const handleSupersetDone = (currentExId) => {
+  // Finish the superset as a unit: mark EVERY member of the group as done
+  // with the same completedAt (so they cluster in the Completed section) and
+  // clear supersetActive. This is the single decisive "I'm done" action when
+  // a superset is live — bound to both the numpad Done button and the
+  // per-card "Finish superset" CTA in superset mode. For a non-superset
+  // exercise the call falls back to a single-exercise mark-done.
+  const handleFinishSuperset = (currentExId) => {
     if (!currentExId) return
     const cur = exercisesRef.current
     const currentEx = cur.find(e => e.id === currentExId)
     if (!currentEx) return
     const groupId = currentEx.supersetGroupId
-    const isActiveSuperset = !!(groupId && currentEx.supersetActive)
+    const stamp = Date.now()
 
-    setExercises(prev => prev.map(e =>
-      e.id === currentExId ? { ...e, done: true, completedAt: Date.now() } : e
-    ))
-
-    if (!isActiveSuperset) return
-
-    // Count partners that will remain after marking done. If <2, auto-end the
-    // superset. Otherwise, advance the cycle to the next non-done partner.
-    const remaining = cur
-      .filter(e => e.supersetGroupId === groupId && e.supersetActive && !e.done && e.id !== currentExId)
-    if (remaining.length < 1) {
-      // No partners left to cycle through — clear active flag on all members.
+    if (!groupId) {
+      // Plain mark-done — caller is using this handler outside an active
+      // superset (e.g. legacy CTA wiring). Same shape as the original markDone.
       setExercises(prev => prev.map(e =>
-        e.supersetGroupId === groupId ? { ...e, supersetActive: false } : e
+        e.id === currentExId ? { ...e, done: true, completedAt: stamp } : e
       ))
       return
     }
-    // rAF-defer the advance so React commits the done-flip first; the cycle
-    // handler then reads fresh state via exercisesRef.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => handleSupersetCycle(currentExId))
-    })
+
+    setExercises(prev => prev.map(e => {
+      if (e.supersetGroupId !== groupId) return e
+      // Preserve already-finalized members' original timestamps so the user's
+      // earlier individual completions stay accurate. Members still in
+      // progress get the shared `stamp` so they cluster together.
+      const completedAt = e.done ? (e.completedAt || stamp) : stamp
+      return { ...e, done: true, completedAt, supersetActive: false }
+    }))
   }
 
   // ── Shared: build exercise data array ────────────────────────────────────
@@ -3739,7 +3768,19 @@ export default function BbLogger() {
   // (warmups and nested drops don't inflate the visible count).
   const loggedSets    = exercises.reduce((t, ex) =>
     t + ex.sets.filter(s => s.type === 'working' && (s.reps || s.weight)).length, 0)
-  const completedExes = exercises.filter(ex => ex.done).sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0))
+  // Sort completed exercises by completedAt; tiebreak by supersetOrder so
+  // members of a finished superset (which share the same completedAt stamp
+  // by handleFinishSuperset's design) render adjacently in cycle order. The
+  // indigo left-border on each member then reads as a connected block.
+  const completedExes = exercises.filter(ex => ex.done).sort((a, b) => {
+    const ta = a.completedAt || 0
+    const tb = b.completedAt || 0
+    if (ta !== tb) return ta - tb
+    if (a.supersetGroupId && a.supersetGroupId === b.supersetGroupId) {
+      return (a.supersetOrder ?? 0) - (b.supersetOrder ?? 0)
+    }
+    return 0
+  })
   const pendingExes   = exercises.filter(ex => !ex.done)
 
   const formatElapsed = (secs) => {
@@ -3906,7 +3947,7 @@ export default function BbLogger() {
                       onBeginSuperset={handleBeginSuperset}
                       onEndSuperset={handleEndSuperset}
                       onSupersetCycle={handleSupersetCycle}
-                      onSupersetDone={handleSupersetDone}
+                      onFinishSuperset={handleFinishSuperset}
                       registerFieldRef={registerFieldRef}
                     />
                   )
