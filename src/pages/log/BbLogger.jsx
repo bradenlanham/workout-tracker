@@ -3224,13 +3224,30 @@ export default function BbLogger() {
     // rAF fires, so the focus call finds an undefined slot. Once registered,
     // .focus() succeeds; subsequent attempts are harmless no-ops.
     let landed = false
+    let scrolled = false
     const tryFocus = () => {
       if (landed) return
       const refs = exerciseFieldRefs.current[exId]
       const el = plateLoaded ? refs?.reps?.[setIdx] : refs?.weight?.[setIdx]
       if (el && typeof el.focus === 'function') {
         el.focus({ preventScroll: true })
-        if (document.activeElement === el) landed = true
+        if (document.activeElement === el) {
+          landed = true
+          // Smooth-scroll the target's card to the top of the viewport (offset
+          // for the sticky header) so the user visually follows the cycle.
+          // Without this, focus jumps but the page stays put — hard to track
+          // which exercise is now active.
+          if (!scrolled) {
+            scrolled = true
+            const card = el.closest('.bg-card.rounded-2xl')
+            if (card) {
+              const headerEl = document.querySelector('.sticky.top-0.z-30')
+              const headerH = headerEl?.offsetHeight || 0
+              const cardTop = card.getBoundingClientRect().top + window.scrollY
+              window.scrollTo({ top: Math.max(0, cardTop - headerH - 8), behavior: 'smooth' })
+            }
+          }
+        }
       }
     }
     requestAnimationFrame(() => requestAnimationFrame(tryFocus))
