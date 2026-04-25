@@ -490,6 +490,31 @@ const useStore = create(
         return { ok: true, split: newSplit, libraryAdded: added, errors }
       },
 
+      // Like addSplit, but also spawns library entries for any HYROX-round
+      // / running / weight-training entries in the split that don't already
+      // exist in the library. Used by SplitCanvas's create path so a split
+      // built from a template (like HYROX Hybrid) gets its supporting
+      // library entries auto-created when the user taps Save. Symmetric to
+      // importSplitWithLibrary but takes a raw split object directly
+      // instead of the file-import wrapper. Returns the created split (so
+      // callers that need the id for activate-on-save still work).
+      addSplitWithLibrary: (splitData) => {
+        const lib = get().exerciseLibrary
+        const { toCreate } = collectLibraryAdditionsFromSplit(splitData, lib)
+        const addEntry = get().addExerciseToLibrary
+        for (const entry of toCreate) {
+          try {
+            addEntry(entry)
+          } catch (e) {
+            // Per-entry failures are non-fatal — keep going so the split
+            // still saves even if one library entry hits the strict v3.2.1
+            // validator. The user can clean up via /backfill or /exercises.
+            console.warn(`addExerciseToLibrary("${entry?.name}"): ${e.message}`)
+          }
+        }
+        return get().addSplit(splitData)
+      },
+
       updateSplit: (id, updates) => {
         set(state => ({
           splits: state.splits.map(s => s.id === id ? { ...s, ...updates } : s),

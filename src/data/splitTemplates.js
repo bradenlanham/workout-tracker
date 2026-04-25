@@ -60,7 +60,204 @@ const PPL_WORKOUTS = [
   },
 ]
 
+// HYROX Hybrid template — Brooke's 6-day mixed lift + HYROX program. Object-
+// shape exercises with `type` and (for HYROX rounds) `roundConfig` flow
+// through `loadTemplateForDraft`'s deep-clone untouched. When the user saves
+// the resulting split via SplitCanvas, the `addSplitWithLibrary` store
+// action spawns the necessary library entries (3 hyrox-round templates +
+// 4 running entries) so the HYROX section preview, round logger, and
+// summary all resolve correctly.
+const HYROX_HYBRID_WORKOUTS = [
+  {
+    id: 'hyx_monday',
+    name: 'Glutes & Light Run',
+    emoji: '🍑',
+    sections: [
+      {
+        label: 'Lift',
+        exercises: [
+          { name: 'Hip Abductor Machine', type: 'weight-training', rec: { sets: 4, reps: '10–10–10', note: 'Drop set' } },
+          { name: 'Hip Thrust Machine', type: 'weight-training', rec: { sets: 4, reps: '20, 18, 15, 12', note: 'Drop weight each set' } },
+          { name: 'Reverse Hack Squat', type: 'weight-training', rec: { sets: 4, reps: 12 } },
+          { name: 'Smith Machine RDL', type: 'weight-training', rec: { sets: 4, reps: 12 } },
+          { name: 'Dumbbell Bulgarian Split Squat', type: 'weight-training', rec: { sets: 4, reps: '15 each leg' } },
+          { name: 'Donkey Kickbacks', type: 'weight-training', rec: { sets: 4, reps: 15 } },
+        ],
+      },
+      {
+        label: 'HYROX',
+        exercises: [
+          { name: 'Easy Run', type: 'running', rec: { note: 'Choose 1 — 10–15 min, conversational pace' } },
+          { name: '200m Repeats', type: 'running', rec: { sets: 5, reps: '200m (~⅛ mi)', note: 'Choose 1 — moderate effort, 60s rest. Not a sprint.' } },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'hyx_tuesday',
+    name: 'Shoulders & HYROX Intervals',
+    emoji: '🏋️‍♀️',
+    sections: [
+      {
+        label: 'Lift',
+        exercises: [
+          { name: 'Cable Lateral Raise', type: 'weight-training', rec: { sets: 3, reps: 20, note: 'Warm-up' } },
+          { name: 'Shoulder Press Machine', type: 'weight-training', rec: { sets: 4, reps: 12, note: 'Machine or DB' } },
+          { name: 'DB Lateral Raise', type: 'weight-training', rec: { sets: 3, reps: '10–10–10', note: 'Drop set, 3 rounds' } },
+          { name: 'Incline Bench Front Raise', type: 'weight-training', rec: { sets: 4, reps: 12, note: '45° incline' } },
+          { name: 'Reverse Flies', type: 'weight-training', rec: { sets: 4, reps: 15 } },
+        ],
+      },
+      {
+        label: 'HYROX',
+        exercises: [
+          {
+            name: 'HYROX Run + SkiErg Round',
+            type: 'hyrox-round',
+            rec: { sets: 4, reps: '800m run (~½ mi) + 500m SkiErg', note: '4 rounds. 2 min rest between rounds.' },
+            roundConfig: {
+              runDimensions: { distance: { default: 800, unit: 'm' } },
+              stationId: 'sta_skierg',
+              defaultRoundCount: 4,
+              defaultRestSeconds: 120,
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'hyx_wednesday',
+    name: 'Hamstrings, Glutes & Recovery',
+    emoji: '🦵',
+    sections: [
+      {
+        label: 'Lift',
+        exercises: [
+          { name: 'Walking Lunges', type: 'weight-training', rec: { reps: '60 total steps', note: 'Bodyweight or weighted' } },
+          { name: 'Seated Hamstring Curl', type: 'weight-training', rec: { sets: 4, reps: '10–10–10', note: 'Drop set' } },
+          { name: 'Barbell RDL', type: 'weight-training', rec: { sets: 4, reps: 12 } },
+          { name: 'Lying Hamstring Curl', type: 'weight-training', rec: { sets: 4, reps: '20, 18, 15, 12', note: 'Drop weight each set' } },
+          { name: 'Hip Thrust', type: 'weight-training', rec: { sets: 4, reps: 15 } },
+          { name: 'Glute Kickbacks', type: 'weight-training', rec: { sets: 4, reps: '10–10–10', note: 'Drop set' } },
+        ],
+      },
+      {
+        label: 'HYROX',
+        exercises: [
+          { name: 'Incline Walk or Easy Bike', type: 'running', rec: { note: '10–15 min — keep this EASY' } },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'hyx_thursday',
+    name: 'Active Rest & Light Skill',
+    emoji: '🚶‍♀️',
+    sections: [
+      {
+        label: 'Lift',
+        exercises: [
+          { name: 'Farmers Carry', type: 'hyrox-station', rec: { note: 'Optional, light only — recovery, no intensity.' } },
+        ],
+      },
+      {
+        label: 'HYROX',
+        exercises: [
+          { name: 'Light Movement', type: 'running', rec: { note: '20–30 min walk, incline, or bike' } },
+          { name: 'Sled Push', type: 'hyrox-station', rec: { note: 'Optional, light only — technique focus' } },
+          { name: 'Sled Pull', type: 'hyrox-station', rec: { note: 'Optional, light only — technique focus' } },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'hyx_friday',
+    name: 'Back & HYROX Simulation',
+    emoji: '🔥',
+    sections: [
+      {
+        label: 'Lift',
+        exercises: [
+          { name: 'Close Grip Triangle Row', type: 'weight-training', rec: { sets: 4, reps: 15 } },
+          { name: 'Seated Close Grip Triangle Row', type: 'weight-training', rec: { sets: 4, reps: 15 } },
+          { name: 'Pull-ups', type: 'weight-training', rec: { sets: 4, reps: 15, note: 'Assisted if needed' } },
+          { name: 'Standing DB Row', type: 'weight-training', rec: { sets: 4, reps: 15 } },
+          { name: 'Lat Pulldown', type: 'weight-training', rec: { sets: 4, reps: '10–10–10', note: 'Open grip drop set' } },
+        ],
+      },
+      {
+        label: 'HYROX',
+        exercises: [
+          {
+            name: 'HYROX Simulation Round',
+            type: 'hyrox-round',
+            rec: { sets: '4 → 8 rounds', reps: '1000m run (~⅝ mi) + 1 station', note: 'Wks 1–3: 4 rounds. Wks 4–6: 5–6 rounds. By Aug: 6–8 rounds. Station rotates weekly.' },
+            roundConfig: {
+              runDimensions: { distance: { default: 1000, unit: 'm' } },
+              rotationPool: [
+                'sta_skierg',
+                'sta_row',
+                'sta_sled_push',
+                'sta_sled_pull',
+                'sta_farmers',
+                'sta_sandbag_lunges',
+                'sta_wall_balls',
+              ],
+              defaultRoundCount: 4,
+              defaultRestSeconds: 90,
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'hyx_saturday',
+    name: 'Heavy Glutes & Finisher',
+    emoji: '💎',
+    sections: [
+      {
+        label: 'Lift',
+        exercises: [
+          { name: 'Barbell Hip Thrust', type: 'weight-training', rec: { sets: 4, reps: 10, note: 'Heavy' } },
+          { name: 'Hyperextensions', type: 'weight-training', rec: { sets: 4, reps: '15 + 10 BW', note: '15 weighted + 10 bodyweight' } },
+          { name: 'Smith Donkey Kickbacks', type: 'weight-training', rec: { sets: 4, reps: 15 } },
+          { name: 'Single-Leg Hip Thrust Machine', type: 'weight-training', rec: { sets: 4, reps: '15 each leg' } },
+          { name: 'Cable Kickbacks', type: 'weight-training', rec: { sets: 4, reps: '12 + 12', note: 'Standing + incline' } },
+        ],
+      },
+      {
+        label: 'HYROX',
+        exercises: [
+          {
+            name: 'Wall Balls + 200m Run Round',
+            type: 'hyrox-round',
+            rec: { sets: '2–3 rounds', reps: '15–20 wall balls + 200m run (~⅛ mi)', note: 'Keep controlled. Do NOT turn this into a cardio day.' },
+            roundConfig: {
+              runDimensions: { distance: { default: 200, unit: 'm' } },
+              stationId: 'sta_wall_balls',
+              defaultRoundCount: 3,
+              defaultRestSeconds: 60,
+            },
+          },
+        ],
+      },
+    ],
+  },
+]
+
 export const SPLIT_TEMPLATES = [
+  {
+    id: 'tmpl_hyrox_hybrid',
+    name: 'HYROX Hybrid',
+    emoji: '🔥',
+    description: 'Brooke\'s 6-day program. Lift sessions paired with HYROX intervals + simulation rounds. Rest Sunday.',
+    cycleLengthLabel: '7-day',
+    previewEmojis: ['rest', '🍑', '🏋️‍♀️', '🦵', '🚶‍♀️', '🔥', '💎'],
+    workouts: HYROX_HYBRID_WORKOUTS,
+    rotation: ['rest', 'hyx_monday', 'hyx_tuesday', 'hyx_wednesday', 'hyx_thursday', 'hyx_friday', 'hyx_saturday'],
+  },
   {
     id: 'tmpl_bam',
     name: "BamBam's Blueprint",
@@ -241,7 +438,9 @@ export const SPLIT_TEMPLATES = [
 
 // Returns a deep-cloned partial split shape ready to seed `splitDraft`.
 // New object refs all the way down so the template itself is never mutated
-// as the user edits.
+// as the user edits. Object-shape exercises (HYROX rounds carrying
+// roundConfig, running entries with rec objects) are JSON-cloned so a user
+// editing roundConfig in one draft doesn't mutate the template literal.
 export function loadTemplateForDraft(templateId) {
   const t = SPLIT_TEMPLATES.find(tm => tm.id === templateId)
   if (!t) return null
@@ -252,7 +451,9 @@ export function loadTemplateForDraft(templateId) {
       ...w,
       sections: (w.sections || []).map(s => ({
         ...s,
-        exercises: [...(s.exercises || [])],
+        exercises: (s.exercises || []).map(e =>
+          typeof e === 'string' ? e : JSON.parse(JSON.stringify(e))
+        ),
       })),
     })),
     rotation: [...t.rotation],

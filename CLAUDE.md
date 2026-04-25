@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 45 — Hybrid Training v1: HYROX session summary + comparison chart + branching CTA)
+> Last updated: April 25, 2026 (Batch 45 followup — HYROX Hybrid as a starting-point template + addSplitWithLibrary)
 
 ## Rules for Claude
 
@@ -2153,6 +2153,33 @@ Ninth batch of the Hybrid Training v1 workstream and the **fifth user-visible HY
     - `hybrid-b45-sanity.mjs` (new, worktree root) — 69-assertion sanity script.
 
 574. **Build.** `npx vite build --outDir /tmp/test-build` → 871.91 KB bundle / 234.64 KB gzipped (+16.32 KB / +4.15 KB vs Batch 44, accounted for by the 5 new helpers (~6 KB) + HyroxSessionSummary component including inline SVG chart + cold-start sidebar + round breakdown table (~10 KB) + route registration (~0.3 KB)).
+
+### Batch 45 followup (April 25, 2026) — HYROX Hybrid as a starting-point template + addSplitWithLibrary
+
+User-requested: ship Brooke's HYROX program as a discoverable template in the split chooser so any user (including Brooke) can pick it from `+ → New split → How do you want to start?`. Direct-to-main since the change is purely additive — new template entry + new store action + minor `normalizeExerciseEntry` extension. No persist version bump, no schema break.
+
+575. **`HYROX_HYBRID_WORKOUTS` + new template entry in `src/data/splitTemplates.js`.** All 6 Brooke workouts encoded inline with object-shape exercises carrying `type` + structured `rec` + (for HYROX-round entries) `roundConfig`. Tuesday's "HYROX Run + SkiErg Round" carries `{stationId: 'sta_skierg', runDistance: 800m, rounds: 4, rest: 120s}`. Friday's "HYROX Simulation Round" uses a 7-station rotation pool + 1000m run + 4 rounds + 90s rest. Saturday's "Wall Balls + 200m Run Round" carries `{stationId: 'sta_wall_balls', runDistance: 200m, rounds: 3, rest: 60s}`. Workout ids are namespaced `hyx_*` so they don't collide with BamBam's Blueprint or any other template. The template entry is the **first** in `SPLIT_TEMPLATES` so it appears at the top of the chooser. Rotation: rest (Sun) → Mon-Sat workouts.
+
+576. **`loadTemplateForDraft` deep-clones object exercises (`splitTemplates.js`).** Pre-followup the helper did a shallow array copy (`[...(s.exercises || [])]`) which preserved object references — a user editing a HYROX-round entry's roundConfig in one draft would mutate the template literal. Now wraps each non-string exercise in `JSON.parse(JSON.stringify(e))` so the source template is fully isolated.
+
+577. **`normalizeExerciseEntry` extended to preserve `type` + `roundConfig` (`helpers.js`).** Pre-followup the helper returned either a bare string or `{name, rec}`, dropping any other fields. That stripped the metadata `collectLibraryAdditionsFromSplit` needs to detect HYROX-round / running entries on save. Now: when `type` (non-empty string) or `roundConfig` (object) is present alongside the name, returns `{name, [rec], [type], [roundConfig]}` with the optional fields conditionally included. Bare-string fast path preserved for the common case (no rec, no type, no roundConfig). UI surfaces (SplitCanvas / WorkoutEditSheet / formatRec) ignore the extra fields — they only render name + rec — so they're zero-cost metadata that rides along until the save path needs them. Migration-18a-sanity + hybrid-b40-sanity both still pass (no regression).
+
+578. **`addSplitWithLibrary(splitData)` store action (`useStore.js`).** Symmetric to the existing `importSplitWithLibrary(data)` (Batch 40) but takes a raw split object directly instead of the file-import wrapper. Walks `collectLibraryAdditionsFromSplit` to find HYROX-round / running entries that need library entries, fires `addExerciseToLibrary` for each (per-entry try/catch so a single bad exercise doesn't abort the whole save), then calls the existing `addSplit`. Returns the created split so callers that need the id for activate-on-save still work.
+
+579. **SplitCanvas's create path uses `addSplitWithLibrary`** (`SplitCanvas.jsx`). Edit path still uses `updateSplit` (the user is modifying an existing split, no new library entries should be implicitly created — they create them explicitly via the WorkoutEditSheet picker). Only the create path goes through library spawn so template-derived splits and any HYROX-round / running entries the user typed manually get their library entries auto-spawned on Save.
+
+580. **`hyrox-hybrid-template-sanity.mjs` at worktree root.** 61/61 pass. Covers: template registration (HYROX Hybrid first in chooser, name/emoji/cycle correct, 6 workouts, 7-day rotation starting with Sunday rest); per-workout section + exercise count integrity (Mon: 6+2, Tue: 5+1, Wed: 6+1, Thu: 1+3, Fri: 5+1, Sat: 5+1); HYROX-round entries carry valid roundConfig with correct stationId / rotationPool / runDistance / round count / rest; loadTemplateForDraft deep-clones object exercises so source isn't mutated; collectLibraryAdditionsFromSplit against the deep-cloned draft against a HYROX-only seeded library yields exactly 3 hyrox-round + 4 running entries to create + 0 errors (Farmers Carry / Sled Push / Sled Pull resolve to seeded catalog and are correctly NOT in toCreate); roundConfig fields preserved end-to-end through draft.
+
+581. **Live preview verified** (port 5180, mobile 375×812, fresh install). Five scenarios pass: (a) `/splits/new/start` chooser renders HYROX Hybrid card at the top with 7-day badge + Brooke description + rest-day "R" rotation chip preview; (b) tapping the card seeds `splitDraft` with all 6 workouts including roundConfig metadata, navigates to `/splits/new`; (c) SplitCanvas renders Glutes & Light Run (8 exercises), Shoulders & HYROX Intervals (6), Hamstrings (7), Active Rest (4), Back & HYROX Simulation, Heavy Glutes & Finisher; (d) tap `Save & Activate` → split commits, library grows from 98 → 128 entries (8 stations + 3 newly-spawned hyrox-rounds + 4 newly-spawned running + 25 needsTagging weight-training), HYROX Hybrid is now the active split, splitDraft cleared, navigated to `/splits`; (e) navigate to `/log/bb/hyx_tuesday` → workout view renders 5 Lift exercise cards (Cable Lateral Raise / Shoulder Press Machine / DB Lateral Raise / Incline Bench Front Raise / Reverse Flies) + the immersive yellow HYROX section preview card with `INTERVALS · 4 ROUNDS / HYROX Run + SkiErg Round / RUN LEG 800m / STATION SkiErg / REST 2:00 / Start HYROX →` button. Zero new console errors — only pre-existing `<ExerciseItem>` key-via-spread warnings from BbLogger.jsx.
+
+582. **Files modified.**
+    - `src/data/splitTemplates.js` — HYROX_HYBRID_WORKOUTS + first SPLIT_TEMPLATES entry + deep-clone in loadTemplateForDraft.
+    - `src/utils/helpers.js` — normalizeExerciseEntry extended for type + roundConfig.
+    - `src/store/useStore.js` — addSplitWithLibrary action.
+    - `src/pages/SplitCanvas.jsx` — handleSave create path uses addSplitWithLibrary.
+    - `hyrox-hybrid-template-sanity.mjs` (new) — 61-assertion sanity.
+
+583. **Build.** `npx vite build --outDir /tmp/test-build` → 877.37 KB bundle / 236.07 KB gzipped (+5.46 KB / +1.43 KB vs Batch 45, all in the inline HYROX_HYBRID_WORKOUTS template data + the addSplitWithLibrary action + normalizeExerciseEntry extension).
 
 ---
 

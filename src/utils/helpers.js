@@ -194,11 +194,22 @@ export function normalizeExerciseEntry(ex) {
     return null
   }
 
-  // Preserve any non-empty rec shape — formatRec handles the rendering.
-  if (ex.rec !== null && ex.rec !== undefined && ex.rec !== '') {
-    return { name, rec: ex.rec }
-  }
-  return name
+  // Build the smallest renderable shape, but preserve any HYROX-related
+  // fields (`type`, `roundConfig`) so library-spawn paths like
+  // collectLibraryAdditionsFromSplit can detect hyrox-round / running /
+  // hyrox-station entries when SplitCanvas saves a template-derived split.
+  // The UI surfaces (SplitCanvas / WorkoutEditSheet / formatRec) ignore
+  // these fields — they only render name + rec — so they're zero-cost
+  // metadata that rides along until the save path needs them.
+  const hasRec = ex.rec !== null && ex.rec !== undefined && ex.rec !== ''
+  const hasType = typeof ex.type === 'string' && ex.type.length > 0
+  const hasRoundConfig = ex.roundConfig && typeof ex.roundConfig === 'object'
+  if (!hasRec && !hasType && !hasRoundConfig) return name
+  const out = { name }
+  if (hasRec) out.rec = ex.rec
+  if (hasType) out.type = ex.type
+  if (hasRoundConfig) out.roundConfig = ex.roundConfig
+  return out
 }
 
 // ── BB helpers ───────────────────────────────────────────────────────────────

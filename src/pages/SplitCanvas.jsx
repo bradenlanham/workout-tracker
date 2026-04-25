@@ -38,6 +38,7 @@ export default function SplitCanvas() {
   const splits          = useStore(s => s.splits)
   const activeSplitId   = useStore(s => s.activeSplitId)
   const addSplit        = useStore(s => s.addSplit)
+  const addSplitWithLibrary = useStore(s => s.addSplitWithLibrary)
   const updateSplit     = useStore(s => s.updateSplit)
   const deleteSplit     = useStore(s => s.deleteSplit)
   const setActiveSplit  = useStore(s => s.setActiveSplit)
@@ -277,7 +278,11 @@ export default function SplitCanvas() {
       updateSplit(existingSplit.id, splitData)
       if (activateOnSave && activeSplitId !== existingSplit.id) setActiveSplit(existingSplit.id)
     } else {
-      const created = addSplit(splitData)
+      // Use addSplitWithLibrary so any HYROX-round / running / new
+      // weight-training entries spawn library rows on save. Templates like
+      // HYROX Hybrid rely on this to make the round logger + section
+      // preview resolve once the split is active.
+      const created = addSplitWithLibrary(splitData)
       if (activateOnSave && created?.id) setActiveSplit(created.id)
     }
     clearSplitDraft()
