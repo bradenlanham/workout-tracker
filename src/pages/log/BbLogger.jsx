@@ -11,12 +11,14 @@ import {
   shouldPromptGymTag, isExerciseAvailableAtGym, isExerciseHiddenAtGym,
   toLocalDateStr, isMachineEquipment, recommendPlatesForWeight,
   classifyRepRange, inferRepRange,
+  getMostRecentSupersetPartners,
 } from '../../utils/helpers'
 import { getTheme } from '../../theme'
 import ShareCard from './ShareCard'
 import ExerciseEditSheet from '../../components/ExerciseEditSheet'
 import CustomNumpad from '../../components/CustomNumpad'
 import CreateExerciseModal from '../../components/CreateExerciseModal'
+import SupersetSheet from '../../components/SupersetSheet'
 import { RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt } from './Recommendation'
 import ReadinessCheckIn from './ReadinessCheckIn'
 import SessionGymPill from './SessionGymPill'
@@ -47,6 +49,19 @@ const circled = n => n >= 1 && n <= 9 ? CIRCLED[n - 1] : `×${n}`
 const emptyPlates = () => ({ 100: 0, 45: 0, 35: 0, 25: 0, 10: 0, 5: 0, 2.5: 0 })
 const calcTotal = (plates, barWeight, multiplier = 2) =>
   Object.entries(plates).reduce((s, [w, c]) => s + Number(w) * c * multiplier, 0) + barWeight
+
+// Batch 36 — empty-set factory used by the superset cycle + handleBeginSuperset.
+// Always type:'working' per Batch 28 (set 2+ is always working). Respects
+// plate-loaded state by seeding plates/barWeight/multiplier from the exercise.
+const buildEmptySetFor = (exercise) => {
+  const newSet = { type: 'working', reps: '', weight: '' }
+  if (exercise?.plateLoaded) {
+    newSet.plates = emptyPlates()
+    newSet.barWeight = exercise.barDefault ?? 45
+    newSet.plateMultiplier = exercise.plateMultiplier ?? 2
+  }
+  return newSet
+}
 const formatPlateBreakdown = (plates) =>
   Object.entries(plates)
     .filter(([, c]) => c > 0)
@@ -903,6 +918,13 @@ function ExerciseItem({
   // Batch 31.1 — callback fired by the Your-range Edit→ chip inside the
   // Recommendation sheet; parent opens ExerciseEditSheet at the top level.
   onEditLibraryEntry = null,
+  // Batch 36 — superset plumbing from parent BbLogger.
+  allExercises = [],       // used by the SupersetSheet partner picker
+  onBeginSuperset = null,  // (triggerExId, partnerIds) => void
+  onEndSuperset = null,    // (groupId) => void
+  onSupersetCycle = null,  // (currentExId) => void — reps-Next advances to next partner
+  onSupersetDone = null,   // (currentExId) => void — markDone replacement in superset mode
+  registerFieldRef = null, // (exId, setIdx, field, el) => void — parent ref map for cross-exercise focus
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPrev, setShowPrev] = useState(false)
@@ -928,16 +950,21 @@ function ExerciseItem({
   const [recSheetOpen,    setRecSheetOpen]    = useState(false)
   const [plateConfigOpen, setPlateConfigOpen] = useState(false)
   const [machineOpen,     setMachineOpen]     = useState(false)
+  const [supersetOpen,    setSupersetOpen]    = useState(false)
   const platesBtnRef      = useRef(null)
   const machineBtnRef     = useRef(null)
 
   // ── Focus mode: when numpad is open, check if THIS exercise owns the active field.
   // If the numpad is open but the active field belongs to a different exercise,
   // this exercise should auto-collapse to save screen space.
+  // Batch 36: superset members are exempt — when a superset is live, all
+  // partner cards must stay mounted so the parent's cycle handler can focus
+  // their inputs as the user finishes each set.
   const activeFieldKey = numpadCtx?.numpadConfig?.fieldKey || ''
   const ownsActiveField = activeFieldKey.includes(exercise.name)
   const numpadOpen = numpadCtx?.numpadIsOpen || false
-  const focusCollapsed = numpadOpen && !ownsActiveField
+  const supersetExempt = !!(exercise.supersetGroupId && exercise.supersetActive)
+  const focusCollapsed = numpadOpen && !ownsActiveField && !supersetExempt
 
   // Scope session history to the current workout type so that an exercise like
   // "Pull-ups" in Back Day and Full Body tracks PRs and notes independently.
@@ -1438,6 +1465,52 @@ function ExerciseItem({
     shouldPromptGymTag(libraryEntry, currentGymId) &&
     !gymPromptDismissedThisSession
 
+  // ── Superset state (Batch 36) ──────────────────────────────────────────
+  const priorSuperset = useMemo(
+    () => getMostRecentSupersetPartners(allSessions, exercise.exerciseId || exercise.name),
+    [allSessions, exercise.exerciseId, exercise.name]
+  )
+  const inActiveSuperset = !!(exercise.supersetGroupId && exercise.supersetActive)
+  // Batch 36 — while a superset is live, ALL members stay expanded so their
+  // weight/reps inputs are mounted and ready for cross-card programmatic focus.
+  // The cycle handler in parent BbLogger calls `.focus()` on the next member's
+  // weight ref; if the card were collapsed (return null) or the body
+  // unmounted (`{expanded && …}`), the ref would be stale/null and the
+  // cross-card focus would no-op.
+  const effectiveExpanded = expanded || inActiveSuperset
+  const activeSupersetMembers = useMemo(() => {
+    if (!inActiveSuperset) return null
+    return allExercises
+      .filter(e => e.supersetGroupId === exercise.supersetGroupId && e.supersetActive)
+      .map(e => ({ id: e.id, name: e.name, supersetOrder: e.supersetOrder ?? 0 }))
+  }, [inActiveSuperset, allExercises, exercise.supersetGroupId])
+  const workoutExercisesForPicker = useMemo(
+    () => allExercises.filter(e => e.id !== exercise.id && !e.done),
+    [allExercises, exercise.id]
+  )
+  const supersetVariant = inActiveSuperset
+    ? 'active'
+    : (priorSuperset ? 'repair' : 'initiate')
+
+  const handleBeginSupersetLocal = (partnerIds) => {
+    setSupersetOpen(false)
+    onBeginSuperset?.(exercise.id, partnerIds)
+  }
+  const handleRepairLocal = () => {
+    if (!priorSuperset) return
+    const byName = new Map(workoutExercisesForPicker.map(e => [e.name, e.id]))
+    const resolvedIds = priorSuperset.partners
+      .map(n => byName.get(n))
+      .filter(Boolean)
+    if (resolvedIds.length === 0) return
+    setSupersetOpen(false)
+    onBeginSuperset?.(exercise.id, resolvedIds)
+  }
+  const handleEndSupersetLocal = () => {
+    setSupersetOpen(false)
+    if (exercise.supersetGroupId) onEndSuperset?.(exercise.supersetGroupId)
+  }
+
   const topSet     = exercise.sets.find(s => s.reps || s.weight)
   const lastTopSet = lastSessionEx?.sets?.[0]
   const prevSets   = lastSessionEx?.sets || []
@@ -1577,7 +1650,7 @@ function ExerciseItem({
       </div>
 
       {/* ── Expanded body ─────────────────────────────────────────────── */}
-      {expanded && (
+      {effectiveExpanded && (
         <div className="px-4 pb-4 space-y-3">
 
           {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine (wraps when tight) */}
@@ -1728,6 +1801,40 @@ function ExerciseItem({
                 />
               </div>
             )}
+            {/* Batch 36 — Superset (SS) chip. Three states nested behind the tap:
+                idle / no history (muted dashed), idle / prior history
+                (indigo filled — illuminated), or active in a live superset
+                (brighter indigo + member count). Tap opens SupersetSheet. */}
+            <button
+              type="button"
+              onClick={() => setSupersetOpen(true)}
+              title={
+                inActiveSuperset
+                  ? `Active superset — ${activeSupersetMembers?.length ?? 0} exercises`
+                  : priorSuperset
+                    ? `Last paired with ${priorSuperset.partners.join(' + ')}`
+                    : 'Initiate a superset'
+              }
+              aria-label={
+                inActiveSuperset
+                  ? `Active superset with ${activeSupersetMembers?.length ?? 0} exercises`
+                  : priorSuperset
+                    ? `Superset — last paired with ${priorSuperset.partners.join(', ')}`
+                    : 'Initiate superset'
+              }
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                inActiveSuperset
+                  ? 'bg-indigo-500/35 border border-indigo-500/60 text-white font-bold'
+                  : priorSuperset
+                    ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-300'
+                    : 'bg-item text-c-faint border border-dashed border-white/10'
+              }`}
+            >
+              <span>SS</span>
+              {inActiveSuperset && activeSupersetMembers?.length ? (
+                <span className="tabular-nums">×{activeSupersetMembers.length}</span>
+              ) : null}
+            </button>
           </div>
 
           {/* Gym-tag prompt (Batch 20b) — rendered above AnomalyBanner so
@@ -1855,10 +1962,22 @@ function ExerciseItem({
                     })
                     onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
                   }}
-                  weightRef={el => { setWeightRefs.current[i] = el }}
-                  repsRef={el => { setRepsRefs.current[i] = el }}
-                  onAdvance={() => addSet(true)}
-                  onDone={stableMarkDone}
+                  weightRef={el => {
+                    setWeightRefs.current[i] = el
+                    registerFieldRef?.(exercise.id, i, 'weight', el)
+                  }}
+                  repsRef={el => {
+                    setRepsRefs.current[i] = el
+                    registerFieldRef?.(exercise.id, i, 'reps', el)
+                  }}
+                  onAdvance={inActiveSuperset
+                    ? () => onSupersetCycle?.(exercise.id)
+                    : () => addSet(true)
+                  }
+                  onDone={inActiveSuperset
+                    ? () => onSupersetDone?.(exercise.id)
+                    : stableMarkDone
+                  }
                   setIndex={i}
                 />
 
@@ -1919,7 +2038,10 @@ function ExerciseItem({
           {!exercise.done ? (
             <button
               type="button"
-              onClick={markDone}
+              onClick={inActiveSuperset
+                ? () => onSupersetDone?.(exercise.id)
+                : markDone
+              }
               className="w-full py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-sm font-bold flex items-center justify-center gap-2"
             >
               <span>✓</span> Mark as Done
@@ -1956,6 +2078,22 @@ function ExerciseItem({
           : null}
         belowFloorDismissed={belowFloorDismissedThisSession}
         onDismissBelowFloor={() => dismissBelowFloorAdvisory(anomalyKey)}
+      />
+
+      {/* Batch 36 — Superset initiate / re-pair / end sheet */}
+      <SupersetSheet
+        open={supersetOpen}
+        onClose={() => setSupersetOpen(false)}
+        variant={supersetVariant}
+        exerciseName={exercise.name}
+        workoutExercises={workoutExercisesForPicker}
+        priorPartners={priorSuperset?.partners || null}
+        priorDate={priorSuperset?.date || null}
+        activeMembers={activeSupersetMembers}
+        onBegin={handleBeginSupersetLocal}
+        onRepair={handleRepairLocal}
+        onEnd={handleEndSupersetLocal}
+        theme={theme}
       />
     </div>
   )
@@ -2659,7 +2797,7 @@ export default function BbLogger() {
     activeSession, saveActiveSession, clearActiveSession,
     customTemplates, splits, activeSplitId, updateSplit,
     cardioSessions, addCardioSession, updateCardioSession,
-    restDaySessions,
+    restDaySessions, setRestEndTimestamp,
   } = useStore()
   const theme = getTheme(settings.accentColor)
   const firstSetType = settings.defaultFirstSetType === 'working' ? 'working' : 'warmup'
@@ -3050,6 +3188,206 @@ export default function BbLogger() {
     }])
   }
 
+  // ── Superset (Batch 36) ──────────────────────────────────────────────────
+  //
+  // Cross-exercise set-input ref map. ExerciseItem's SetRow/PlateSetRow push
+  // their weight + reps DOM elements through registerFieldRef, keyed by
+  // (exerciseId, setIdx). handleSupersetCycle uses this to programmatically
+  // focus the NEXT partner's weight input after a set completes — the input's
+  // existing onFocus handler fires openNumpad, which atomically swaps
+  // activeFieldKey and triggers focus-mode card switch via the
+  // activeFieldKey.includes(exercise.name) predicate at ~BbLogger.jsx:937.
+  // Refs auto-null on unmount because React calls callback refs with null.
+  const exerciseFieldRefs = useRef({})
+  const registerFieldRef = useCallback((exId, setIdx, field, el) => {
+    if (!exId) return
+    if (!exerciseFieldRefs.current[exId]) {
+      exerciseFieldRefs.current[exId] = { weight: [], reps: [] }
+    }
+    exerciseFieldRefs.current[exId][field][setIdx] = el
+  }, [])
+
+  // exercises ref so the superset handlers can read fresh state synchronously
+  // without going through setExercises's updater closure (whose locally-mutated
+  // variables aren't visible to the surrounding function due to React 18 batch
+  // dispatch — they get clobbered or re-run, and the rAF/focus scheduling
+  // can't safely close over them). Reads are always current; writes still go
+  // through setExercises so React owns the render cycle.
+  const exercisesRef = useRef(exercises)
+  exercisesRef.current = exercises
+
+  const focusTargetSet = (exId, setIdx, plateLoaded) => {
+    // Try focus across several ticks: rAF (post-commit), then setTimeout
+    // fallbacks at 0/50/120ms. React 18's concurrent mode commits the cycle's
+    // setExercises across multiple frames in some cases — without the longer
+    // fallback the new SetRow's ref hadn't been registered yet by the time
+    // rAF fires, so the focus call finds an undefined slot. Once registered,
+    // .focus() succeeds; subsequent attempts are harmless no-ops.
+    let landed = false
+    const tryFocus = () => {
+      if (landed) return
+      const refs = exerciseFieldRefs.current[exId]
+      const el = plateLoaded ? refs?.reps?.[setIdx] : refs?.weight?.[setIdx]
+      if (el && typeof el.focus === 'function') {
+        el.focus({ preventScroll: true })
+        if (document.activeElement === el) landed = true
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(tryFocus))
+    setTimeout(tryFocus, 0)
+    setTimeout(tryFocus, 50)
+    setTimeout(tryFocus, 120)
+  }
+
+  // Begin a superset centered on `triggerExId`. Tags the trigger and each
+  // partner with the same supersetGroupId + ascending supersetOrder, sets
+  // supersetActive=true on all, and immediately focuses the trigger's next
+  // empty-set weight input so the user is in the cycle from the first keypress.
+  const handleBeginSuperset = (triggerExId, partnerIds = []) => {
+    if (!triggerExId || !Array.isArray(partnerIds) || partnerIds.length === 0) return
+    const cur = exercisesRef.current
+    const trigger = cur.find(e => e.id === triggerExId)
+    if (!trigger) return
+    const validPartners = partnerIds
+      .filter(pid => pid !== triggerExId && cur.some(e => e.id === pid))
+      .slice(0, 2)
+    if (validPartners.length === 0) return
+
+    const tail = trigger.sets?.[trigger.sets.length - 1]
+    const tailEmpty = !tail || (!tail.weight && !tail.reps)
+    const triggerNextSetIdx = tailEmpty ? (trigger.sets.length - 1) : trigger.sets.length
+    const groupId = `sg_${Date.now()}`
+
+    setExercises(prev => prev.map(e => {
+      if (e.id === triggerExId) {
+        const sets = tailEmpty ? (e.sets || []) : [...(e.sets || []), buildEmptySetFor(e)]
+        return { ...e, sets, supersetGroupId: groupId, supersetOrder: 0, supersetActive: true }
+      }
+      const partnerIdx = validPartners.indexOf(e.id)
+      if (partnerIdx !== -1) {
+        return { ...e, supersetGroupId: groupId, supersetOrder: partnerIdx + 1, supersetActive: true }
+      }
+      return e
+    }))
+
+    focusTargetSet(triggerExId, triggerNextSetIdx, !!trigger.plateLoaded)
+  }
+
+  // End the active superset. Clears supersetActive on all members; keeps
+  // supersetGroupId + supersetOrder so the grouping still persists to the
+  // saved session for future-session memory via getMostRecentSupersetPartners.
+  const handleEndSuperset = (groupId) => {
+    if (!groupId) return
+    setExercises(prev => prev.map(e =>
+      e.supersetGroupId === groupId ? { ...e, supersetActive: false } : e
+    ))
+  }
+
+  // Advance the cycle after a set completes. Called from the reps-Next path in
+  // SetRow/PlateSetRow (via onAdvance) when the current exercise has
+  // supersetActive. Finds the next non-done partner in supersetOrder, ensures
+  // they have an empty set to fill, then focuses their weight input. Rest
+  // timer fires only at round boundaries (wrapping back to order 0).
+  const handleSupersetCycle = (currentExId) => {
+    if (!currentExId) return
+    const cur = exercisesRef.current
+    const currentEx = cur.find(e => e.id === currentExId)
+    if (!currentEx?.supersetGroupId) return
+    const groupId = currentEx.supersetGroupId
+    const members = cur
+      .filter(e => e.supersetGroupId === groupId && e.supersetActive && !e.done)
+      .sort((a, b) => (a.supersetOrder ?? 0) - (b.supersetOrder ?? 0))
+
+    if (members.length < 2) {
+      // Only current remains (or none) — auto-end, but if the lone member's
+      // tail set is filled, add a fresh set so they can keep going via normal
+      // addSet path next time. Then clear supersetActive on every member.
+      const onlyLeft = members[0]
+      const needsNew = onlyLeft && (() => {
+        const t = onlyLeft.sets?.[onlyLeft.sets.length - 1]
+        return t && (t.weight || t.reps)
+      })()
+      setExercises(prev => prev.map(e => {
+        if (e.supersetGroupId !== groupId) return e
+        const cleared = { ...e, supersetActive: false }
+        if (needsNew && onlyLeft && e.id === onlyLeft.id) {
+          cleared.sets = [...(e.sets || []), buildEmptySetFor(e)]
+        }
+        return cleared
+      }))
+      return
+    }
+
+    // Find current's slot. If currentEx isn't in `members` (e.g., just got
+    // marked done by handleSupersetDone), advance to the lowest-order
+    // remaining member instead of bailing.
+    const currentIdx = members.findIndex(m => m.id === currentExId)
+    let nextIdx
+    let isRoundBoundary
+    if (currentIdx === -1) {
+      nextIdx = 0
+      isRoundBoundary = true  // treat as round wrap (we're starting fresh from order 0)
+    } else {
+      nextIdx = (currentIdx + 1) % members.length
+      isRoundBoundary = nextIdx === 0
+    }
+    const next = members[nextIdx]
+    if (!next) return
+
+    // Reuse the target's empty tail if it has one; otherwise append a new set.
+    const targetSetCount = next.sets?.length || 0
+    const tail = next.sets?.[targetSetCount - 1]
+    const tailEmpty = !tail || (!tail.weight && !tail.reps)
+    const nextTargetSetIdx = tailEmpty ? (targetSetCount - 1) : targetSetCount
+
+    setExercises(prev => prev.map(e => {
+      if (e.id !== next.id) return e
+      if (tailEmpty) return e
+      return { ...e, sets: [...(e.sets || []), buildEmptySetFor(e)] }
+    }))
+
+    if (isRoundBoundary && settings.autoStartRest) {
+      setRestEndTimestamp(Date.now() + settings.restTimerDuration * 1000)
+    }
+
+    focusTargetSet(next.id, nextTargetSetIdx, !!next.plateLoaded)
+  }
+
+  // Mark the exercise done AND, if it was part of an active superset, advance
+  // the cycle to the next non-done member. If <2 non-done members remain
+  // after the done flip, clear supersetActive on all group members (auto-end).
+  const handleSupersetDone = (currentExId) => {
+    if (!currentExId) return
+    const cur = exercisesRef.current
+    const currentEx = cur.find(e => e.id === currentExId)
+    if (!currentEx) return
+    const groupId = currentEx.supersetGroupId
+    const isActiveSuperset = !!(groupId && currentEx.supersetActive)
+
+    setExercises(prev => prev.map(e =>
+      e.id === currentExId ? { ...e, done: true, completedAt: Date.now() } : e
+    ))
+
+    if (!isActiveSuperset) return
+
+    // Count partners that will remain after marking done. If <2, auto-end the
+    // superset. Otherwise, advance the cycle to the next non-done partner.
+    const remaining = cur
+      .filter(e => e.supersetGroupId === groupId && e.supersetActive && !e.done && e.id !== currentExId)
+    if (remaining.length < 1) {
+      // No partners left to cycle through — clear active flag on all members.
+      setExercises(prev => prev.map(e =>
+        e.supersetGroupId === groupId ? { ...e, supersetActive: false } : e
+      ))
+      return
+    }
+    // rAF-defer the advance so React commits the done-flip first; the cycle
+    // handler then reads fresh state via exercisesRef.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => handleSupersetCycle(currentExId))
+    })
+  }
+
   // ── Shared: build exercise data array ────────────────────────────────────
 
   const buildExerciseData = () =>
@@ -3081,6 +3419,11 @@ export default function BbLogger() {
           completedAt: ex.completedAt || 0,
           unilateral: uni,
           ...(trimmedInstance ? { equipmentInstance: trimmedInstance } : {}),
+          // Batch 36 — persist supersetGroupId + supersetOrder so the
+          // grouping survives to next session's memory lookup. supersetActive
+          // is the in-session UI flag and is intentionally NOT serialized.
+          ...(ex.supersetGroupId ? { supersetGroupId: ex.supersetGroupId } : {}),
+          ...(typeof ex.supersetOrder === 'number' ? { supersetOrder: ex.supersetOrder } : {}),
           plates: ex.plateLoaded ? ex.sets.map(s => s.plates ? { plates: s.plates, barWeight: s.barWeight } : null) : undefined,
           sets: filledSets.map(s => {
             const rawW = parseFloat(s.weight) || 0
@@ -3542,6 +3885,12 @@ export default function BbLogger() {
                       currentGymId={gymId}
                       currentGymLabel={currentGymLabel}
                       onEditLibraryEntry={setEditingLibEntry}
+                      allExercises={exercises}
+                      onBeginSuperset={handleBeginSuperset}
+                      onEndSuperset={handleEndSuperset}
+                      onSupersetCycle={handleSupersetCycle}
+                      onSupersetDone={handleSupersetDone}
+                      registerFieldRef={registerFieldRef}
                     />
                   )
                 })}

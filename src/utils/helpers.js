@@ -233,6 +233,33 @@ export function getLastBbSession(sessions, workoutType) {
   return matching[0] || null
 }
 
+// Batch 36 — Superset history lookup. Scans bb-mode sessions newest-first for
+// the given exercise (by exerciseId first, name fallback for pre-v3 safety).
+// Returns { partners: string[], date: isoString } for the most recent session
+// where the exercise was part of a supersetGroupId with at least one other
+// member. Null when no prior superset history exists. Drives the SS chip's
+// illuminated state + the Re-pair shortcut in SupersetSheet.
+export function getMostRecentSupersetPartners(sessions, exerciseIdOrName) {
+  if (!sessions?.length || !exerciseIdOrName) return null
+  const sorted = [...sessions]
+    .filter(s => s.mode === 'bb' && s.data?.exercises?.length)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+  for (const sess of sorted) {
+    const exs = sess.data.exercises
+    const match = exs.find(e =>
+      (e.exerciseId && e.exerciseId === exerciseIdOrName) || e.name === exerciseIdOrName
+    )
+    if (!match?.supersetGroupId) continue
+    const partners = exs
+      .filter(e => e.supersetGroupId === match.supersetGroupId && e !== match)
+      .map(e => e.name)
+      .filter(Boolean)
+    if (partners.length === 0) continue
+    return { partners, date: sess.date }
+  }
+  return null
+}
+
 // Canonical per-side load accessor. For unilateral sets, `weight` holds the
 // doubled volume value and `rawWeight` preserves the actual per-side input.
 // Always read through this so phantom PRs and doubled "Last:" hints never

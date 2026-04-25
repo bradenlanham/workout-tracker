@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 24, 2026 (Batch 35 — Readiness check-in polish: prominent gym + exercise order)
+> Last updated: April 24, 2026 (Batch 36 — Superset feature: SS chip + cycle through 2-3 exercises mid-session)
 
 ## Rules for Claude
 
@@ -123,7 +123,8 @@ src/
 │   ├── RecPill.jsx             # Batch 17h — shared rec-display pill; renders formatRec(rec) in any supported shape
 │   ├── RecEditor.jsx           # Batch 17h — structured rec editor sheet (sets / reps / note with live preview)
 │   ├── DragHandle.jsx          # Batch 18c — shared decorative drag-handle glyph. REMOVED from usage in Batch 18f (no real drag wired; it suggested an interaction that didn't exist). Kept on disk for when DnD ships.
-│   └── RowOverflowMenu.jsx     # Batch 18e — shared row-level ⋯ popover. Batch 18f portals the panel to document.body with position:fixed so it can't be clipped by an ancestor overflow-hidden. Accepts items: [{label, onSelect, destructive?, icon?}]; null onSelect filters the item out so boundary Move up/down vanish cleanly. Auto-flips above the anchor when it would overflow the viewport bottom.
+│   ├── RowOverflowMenu.jsx     # Batch 18e — shared row-level ⋯ popover. Batch 18f portals the panel to document.body with position:fixed so it can't be clipped by an ancestor overflow-hidden. Accepts items: [{label, onSelect, destructive?, icon?}]; null onSelect filters the item out so boundary Move up/down vanish cleanly. Auto-flips above the anchor when it would overflow the viewport bottom.
+│   └── SupersetSheet.jsx       # Batch 36 — superset initiate/re-pair/active sheet (z-245). Three variants driven by props: Initiate (partner picker, max 2), Re-pair (last-paired hint + Re-pair primary + Customize secondary), Active (cycle members + End superset). Pure presentation; parent owns state.
 │
 │
 └── pages/
@@ -1698,6 +1699,59 @@ User report: "the plate loaded bar weight does seem persistent, but what happens
 463. **Verified live** (preview, mobile 375×812). Scenario 2 seed: Leg Press w/ plate mode on, set `{weight:'225', reps:'10'}` + no plates. Opened popover → tapped 25 lb → stored set became `{weight:'25', plates: emptyPlates(), barWeight:25, plateMultiplier:2, reps:'10', type:'working'}` — display "Total 25 lbs" matches stored. Scenario 3 (set with plates 45×1): bar 45→25 still correctly updates stored weight 135→115 via the existing path. Both paths now uniform.
 
 464. **Build.** `npx vite build --outDir /tmp/test-build` → 772.14 KB bundle / 207.84 KB gzipped (+0.57 KB / +0.10 KB vs Batch 32, accounted for by three tiny handler rewrites + comments).
+
+### Batch 36 (April 24, 2026) — Superset feature
+
+User-requested mid-session superset feature. Tap the new SS chip on any expanded exercise to pair it with up to 2 partners; cycle through them set-by-set in focus mode; rest timer fires only at round boundaries. Memory of past pairings surfaces via the chip's illuminated state on future sessions, with a one-tap Re-pair shortcut nested inside the same chip's sheet. Decision recap from the planning round: chip label "SS"; everything nested behind the chip (no extra UI surfaces); rest timer per round; Done mid-superset drops current exercise from cycle but keeps remaining partners going.
+
+472. **Two new optional fields on `session.data.exercises[i]` (additive, no persist bump).** `supersetGroupId?: string` — `'sg_${timestamp}'`, identifies the superset grouping; present on all 2–3 grouped exercises. `supersetOrder?: number` — 0/1/2, cycle order with 0 = trigger. UI-only flag `supersetActive?: boolean` — true while cycle is live; **stripped before save** in `buildExerciseData`. Round-trips through `saveActiveSession` ([BbLogger.jsx:2985](src/pages/log/BbLogger.jsx)) automatically — same pattern as Batch 19's `equipmentInstance`. Pre-Batch-36 sessions simply lack the fields.
+
+473. **`getMostRecentSupersetPartners(sessions, exerciseIdOrName)` in `helpers.js`.** Scans bb-mode sessions newest-first, matches by `exerciseId` (with name fallback for pre-v3 safety), returns `{partners: string[], date: isoString}` for the most recent session where the exercise was in a `supersetGroupId` with at least one other member. Null when no prior superset history. Drives the chip's illuminated state + the Re-pair shortcut copy.
+
+474. **`SupersetSheet.jsx` (new component, `src/components/`).** Portal at z-245 (between RecommendationSheet 250 and PlateConfigPopover 220). Three variants:
+    - **Initiate** (no prior history, not active): partner picker grouped by section, max 2 selectable, third attempt silently blocked + "Superset capped at 3" hint, Begin disabled until ≥1 selected.
+    - **Re-pair** (prior history, not active): "Last time (Apr 23) you paired Pec Dec with Incline DB Press + Cable Fly" + Re-pair primary CTA + Customize secondary (expands picker). Re-pair greys when any prior partner is missing from today's workout, with "Missing: …" copy.
+    - **Active** (live cycle): cycle order display + End superset CTA.
+    Backdrop tap + Escape dismiss. All hooks called unconditionally before the early `if (!open) return null` to satisfy Rules of Hooks.
+
+475. **Cross-exercise field-ref map at parent BbLogger** (`exerciseFieldRefs = useRef({})`). Shape: `{[exerciseId]: {weight: HTMLInputElement[], reps: HTMLInputElement[]}}`. `registerFieldRef(exId, setIdx, field, el)` callback threaded into ExerciseItem → SetRow/PlateSetRow's `weightRef` / `repsRef` props, composed with the existing local-ref assignment so both layers stay populated. Auto-nulls on unmount via React's callback-ref convention. Powers programmatic cross-card focus that the cycle handler triggers.
+
+476. **`exercisesRef` at parent BbLogger** updated each render. Superset handlers read fresh state synchronously via `exercisesRef.current` rather than through a `setExercises` updater closure — the closure-mutated locals (target id, set index) aren't visible to the surrounding rAF/focus scheduling under React 18 batched dispatch, so this pattern decouples reads from writes.
+
+477. **`handleBeginSuperset(triggerExId, partnerIds)` at parent BbLogger.** Generates a fresh `groupId`, validates partners (max 2, must exist in current state, not the trigger), tags trigger+partners with `supersetGroupId` + ascending `supersetOrder` + `supersetActive: true`, and immediately focuses the trigger's next empty-set weight input via `focusTargetSet`. If the trigger's tail set has values, appends a fresh empty one; otherwise reuses the existing empty tail.
+
+478. **`handleSupersetCycle(currentExId)` at parent BbLogger.** Reads cur state via ref, sorts active non-done members by `supersetOrder`, finds current's slot, computes `nextIdx = (currentIdx + 1) % members.length`. Round-boundary detected when `nextIdx === 0` → fires rest timer if `autoStartRest`. If current isn't in members (just-marked-done case), advances to lowest-order remaining member as a graceful fallback. Reuses the target's empty tail set when present; otherwise appends. `<2 members` branch auto-ends the cycle (clears `supersetActive` on all members; keeps `supersetGroupId` for history).
+
+479. **`handleEndSuperset(groupId)` at parent BbLogger.** Single `setExercises` mapping that flips `supersetActive: false` on every member of the group while preserving `supersetGroupId` + `supersetOrder` so the saved session retains the grouping for future-session memory.
+
+480. **`handleSupersetDone(currentExId)` at parent BbLogger.** Marks the exercise done + completedAt; if it was in an active superset and ≥1 partner remains active+!done, rAF-defers a `handleSupersetCycle` call to advance focus to the next member. If no partners remain, clears `supersetActive` on all group members.
+
+481. **`focusTargetSet(exId, setIdx, plateLoaded)` helper at parent BbLogger.** Multi-tick focus retry — rAF-rAF (post-commit) plus setTimeout 0/50/120ms fallbacks. React 18's concurrent commits split rendering across multiple frames; without the longer fallback the new SetRow's ref hadn't been registered yet by the time rAF fires. Once registered, `el.focus()` succeeds; subsequent attempts no-op via the `landed` ref.
+
+482. **`buildEmptySetFor(exercise)` module-level factory** (`BbLogger.jsx`). Always `type: 'working'` per Batch 28 (set 2+ is always working). Respects plate-loaded state by seeding `plates`/`barWeight`/`plateMultiplier` from the exercise's current config.
+
+483. **ExerciseItem accepts new props.** `allExercises` (for the picker), `onBeginSuperset`/`onEndSuperset`/`onSupersetCycle`/`onSupersetDone` (parent handlers), `registerFieldRef` (parent ref-map registration). Threaded from BbLogger render loop's ExerciseItem call site.
+
+484. **SS chip in toolbar row** (after Machine chip, ~[BbLogger.jsx:1797](src/pages/log/BbLogger.jsx#L1797)). Three states, all indigo-themed:
+    - Idle no-history: `bg-item text-c-faint border border-dashed border-white/10`, label `SS`.
+    - Idle prior-history (illuminated): `bg-indigo-500/20 border border-indigo-500/40 text-indigo-300`, label `SS`.
+    - Active in cycle: `bg-indigo-500/35 border border-indigo-500/60 text-white font-bold`, label `SS ×N` (member count).
+    Always visible (always in toolbar row) — no conditional gating. Title attribute reflects the current state.
+
+485. **Override `onAdvance` and `onDone` in superset mode** (ExerciseItem set rendering loop). When `inActiveSuperset` (derived from `supersetGroupId && supersetActive`), `onAdvance` calls `onSupersetCycle?.(exercise.id)` instead of the usual `addSet(true)`; `onDone` calls `onSupersetDone?.(exercise.id)` instead of the usual `stableMarkDone`. The "Mark as Done" CTA at the bottom of the expanded card also routes through `onSupersetDone` in superset mode.
+
+486. **Effective expand + focus-collapse exemption** for superset members (ExerciseItem). `effectiveExpanded = expanded || inActiveSuperset` so partner cards stay mounted with their inputs in DOM (the cycle handler's cross-card focus would otherwise no-op against unmounted refs). `focusCollapsed = numpadOpen && !ownsActiveField && !supersetExempt` — non-superset cards still collapse, but partner members remain rendered so cross-card focus works.
+
+487. **`buildExerciseData` strips `supersetActive`, persists `supersetGroupId` + `supersetOrder`.** Spread the two persistent fields conditionally; the in-session UI flag is intentionally absent from saved sessions so future-session memory lookups work cleanly without a stale "active" hint.
+
+488. **Verified live in preview** (mobile 375×812, debug-backup.json).
+    - **Initiate flow**: SS chip on Pec Dec renders dashed-muted "SS"; tapping opens "Initiate superset" sheet with 12 partner options grouped by section. Selecting Incline DB Press + Cable Fly → Begin assigns `supersetGroupId: sg_<ts>`, orders 0/1/2, all `supersetActive: true`. SS chip flips to "SS ×3" active state. Pec Dec's weight input auto-focuses.
+    - **Cycle flow**: Setting Pec Dec to 185×10 + invoking onSupersetCycle → focus moves to Incline DB Press's weight input. Setting 100×12 + cycle → Cable Fly. Setting 60×15 + cycle → wraps back to Pec Dec set 2; rest timer fires (round boundary, `restEndTimestamp` flips from null to a future epoch). Round 2 begins.
+    - **End flow**: Tapping SS chip on active member opens "Active superset" variant with End button; End flips `supersetActive: false` on all 3, preserves `supersetGroupId` + `supersetOrder` for history.
+    - **Re-pair flow**: Injecting a fake completed session with the 3-member superset history → next session's SS chip renders illuminated (`bg-indigo-500/20 border-indigo-500/40 text-indigo-300`) with title "Last paired with Incline DB Press + Cable Fly". Tapping opens "Superset" variant with "Last time (Apr 23) you paired …" + Re-pair primary CTA + Customize secondary.
+    - Zero console errors throughout (one Rules-of-Hooks violation caught + fixed during dev: the `if (!open) return null` early return in SupersetSheet now lives below all useState/useEffect/useMemo calls).
+
+489. **Build.** `npx vite build --outDir /tmp/test-build` → 785.61 KB bundle / 212.05 KB gzipped (+10.92 KB / +3.46 KB vs Batch 35, accounted for by SupersetSheet component + parent handlers + chip + helper).
 
 ---
 
