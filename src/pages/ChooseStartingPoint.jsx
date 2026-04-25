@@ -27,6 +27,7 @@ export default function ChooseStartingPoint() {
   // that have to know about the query string).
   const importRef = useRef(null)
   const addSplit  = useStore(s => s.addSplit)
+  const importSplitWithLibrary = useStore(s => s.importSplitWithLibrary)
 
   const handlePickTemplate = (templateId) => {
     const ok = loadTemplate(templateId)
@@ -57,8 +58,10 @@ export default function ChooseStartingPoint() {
           navigate('/splits')       // punt to list; alert-free failure is fine at zero-state
           return
         }
-        const { id: _id, ...splitData } = data.split
-        addSplit({ ...splitData, isBuiltIn: false })
+        const result = importSplitWithLibrary(data)
+        if (result.errors && result.errors.length) {
+          console.warn('Split import warnings:', result.errors)
+        }
         navigate('/splits')
       } catch {
         navigate('/splits')

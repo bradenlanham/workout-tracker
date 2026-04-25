@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 39 — Hybrid Training v1: library list type-axis filter + CreateExerciseModal + ExerciseEditSheet type-aware)
+> Last updated: April 25, 2026 (Batch 40 — Hybrid Training v1: Brooke JSON v3 + split-import library extension)
 
 ## Rules for Claude
 
@@ -1879,6 +1879,31 @@ Third batch of the Hybrid Training v1 workstream and the **first user-visible UI
 510. **`hybrid-b39-sanity.mjs` at worktree root.** 45/45 pass. Covers: type color + label + filter-bucket maps across all 4 types + null/unknown defaults; formatLastSetSummary across weight-training / running / hyrox-station / hyrox-round shapes; classifyType + predictExerciseMeta integration spot-checks (Bench Press, Easy Run, SkiErg, HYROX Simulation Round, unknown name). Mirrors the existing hybrid-b37 / b38 sanity patterns.
 
 511. **Branch + Vercel preview.** Pushed `claude/hybrid-b39-library-ui` to GitHub — Vercel auto-deploys a preview URL. **Not auto-merged to main**: this is the first user-checkable UI batch, the user reviews before promoting. Build clean (`npx vite build --outDir /tmp/test-build` → 813.38 KB bundle / 218.90 KB gzipped, +16.74 KB / +4.17 KB vs Batch 38 — accounted for by the rewritten CreateExerciseModal + the type-aware ExerciseEditSheet branches + the new ExerciseLibraryManager type filter + the SourceFilterOverflow portal + the four helpers in helpers.js).
+
+**Batch 39 polish followups (post-review).** Four UI tweaks landed between B39 and B40 based on user feedback before the merge to main:
+
+512. **`Lift` tab → `Weight Training`** (`ExerciseLibraryManager.jsx`). The original "Lift" label competed with the "WEIGHT" row chip — felt like two competing labels for the same concept. Renamed for consistency.
+513. **WEIGHT row chip dropped from weight-training rows** (`ExerciseLibraryManager.jsx`). The 3px color stripe + the muscle/equipment line below already convey the type. HYROX and RUN rows keep their tag chip — they're the by-exception types where the explicit flag helps the eye against the unmarked default.
+514. **Secondary filter row hidden when type filter ≠ All** (`ExerciseLibraryManager.jsx`). The workout-name + Logged/Never-logged chips became noise when narrowed to HYROX or Run. Now they only render on the All filter; once you narrow by type, the secondary axes collapse.
+515. **`TYPE_LABELS['weight-training'] = 'WEIGHT TRAINING'`** (`helpers.js`). The ExerciseEditSheet header badge now reads `WEIGHT TRAINING · BUILT-IN`, matching the renamed tab. The row chip is gated to non-weight-training types post-#513 so the longer label doesn't bloat row layouts.
+
+### Batch 40 (April 25, 2026) — Hybrid Training v1: Brooke JSON v3 + split-import library extension
+
+Fourth batch of the Hybrid Training v1 workstream. Re-encodes Brooke's split as v3 (canonical roundConfig on every hyrox-round) and extends the split-import path to consume `type` fields by spawning library entries on import. Mostly invisible to the user — the visible result is just "Brooke's JSON imports cleanly + the new HYROX-round library entries appear in `/exercises`." The actual HYROX surfaces (preview card, Start overlay, round logger) arrive in B41+.
+
+516. **`brooke-hybrid-split.json` v3** (repo root). Re-authored against the real schema. Three hyrox-round entries gain valid `roundConfig`: Tuesday "HYROX Run + SkiErg Round" → `{stationId: 'sta_skierg', runDistance: 800m, rounds: 4, rest: 120s}`; Friday "HYROX Simulation Round" → rotation pool of 7 stations (everything except Burpee Broad Jump per Brooke's program), runDistance: 1000m, rounds: 4, rest: 90s; Saturday "Wall Balls + 200m Run Round" → `{stationId: 'sta_wall_balls', runDistance: 200m, rounds: 3, rest: 60s}`. The 3 hyrox-station references in Thursday's "Active Rest & Light Skill" day were renamed to canonical catalog names (`Light Farmers Carry` → `Farmers Carry`, `Sled Push Technique` → `Sled Push`, `Sled Pull Technique` → `Sled Pull`) so they resolve to existing catalog entries. The "light only" / "technique focus" flavor moves into rec-note text.
+
+517. **`importLibraryEntryFromSplit(exercise, library)` in `helpers.js`.** Pure decision helper. Returns `{create | existingId | skip | error}` per imported exercise. Catalog-closed `hyrox-station` names that don't match a seeded catalog entry return `error` (per plan §B40 "validate against the catalog… reject malformed"). `hyrox-round` without a roundConfig also errors. `running` entries get a fully-tagged shape (Full Body + equipment fallback). `weight-training` entries that don't match an existing library row get `needsTagging:true` so they land in `/backfill` for the user to finish later. Defensive against null/non-string inputs.
+
+518. **`collectLibraryAdditionsFromSplit(splitData, library)` in `helpers.js`.** Walks every exercise across every workout/section, aggregates per-entry decisions, dedupes within the import payload by normalized name. Returns `{toCreate, errors}` for a single store transaction.
+
+519. **`importSplitWithLibrary(data)` store action (`useStore.js`).** Wraps the three call sites' inline `addSplit({...splitData, isBuiltIn:false})` flow: validates payload shape, runs `collectLibraryAdditionsFromSplit`, fires `addExerciseToLibrary` for each new entry (catching per-entry failures so a single bad exercise doesn't abort the whole import), strips top-level `id`, calls the existing `addSplit`. Returns `{ok, split, libraryAdded, errors}`.
+
+520. **3 import call sites updated** (`SplitManager.jsx`, `ChooseStartingPoint.jsx`, `Welcome.jsx`). Each preserves its site-specific pre-validation (for tailored error messages) but the inner `addSplit` becomes `importSplitWithLibrary(data)` + a `console.warn` of any returned errors. Welcome.jsx threads the result through the existing `setActiveSplit(newSplit.id)` chain via `result.split.id`.
+
+521. **`hybrid-b40-sanity.mjs` at worktree root.** 65/65 pass. Covers: (1) brooke-hybrid-split.json v3 shape — 6 workouts, exact catalog station names, valid roundConfig on each hyrox-round; (2) `importLibraryEntryFromSplit` decision matrix across 8 input shapes; (3) `collectLibraryAdditionsFromSplit` dedup + error aggregation; (4) end-to-end empty-library import (pre-v8 user) — 3 hyrox-station errors + 3 rounds + 4 running + 27 weight-training creates; (5) end-to-end seeded-library import (post-v8 user) — 0 errors, stations resolve to catalog ids, all 3 round configs preserved through the import. Mirrors the existing hybrid-b37 / b38 / b39 sanity patterns.
+
+522. **No UI surface this batch, no preview verification.** Per design — B40 is the JSON + import data layer. UI work for the HYROX flow lands in B41+. Build passes (`npx vite build --outDir /tmp/test-build` → 815.72 KB bundle / 219.67 KB gzipped, +2.34 KB / +0.77 KB vs Batch 39 — accounted for by the two helpers + the importSplitWithLibrary action + the three call-site wirings).
 
 ---
 

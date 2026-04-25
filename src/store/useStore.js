@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateSessionsToV9, migrateCardioSessionsToV9, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, defaultDimensionsForType, classifyRepRange, toLocalDateStr } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateSessionsToV9, migrateCardioSessionsToV9, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, defaultDimensionsForType, classifyRepRange, toLocalDateStr, collectLibraryAdditionsFromSplit } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -455,6 +455,34 @@ const useStore = create(
         const newSplit = { ...split, id: generateId(), createdAt: toLocalDateStr() }
         set(state => ({ splits: [...state.splits, newSplit] }))
         return newSplit
+      },
+
+      // Batch 40 — import-path extension. Wraps addSplit so imported JSON v3
+      // payloads create their referenced library entries (hyrox-round w/
+      // roundConfig, running, untagged weight-training) before the split
+      // itself lands. Library failures get caught per-entry so a single bad
+      // exercise doesn't abort the whole import. Returns:
+      //   { ok: false, reason: 'invalid-format' } when payload shape is wrong
+      //   { ok: true, split, libraryAdded, errors } on success
+      importSplitWithLibrary: (data) => {
+        if (!data || data.type !== 'bambam-split-export' || !data.split) {
+          return { ok: false, reason: 'invalid-format' }
+        }
+        const lib = get().exerciseLibrary
+        const { toCreate, errors } = collectLibraryAdditionsFromSplit(data.split, lib)
+        const addEntry = get().addExerciseToLibrary
+        let added = 0
+        for (const entry of toCreate) {
+          try {
+            addEntry(entry)
+            added += 1
+          } catch (e) {
+            errors.push(`addExerciseToLibrary("${entry.name}"): ${e.message}`)
+          }
+        }
+        const { id: _id, ...splitData } = data.split
+        const newSplit = get().addSplit({ ...splitData, isBuiltIn: false })
+        return { ok: true, split: newSplit, libraryAdded: added, errors }
       },
 
       updateSplit: (id, updates) => {

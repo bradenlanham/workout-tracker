@@ -344,6 +344,7 @@ export default function SplitManager() {
   const removeSplitById  = useStore(s => s.removeSplitById)
   const deleteSplit      = useStore(s => s.deleteSplit)
   const addSplit         = useStore(s => s.addSplit)
+  const importSplitWithLibrary = useStore(s => s.importSplitWithLibrary)
   const settings         = useStore(s => s.settings)
   const theme            = getTheme(settings.accentColor)
 
@@ -395,8 +396,10 @@ export default function SplitManager() {
           setImportError('Invalid file — not a BamBam split export.')
           return
         }
-        const { id: _id, ...splitData } = data.split
-        addSplit({ ...splitData, isBuiltIn: false })
+        const result = importSplitWithLibrary(data)
+        if (result.errors && result.errors.length) {
+          console.warn('Split import warnings:', result.errors)
+        }
       } catch {
         setImportError('Could not read file — make sure it\'s a valid JSON export.')
       }

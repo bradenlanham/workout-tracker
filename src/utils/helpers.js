@@ -2378,6 +2378,124 @@ export function predictExerciseMeta(name) {
   return { primaryMuscles: [], equipment: 'Other', type: t }
 }
 
+// ── Batch 40: Split-import library extension ─────────────────────────────
+//
+// Imported splits (Brooke's JSON v3 + any future hybrid template) carry a
+// `type` field on each exercise. The pre-Batch-40 import path silently
+// dropped that information — every exercise resolved to weight-training
+// at session-log time via name matching. With B40, every typed entry that
+// doesn't already exist in the library spawns a library row at import
+// time, so HYROX rounds carry their roundConfig + RUN entries carry their
+// equipment hint into the running app.
+//
+// `importLibraryEntryFromSplit(exercise, library)` is a pure decision
+// helper. Returns one of:
+//   { create: ExerciseShape } — caller hands to addExerciseToLibrary
+//   { existingId: string }    — already in the library, no-op
+//   { skip: true }            — legacy weight-training entry without type
+//   { error: string }         — malformed, log + skip
+// Defensive against null/undefined/non-string name. Catalog-closed
+// hyrox-station entries that don't match a seeded catalog name surface
+// as `error` (per plan §B40 "validate against the catalog… reject
+// malformed"); Brooke's JSON v3 uses canonical catalog names so this
+// fires only on user-malformed imports.
+
+export function importLibraryEntryFromSplit(exercise, library) {
+  if (!exercise || typeof exercise !== 'object') return { skip: true }
+  const name = typeof exercise.name === 'string' ? exercise.name.trim() : ''
+  if (!name) return { skip: true }
+  const type = typeof exercise.type === 'string' ? exercise.type : null
+  if (!type) return { skip: true } // legacy weight-training, resolves at session-save time
+  const norm = normalizeExerciseName(name)
+  const existing = (library || []).find(e =>
+    normalizeExerciseName(e.name) === norm ||
+    (e.aliases || []).some(a => normalizeExerciseName(a) === norm)
+  )
+  if (existing) return { existingId: existing.id }
+
+  if (type === 'hyrox-station') {
+    return { error: `HYROX station "${name}" not found in catalog. The 8 catalog stations are auto-seeded; rename to match (e.g. "Farmers Carry") or change type.` }
+  }
+  if (type === 'hyrox-round') {
+    if (!exercise.roundConfig || typeof exercise.roundConfig !== 'object') {
+      return { error: `HYROX round "${name}" missing roundConfig.` }
+    }
+    const rc = exercise.roundConfig
+    const hasStation = typeof rc.stationId === 'string' && rc.stationId
+    const hasPool = Array.isArray(rc.rotationPool) && rc.rotationPool.length > 0
+    if (!hasStation && !hasPool) {
+      return { error: `HYROX round "${name}" roundConfig needs stationId or rotationPool.` }
+    }
+    return {
+      create: {
+        name,
+        type: 'hyrox-round',
+        roundConfig: rc,
+        primaryMuscles: ['Full Body'],
+        equipment: 'Other',
+      },
+    }
+  }
+  if (type === 'running') {
+    return {
+      create: {
+        name,
+        type: 'running',
+        primaryMuscles: ['Full Body'],
+        equipment: typeof exercise.equipment === 'string' && exercise.equipment ? exercise.equipment : 'Other',
+      },
+    }
+  }
+  if (type === 'weight-training') {
+    return {
+      create: {
+        name,
+        type: 'weight-training',
+        primaryMuscles: [],
+        equipment: 'Other',
+        needsTagging: true,
+      },
+    }
+  }
+  return { error: `Unknown type "${type}" for exercise "${name}".` }
+}
+
+// `collectLibraryAdditionsFromSplit(splitData, library)` walks every
+// exercise across every workout/section and aggregates the helper's
+// per-entry decisions. Dedupes within the import payload by normalized
+// name so two workouts that both reference "HYROX Run + SkiErg Round"
+// don't try to create two library rows. Returns the full picture for
+// a single store transaction:
+//   { toCreate: ExerciseShape[], errors: string[] }
+// Caller iterates `toCreate` through `addExerciseToLibrary` then
+// optionally surfaces `errors` to the user.
+
+export function collectLibraryAdditionsFromSplit(splitData, library) {
+  const toCreate = []
+  const errors = []
+  const seen = new Set()
+  if (!splitData || !Array.isArray(splitData.workouts)) {
+    return { toCreate, errors }
+  }
+  for (const workout of splitData.workouts) {
+    for (const section of (workout?.sections || [])) {
+      for (const ex of (section?.exercises || [])) {
+        if (typeof ex === 'string') continue
+        const result = importLibraryEntryFromSplit(ex, library)
+        if (result.error) errors.push(result.error)
+        if (result.create) {
+          const key = normalizeExerciseName(result.create.name)
+          if (!seen.has(key)) {
+            seen.add(key)
+            toCreate.push(result.create)
+          }
+        }
+      }
+    }
+  }
+  return { toCreate, errors }
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {

@@ -7,7 +7,7 @@ const themeColors = Object.values(THEMES)
 
 export default function Welcome() {
   const navigate = useNavigate()
-  const { settings, addSplit, setActiveSplit, completeOnboarding, updateSettings } = useStore()
+  const { settings, addSplit, setActiveSplit, completeOnboarding, updateSettings, importSplitWithLibrary } = useStore()
   const importRef = useRef(null)
 
   const [step, setStep] = useState(1)
@@ -45,9 +45,11 @@ export default function Welcome() {
           setImportError('Invalid file — not a BamBam split export.')
           return
         }
-        const { id: _id, ...splitData } = data.split
-        const newSplit = addSplit({ ...splitData, isBuiltIn: false })
-        setActiveSplit(newSplit.id)
+        const result = importSplitWithLibrary(data)
+        if (result.errors && result.errors.length) {
+          console.warn('Split import warnings:', result.errors)
+        }
+        setActiveSplit(result.split.id)
         setPendingDestination('dashboard')
         setStep(3)
       } catch {
