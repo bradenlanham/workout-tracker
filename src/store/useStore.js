@@ -127,6 +127,11 @@ const useStore = create(
         // below-floor streak (2 consecutive sessions under min-reps) still
         // fires.
         dismissedBelowFloorAdvisories: {},
+        // Batch 42 — last-shown index in the HYROX_HEADLINES bank (design
+        // doc §13.2). Persisted so the same headline stays stable across
+        // re-opens of the same Start HYROX overlay; only NEW Start HYROX
+        // events draw a fresh headline. -1 = none yet (any index is fair).
+        lastHyroxHeadlineIndex: -1,
       },
       // In-progress workout session — survives app backgrounding / page reload
       activeSession: null,
@@ -777,6 +782,15 @@ const useStore = create(
 
       setDefaultGymId: (id) => {
         set(state => ({ settings: { ...state.settings, defaultGymId: id } }))
+      },
+
+      // Batch 42 — persists the index returned by `pickHeadline` so the same
+      // line stays stable across re-opens of the same Start HYROX overlay.
+      setLastHyroxHeadlineIndex: (idx) => {
+        if (typeof idx !== 'number' || !Number.isFinite(idx)) return
+        set(state => ({
+          settings: { ...state.settings, lastHyroxHeadlineIndex: idx },
+        }))
       },
 
       // ── Anomaly dismissals (Batch 16q, step 9) ──────────────────────

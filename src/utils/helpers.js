@@ -1,5 +1,6 @@
 import { BB_WORKOUT_SEQUENCE } from '../data/exercises.js'
 import { HYROX_STATIONS, buildHyroxStationLibraryEntry } from '../data/hyroxStations.js'
+import { HYROX_HEADLINES } from '../data/hyroxHeadlines.js'
 
 // ── Time helpers ─────────────────────────────────────────────────────────────
 
@@ -2560,6 +2561,126 @@ export function formatDuration(sec) {
   const s = total % 60
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+// ── Batch 42: Start HYROX overlay helpers ──────────────────────────────────
+
+// `pickHeadline(lastShownIndex)` — picks one of the 30 cycling headlines per
+// design doc §13.2. Avoids back-to-back repeats by re-rolling when the random
+// index matches `lastShownIndex`. Persistence of the returned index is the
+// caller's responsibility (writes to `settings.lastHyroxHeadlineIndex` so the
+// chosen line stays stable across re-renders + the back/forward dance until a
+// NEW Start HYROX event fires). Returns `{ text, index }`.
+export function pickHeadline(lastShownIndex) {
+  const bank = HYROX_HEADLINES
+  if (!Array.isArray(bank) || bank.length === 0) {
+    return { text: '', index: -1 }
+  }
+  if (bank.length === 1) {
+    return { text: bank[0], index: 0 }
+  }
+  let idx
+  do {
+    idx = Math.floor(Math.random() * bank.length)
+  } while (idx === lastShownIndex)
+  return { text: bank[idx], index: idx }
+}
+
+// `pickHyroxStationForToday(roundConfig, sessions)` — picks the prescribed
+// station for today's HYROX round per design doc §5.3 (Option A: rotation-pool
+// with light freshness bias). Used by the Start HYROX overlay to pre-populate
+// the station chip when the round template uses a rotation pool.
+//
+// Behavior:
+// - Single-station rounds (`roundConfig.stationId`): returns that station id
+//   directly. The pool path doesn't apply.
+// - Pool rounds (`roundConfig.rotationPool: string[]`): scans recent sessions
+//   for the same round template, finds which pool members were used in the
+//   last 2 sessions, and returns the FIRST pool member NOT used recently. If
+//   the user has used every pool member in the last 2 sessions (small pool
+//   case), falls back to the least-recently-used member. If no prior history,
+//   returns the first pool entry.
+// - Defensive: returns null when both `stationId` and `rotationPool` are
+//   absent/empty/malformed.
+//
+// `sessions` is optional — when omitted or empty the freshness bias short-
+// circuits to the pool's first entry. `exerciseIdOrName` is the round-template
+// library id (or fallback name) used to filter prior session history.
+export function pickHyroxStationForToday(roundConfig, sessions, exerciseIdOrName = null) {
+  if (!roundConfig || typeof roundConfig !== 'object') return null
+
+  // Single-station case wins immediately.
+  if (typeof roundConfig.stationId === 'string' && roundConfig.stationId) {
+    return roundConfig.stationId
+  }
+
+  const pool = Array.isArray(roundConfig.rotationPool)
+    ? roundConfig.rotationPool.filter(s => typeof s === 'string' && s)
+    : []
+  if (pool.length === 0) return null
+
+  // No history → first pool entry wins.
+  if (!Array.isArray(sessions) || sessions.length === 0 || !exerciseIdOrName) {
+    return pool[0]
+  }
+
+  const target = String(exerciseIdOrName)
+  // Walk newest-first, look at the last 2 sessions of this round template.
+  const ordered = [...sessions]
+    .filter(s => s?.mode === 'bb' && Array.isArray(s?.data?.exercises))
+    .sort((a, b) => {
+      const da = a?.date ? new Date(a.date).getTime() : 0
+      const db = b?.date ? new Date(b.date).getTime() : 0
+      return db - da
+    })
+
+  // Map from stationId → most-recent timestamp it was used in this round.
+  const lastSeen = new Map()
+  let templateSessionsHit = 0
+  for (const session of ordered) {
+    if (templateSessionsHit >= 2) break
+    let matched = false
+    for (const ex of session.data.exercises) {
+      const idMatch = ex?.exerciseId && ex.exerciseId === target
+      const nameMatch = ex?.name && ex.name === target
+      if (!idMatch && !nameMatch) continue
+      if (!Array.isArray(ex.rounds)) continue
+      matched = true
+      for (const round of ex.rounds) {
+        if (!round || !Array.isArray(round.legs)) continue
+        for (const leg of round.legs) {
+          if (leg?.type === 'station' && typeof leg.stationId === 'string') {
+            if (pool.includes(leg.stationId)) {
+              const ts = session.date ? new Date(session.date).getTime() : 0
+              const prev = lastSeen.get(leg.stationId) || 0
+              if (ts > prev) lastSeen.set(leg.stationId, ts)
+            }
+          }
+        }
+      }
+    }
+    if (matched) templateSessionsHit += 1
+  }
+
+  // No template history found → first pool entry.
+  if (lastSeen.size === 0) return pool[0]
+
+  // Prefer first pool member NOT used in the recent window.
+  for (const stationId of pool) {
+    if (!lastSeen.has(stationId)) return stationId
+  }
+
+  // Every pool member used recently → least-recently-used wins.
+  let best = pool[0]
+  let bestTs = lastSeen.get(best) ?? Infinity
+  for (const stationId of pool) {
+    const ts = lastSeen.get(stationId) ?? 0
+    if (ts < bestTs) {
+      best = stationId
+      bestTs = ts
+    }
+  }
+  return best
 }
 
 // ── Misc ───────────────────────────────────────────────────────────────────

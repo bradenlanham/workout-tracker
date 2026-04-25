@@ -33,6 +33,7 @@ export default function HamburgerMenu({ open, setOpen }) {
   const path = loc.pathname
   const isFullscreenFlow =
     path.startsWith('/log/bb/') ||
+    path.startsWith('/log/hyrox/') ||       // Batch 42 — Start HYROX overlay + B43 round logger
     path.startsWith('/splits/new') ||
     path.startsWith('/splits/edit')
   if (isFullscreenFlow) return null

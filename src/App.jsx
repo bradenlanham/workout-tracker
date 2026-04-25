@@ -11,6 +11,8 @@ import History from './pages/History'
 import Progress from './pages/Progress'
 import Guide from './pages/Guide'
 import BbLogger from './pages/log/BbLogger'
+import StartHyroxOverlay from './pages/log/StartHyroxOverlay'
+import HyroxRoundLoggerStub from './pages/log/HyroxRoundLoggerStub'
 import CardioLogger from './pages/CardioLogger'
 import TemplateEditor from './pages/TemplateEditor'
 import SplitManager from './pages/SplitManager'
@@ -48,6 +50,11 @@ function ThemedApp() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/log" element={<Log />} />
           <Route path="/log/bb/:type" element={<BbLogger />} />
+          {/* Batch 42 — Start HYROX overlay (mockup 2). */}
+          <Route path="/log/hyrox/:exerciseId/start" element={<StartHyroxOverlay />} />
+          {/* Batch 42 — Round logger placeholder. B43 replaces this with the
+              real per-leg surface at /log/hyrox/:exerciseId/round/:roundIdx/:leg. */}
+          <Route path="/log/hyrox/:exerciseId/round/:roundIdx/:leg" element={<HyroxRoundLoggerStub />} />
           <Route path="/cardio" element={<CardioLogger />} />
           <Route path="/history" element={<History />} />
           <Route path="/progress" element={<Progress />} />

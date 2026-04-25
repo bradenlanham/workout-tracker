@@ -151,7 +151,12 @@ export default function RestTimer() {
   // ── Conditional render ────────────────────────────────────────────────────
 
   const isLogging = location.pathname.startsWith('/log/')
-  if (!isLogging) return null
+  // Batch 42 — hide the floating rest timer in HYROX mode per design doc §5.4.
+  // HYROX gets its own gym-clock timer (B43) and a full-screen yellow rest
+  // countdown between rounds (B44); the floating circle would be redundant
+  // chrome layered behind the overlay.
+  const isHyroxFlow = location.pathname.startsWith('/log/hyrox/')
+  if (!isLogging || isHyroxFlow) return null
 
   // ── Derived display values ─────────────────────────────────────────────────
 

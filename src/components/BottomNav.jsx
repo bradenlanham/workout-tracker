@@ -85,6 +85,7 @@ export default function BottomNav({ onMenuOpen, menuOpen }) {
   const path = location.pathname
   const isFullscreenFlow =
     path.startsWith('/log/bb/') ||
+    path.startsWith('/log/hyrox/') ||       // Batch 42 — Start HYROX overlay + B43 round logger
     path.startsWith('/splits/new') ||       // covers /splits/new and /splits/new/start (Step 6)
     path.startsWith('/splits/edit')         // covers /splits/edit/:id
   const isWelcome = path === '/welcome'

@@ -4076,11 +4076,14 @@ export default function BbLogger() {
                   exercises={groupExes}
                   sessions={sessions}
                   onStart={(ex) => {
-                    // B42 ships the actual Start HYROX overlay. For B41 we
-                    // surface a placeholder so the user sees the button
-                    // wires somewhere; the real route lands next batch.
-                    // eslint-disable-next-line no-alert
-                    alert(`Round logger ships in Batch 42 — for now, ${ex.name} is wired but not interactive.`)
+                    // Batch 42 — route to the Start HYROX overlay. The
+                    // overlay reads the round template's library entry by
+                    // exerciseId, so we prefer that; fall back to name for
+                    // pre-v3 resilience.
+                    const idOrName = ex.exerciseId || ex.name
+                    if (idOrName) {
+                      navigate(`/log/hyrox/${encodeURIComponent(idOrName)}/start`)
+                    }
                   }}
                 />
               </div>

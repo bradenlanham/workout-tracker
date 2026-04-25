@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 41 — Hybrid Training v1: HYROX section preview card in workout view)
+> Last updated: April 25, 2026 (Batch 42 — Hybrid Training v1: Start HYROX overlay + 30-headline bank + station picker)
 
 ## Rules for Claude
 
@@ -1932,6 +1932,42 @@ Fifth batch of the Hybrid Training v1 workstream and the **first user-visible HY
 529. **Build.** `npx vite build --outDir /tmp/test-build` → 821.18 KB bundle / 221.23 KB gzipped (+5.46 KB / +1.56 KB vs Batch 40, accounted for by the new HyroxSectionPreview component + getLastHyroxRoundSession + formatDuration helpers + the BbLogger render-loop branch).
 
 530. **Branch + handoff.** Pushed `claude/hybrid-b41-section-preview` to GitHub. **Not auto-merged to main** — first user-visible HYROX surface, awaiting your eyes. The Start HYROX button is wired to a placeholder alert; B42 ships the actual Start HYROX overlay (cycling headline + prescription editor + Begin round 1 → B43 round logger).
+
+### Batch 42 (April 25, 2026) — Hybrid Training v1: Start HYROX overlay + 30-headline bank + station picker
+
+Sixth batch of the Hybrid Training v1 workstream and the second user-visible HYROX surface. Replaces the B41 placeholder alert with the real Start HYROX overlay (mockup 2). Pre-populates today's prescription based on the round template's roundConfig defaults; the user can override any of the four rows (rounds / run leg / station / rest) before tapping Begin round 1, which routes to a B43 stub on `/log/hyrox/:exerciseId/round/1/run` carrying the prescription via `location.state`. Branch shipped to `claude/hybrid-b42-start-overlay` — NOT auto-merged to main, awaiting user review.
+
+531. **`src/data/hyroxHeadlines.js` (new)** — closed bank of 30 short cycling headlines per design doc §13.1. Three tiers: serious / locked-in (10 entries — "Lock in.", "Earn it.", "Pace, not panic."), coach voice / motivating (10 — "You against last week.", "Smooth is fast.", "Make her sweat."), playful / light (10 — "Time to suffer fluently.", "Cardio o'clock.", "Sprint now, brunch later."). All entries ≤ 50 chars per design doc §13.3 two-line max. No duplicates. Single source of truth for the overlay's hero text.
+
+532. **`pickHeadline(lastShownIndex)` in `helpers.js`.** Pure function per design doc §13.2. `do { idx = Math.floor(Math.random() * bank.length) } while (idx === lastShownIndex)` — guarantees no consecutive repeat across opens. Returns `{ text, index }` so the caller can persist the index for next-open's avoidance check. Defensive: bank.length=0 returns `{text:'',index:-1}`; bank.length=1 short-circuits before the loop. First-time call (lastShownIndex=-1) treats every index as fair game.
+
+533. **`pickHyroxStationForToday(roundConfig, sessions, exerciseIdOrName)` in `helpers.js`.** Pure function per design doc §5.3 (Option A — user picks at session start, with light freshness bias to surface variety). Single-station rounds (`roundConfig.stationId`) return that id directly. Pool rounds walk newest-first through up to 2 prior sessions of the same template, build a `stationId → most-recent-timestamp-used` map, then return the FIRST pool member NOT used in that recency window. If every pool member was used recently (small pool), falls back to least-recently-used. No history → first pool entry. Name-fallback resolution for pre-v3 sessions (`exerciseIdOrName` matches by `exerciseId` OR by `name`). Defensive against null roundConfig / empty pool / non-array sessions / falsy `stationId` + present `rotationPool` (uses pool path).
+
+534. **`settings.lastHyroxHeadlineIndex` + `setLastHyroxHeadlineIndex(idx)` (`useStore.js`).** Default `-1` (sentinel = none yet). Setter validates numeric input + persists via the existing settings deep-merge. The Start HYROX overlay reads it on mount, calls `pickHeadline`, then writes the picked index back via a `useEffect` (NOT during render — initial implementation called the setter inside `useState`'s lazy initializer and triggered React's "Cannot update a component while rendering" warning when Zustand subscribers in the App tree re-rendered; moved to a mount-only useEffect so the persist fires after commit).
+
+535. **`StartHyroxOverlay.jsx` route component (`src/pages/log/StartHyroxOverlay.jsx`).** Full-page yellow-takeover overlay at `/log/hyrox/:exerciseId/start`. Resolves the round template by id (with name fallback) from `exerciseLibrary`. Renders:
+    - Yellow radial glow at top via `radial-gradient(ellipse 70% 40% at 50% 0%, rgba(234,179,8,0.18) 0%, ... 0)` per §12.2.
+    - Yellow context chip `HYROX · {round template name}`.
+    - 34px / weight 500 / lh 1.05 / letter-spacing -0.02em hero headline with 200ms fade-in animation per §13.3.
+    - Last-session bests inline below the chip when prior history exists (`Last: {totalTime} · {N} rounds`).
+    - Four tap-to-edit `PrescriptionRow` cards: Rounds (chip 3/4/5/6/8), Run leg (− / + stepper, 100m–5000m, 100m steps), Station (read-only "Single-station round — fixed by template" OR rotation-pool chip selector), Rest between rounds (chip 1:00 / 1:30 / 2:00 / 3:00). Tap a row → expand inline editor below; tap a chip / step → commit the new value and auto-collapse.
+    - Yellow `Begin round 1` button at the bottom with `0 8px 30px rgba(234,179,8,0.35)` glow shadow.
+    - `Skip HYROX today` text-link below — calls `navigate(-1)`, returns to the workout page (Lift section preserved).
+    - Defensive empty-state: when the route's exerciseId can't resolve to a hyrox-round library entry, renders "Round template not found." + Go back button instead of crashing.
+
+536. **`HyroxRoundLoggerStub.jsx` placeholder route component.** Renders at `/log/hyrox/:exerciseId/round/:roundIdx/:leg`. Shows "Round logger ships in Batch 43", a JSON dump of the `location.state.prescription` (proves the prescription threaded through correctly: `exerciseId / roundCount / runDistanceMeters / restSec / stationId`), and a Go back button. B43 replaces this entire component.
+
+537. **App.jsx route registration.** Two new routes added between `/log/bb/:type` and `/cardio`: `/log/hyrox/:exerciseId/start` → `StartHyroxOverlay`; `/log/hyrox/:exerciseId/round/:roundIdx/:leg` → `HyroxRoundLoggerStub`.
+
+538. **BbLogger.jsx onStart wire.** Replaced B41's placeholder alert with `navigate('/log/hyrox/${encodeURIComponent(ex.exerciseId || ex.name)}/start')`. The exerciseId-or-name fallback covers pre-v3 sessions; encodeURIComponent handles spaces and special chars in round-template names. The case-insensitive `group.label.trim().toLowerCase() === 'hyrox'` gate from B41 is preserved verbatim — non-HYROX sections continue to render the standard card list.
+
+539. **Fullscreen-flow predicate extended for HYROX routes.** `BottomNav.jsx`, `HamburgerMenu.jsx` both gain `path.startsWith('/log/hyrox/')` to the existing `isFullscreenFlow` check that already covered `/log/bb/`, `/splits/new*`, `/splits/edit*`. `RestTimer.jsx` also hides on `/log/hyrox/*` per design doc §5.4 — HYROX gets its own gym-clock timer (B43) and a full-screen yellow rest countdown between rounds (B44), so the floating circle would be redundant chrome behind the overlay.
+
+540. **`hybrid-b42-sanity.mjs` at worktree root.** 33/33 pass. Covers: (1) HYROX_HEADLINES bank integrity (30 entries, all non-empty strings ≤ 50 chars, no duplicates, three tier anchors present); (2) pickHeadline 200-trial non-repeat verification + 500-trial coverage check (≥25 of 30 distinct indices hit); (3) pickHyroxStationForToday across single-station / no-history pool / pool with prior history (least-recently-used wins) / small-pool-everyone-used-recently / defensive cases (null roundConfig, empty rotationPool, non-array sessions, falsy stationId-with-pool) / name-fallback resolution; (4) end-to-end seed correctness for both Brooke round templates (Tuesday Run+SkiErg → roundCount=4, runDistance=800m, rest=120s, SkiErg; Friday Simulation → roundCount=4, runDistance=1000m, rest=90s, first-not-recently-used pool member).
+
+541. **Live preview verified** (port 5176, mobile 375×812, synthetic Brooke split with both round templates injected via localStorage). Tuesday Run+SkiErg overlay: yellow chip `HYROX · HYROX RUN + SKIERG ROUND`, headline rotates each open ("Lock in.", "One round at a time.", "Run it back."), 4 prescription rows pre-populated correctly (4 rounds / 800m / SkiErg / 2:00), Begin round 1 routes to `/log/hyrox/HYROX%20Run%20%2B%20SkiErg%20Round/round/1/run` with state `{exerciseId, roundCount: 4, runDistanceMeters: 800, restSec: 90 (overridden from 120 via the chip), stationId: "sta_skierg"}`. Friday Simulation overlay: separate headline ("Make her sweat."), pool sublabel "Rotates from pool (7)" under SkiErg, expanding the Station row reveals all 7 pool members (SkiErg / Sled Push / Sled Pull / Rowing / Farmers Carry / Sandbag Lunges / Wall Balls), tapping Sled Push overrides the prescription. Begin round 1 routes through with `stationId: "sta_sled_push"` correctly persisted in `location.state`. BottomNav + RestTimer + HamburgerMenu correctly hidden on the overlay route. Console clean of new errors — the only remaining errors are the pre-existing `<ExerciseItem>` key-via-spread warnings from BbLogger.jsx that predate B41 and are documented as known caveats.
+
+542. **Build.** `npx vite build --outDir /tmp/test-build` → 832.19 KB bundle / 224.63 KB gzipped (+11.01 KB / +3.40 KB vs Batch 41, accounted for by StartHyroxOverlay component + 30-headline bank + pickHeadline + pickHyroxStationForToday + the route registration + the HyroxRoundLoggerStub placeholder).
 
 ---
 
