@@ -102,7 +102,7 @@ const HYROX_HYBRID_WORKOUTS = [
         label: 'Lift',
         exercises: [
           { name: 'Cable Lateral Raise', type: 'weight-training', rec: { sets: 3, reps: 20, note: 'Warm-up' } },
-          { name: 'Shoulder Press Machine', type: 'weight-training', rec: { sets: 4, reps: 12, note: 'Machine or DB' } },
+          { name: 'Shoulder Press', type: 'weight-training', rec: { sets: 4, reps: 12, note: 'Machine or dumbbells' } },
           { name: 'DB Lateral Raise', type: 'weight-training', rec: { sets: 3, reps: '10–10–10', note: 'Drop set, 3 rounds' } },
           { name: 'Incline Bench Front Raise', type: 'weight-training', rec: { sets: 4, reps: 12, note: '45° incline' } },
           { name: 'Reverse Flies', type: 'weight-training', rec: { sets: 4, reps: 15 } },

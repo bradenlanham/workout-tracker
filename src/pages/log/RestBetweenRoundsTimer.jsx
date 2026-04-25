@@ -68,7 +68,11 @@ export default function RestBetweenRoundsTimer({
         background: '#000',
         backgroundImage:
           'radial-gradient(ellipse 70% 40% at 50% 0%, rgba(234,179,8,0.18) 0%, rgba(234,179,8,0.08) 35%, rgba(0,0,0,0) 70%)',
-        padding: '32px 24px',
+        // Batch 46 — safe-area top so the chip clears the iPhone island.
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.5rem)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.5rem)',
+        paddingLeft: 16,
+        paddingRight: 16,
       }}
     >
       {/* Top context — yellow chip + round target */}
@@ -97,9 +101,10 @@ export default function RestBetweenRoundsTimer({
         )}
       </div>
 
-      {/* Centered gym clock — counts DOWN via remaining seconds */}
-      <div className="flex flex-col items-center" style={{ gap: 12 }}>
-        <GymClock elapsedSec={remainingSec} mode="rest" />
+      {/* Centered gym clock — counts DOWN via remaining seconds.
+          Batch 46 — `size="lg"` matches the round logger's hero clock. */}
+      <div className="flex flex-col items-center w-full" style={{ gap: 12 }}>
+        <GymClock elapsedSec={remainingSec} mode="rest" size="lg" />
         <div
           style={{
             fontSize: 12,

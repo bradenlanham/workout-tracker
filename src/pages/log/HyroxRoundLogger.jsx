@@ -73,7 +73,8 @@ import {
 } from '../../utils/helpers'
 import { HYROX_STATIONS } from '../../data/hyroxStations'
 
-const FLASH_DURATION_MS = 2500
+const FLASH_DURATION_MS = 4500
+const COUNTDOWN_SEC = 5
 
 const YELLOW = '#EAB308'
 const YELLOW_BRIGHT = '#FACC15'
@@ -239,6 +240,68 @@ function ComparisonBand({ comparison }) {
   )
 }
 
+// Batch 46 — Pre-clock countdown overlay. Full-screen, black background
+// with yellow radial glow, single huge digit (5 → 4 → 3 → 2 → 1 → "GO"),
+// then auto-advances to the round logger with the clock starting at 0.
+// Pure presentational; parent provides startTimestamp + durationSec
+// (default 5) + onComplete.
+function CountdownOverlay({ startTimestamp, durationSec = 5, onComplete }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 100)
+    return () => clearInterval(id)
+  }, [])
+  const elapsedMs = startTimestamp ? Math.max(0, now - startTimestamp) : 0
+  const remainingSec = Math.max(0, durationSec - elapsedMs / 1000)
+  const displayValue = remainingSec > 0 ? Math.ceil(remainingSec) : 'GO'
+
+  useEffect(() => {
+    if (remainingSec <= 0 && onComplete) {
+      // Tiny grace period so user sees "GO" briefly before transition.
+      const t = setTimeout(() => onComplete(), 380)
+      return () => clearTimeout(t)
+    }
+  }, [remainingSec, onComplete])
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black text-white"
+      style={{
+        backgroundImage: `radial-gradient(ellipse 80% 50% at 50% 50%, rgba(234,179,8,0.25) 0%, rgba(234,179,8,0.08) 40%, rgba(0,0,0,0) 75%)`,
+      }}
+    >
+      <div
+        className="text-[10px] uppercase tracking-[0.25em] font-bold mb-6"
+        style={{ color: 'rgba(234,179,8,0.85)' }}
+      >
+        Get ready
+      </div>
+      <div
+        key={displayValue}
+        className="font-mono"
+        style={{
+          fontSize: typeof displayValue === 'number' ? 200 : 140,
+          fontWeight: 700,
+          color: '#FEF08A',
+          letterSpacing: '-0.05em',
+          lineHeight: 1,
+          textShadow: '0 0 80px rgba(234,179,8,0.6)',
+          animation: 'countdownPop 350ms ease-out',
+        }}
+      >
+        {displayValue}
+      </div>
+      <style>{`
+        @keyframes countdownPop {
+          0%   { transform: scale(0.6); opacity: 0; }
+          40%  { transform: scale(1.08); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 export default function HyroxRoundLogger() {
   const { exerciseId, roundIdx: roundIdxParam, leg: legParam } = useParams()
   const navigate = useNavigate()
@@ -284,29 +347,30 @@ export default function HyroxRoundLogger() {
 
     // Otherwise, seed from the prescription.
     if (prescriptionFromState) {
-      const startTs = Date.now()
       const initial = {
         exerciseId: libraryEntry?.id || exerciseId,
         prescription: prescriptionFromState,
         currentRoundIdx: 0,
         currentLeg: 'run',
-        // Round clock keeps running across legs (visual continuity per
-        // design doc §5.4); resets only on round-transition. Segment
-        // clock resets per leg so each leg's stamped timeSec is
-        // segment-specific (handleDone reads `now - legStartTimestamp`).
-        roundStartTimestamp: startTs,
-        legStartTimestamp: startTs,
+        // Batch 46 — clocks DO NOT start on entry. User taps Start →
+        // 5-4-3-2-1 countdown → then `roundStartTimestamp` + `legStartTimestamp`
+        // get set and the clock begins. Pre-Batch-46 the clock auto-started
+        // when the page loaded, which felt jarring.
+        roundStartTimestamp: null,
+        legStartTimestamp: null,
         totalPausedMs: 0,
         isPaused: false,
         pauseStartedAt: null,
         completedLegs: [],
-        // B44 — phase state machine for the post-round flash + rest sequence.
-        // Logging is the default; non-final station-Done flips to 'flash',
-        // then 'rest', then back to 'logging' after rest completes.
-        phase: 'logging',
+        // Phase state machine — 'ready' is the new Batch 46 idle state for
+        // the pre-clock screen. Tap Start → 'countdown' (5-4-3-2-1) → 'logging'.
+        // Non-final station-Done flips to 'flash' → 'rest' → 'logging'.
+        phase: 'ready',
         flashStartTimestamp: null,
+        countdownStartTimestamp: null,
         restStartTimestamp: null,
         restEndTimestamp: null,
+        restExtensions: [], // Batch 46 — track +30s extensions per round
       }
       saveActiveSession({
         ...(activeSession || {}),
@@ -560,6 +624,10 @@ export default function HyroxRoundLogger() {
       // routes straight to summary from handleDone). Bail rather than corrupt.
       return
     }
+    // Batch 46 — round 2+ skips the countdown UI on advance — rest already
+    // gave the user time to prep. The clock starts immediately on
+    // next-round entry. Round 1's countdown is the only first-impression
+    // we needed to add (handled by the 'ready' phase initial seed).
     const nowTs = Date.now()
     saveActiveSession({
       ...activeSession,
@@ -574,6 +642,7 @@ export default function HyroxRoundLogger() {
         pauseStartedAt: null,
         phase: 'logging',
         flashStartTimestamp: null,
+        countdownStartTimestamp: null,
         restStartTimestamp: null,
         restEndTimestamp: null,
       },
@@ -601,16 +670,90 @@ export default function HyroxRoundLogger() {
       const newEnd =
         (typeof cur.restEndTimestamp === 'number' ? cur.restEndTimestamp : Date.now()) +
         delta * 1000
+      // Batch 46 — track each +30s extension so the summary screen can
+      // surface "added 30s rest after R2" annotations later. Stamp with
+      // round + delta + at-timestamp.
+      const nextExtensions = Array.isArray(cur.restExtensions)
+        ? [...cur.restExtensions]
+        : []
+      nextExtensions.push({
+        roundIndex: cur.currentRoundIdx,
+        deltaSec: delta,
+        at: Date.now(),
+      })
       saveActiveSession({
         ...activeSession,
         hyrox: {
           ...cur,
           restEndTimestamp: newEnd,
+          restExtensions: nextExtensions,
         },
       })
     },
     [activeSession, saveActiveSession]
   )
+
+  // Batch 46 — Start round 1: enter the 5-4-3-2-1 countdown phase.
+  const handleStartCountdown = useCallback(() => {
+    const cur = activeSession?.hyrox
+    if (!cur || cur.phase !== 'ready') return
+    saveActiveSession({
+      ...activeSession,
+      hyrox: {
+        ...cur,
+        phase: 'countdown',
+        countdownStartTimestamp: Date.now(),
+      },
+    })
+  }, [activeSession, saveActiveSession])
+
+  // Batch 46 — countdown completes: clocks start, phase flips to logging.
+  const handleCountdownComplete = useCallback(() => {
+    const cur = activeSession?.hyrox
+    if (!cur || cur.phase !== 'countdown') return
+    const nowTs = Date.now()
+    saveActiveSession({
+      ...activeSession,
+      hyrox: {
+        ...cur,
+        phase: 'logging',
+        countdownStartTimestamp: null,
+        roundStartTimestamp: nowTs,
+        legStartTimestamp: nowTs,
+        totalPausedMs: 0,
+      },
+    })
+  }, [activeSession, saveActiveSession])
+
+  // Batch 46 — Restart workout from round 1. Wipes completed legs + resets
+  // all clocks. Useful when an interruption (someone wanted to chat) means
+  // the previously-running clock no longer reflects the actual session.
+  const handleRestart = useCallback(() => {
+    const cur = activeSession?.hyrox
+    if (!cur) return
+    if (!confirm('Restart this HYROX workout from round 1? Logged legs will be cleared.')) return
+    saveActiveSession({
+      ...activeSession,
+      hyrox: {
+        ...cur,
+        currentRoundIdx: 0,
+        currentLeg: 'run',
+        roundStartTimestamp: null,
+        legStartTimestamp: null,
+        totalPausedMs: 0,
+        isPaused: false,
+        pauseStartedAt: null,
+        completedLegs: [],
+        phase: 'ready',
+        flashStartTimestamp: null,
+        countdownStartTimestamp: null,
+        restStartTimestamp: null,
+        restEndTimestamp: null,
+        completedAt: null,
+      },
+    })
+    navigate(`/log/hyrox/${encodeURIComponent(exerciseId)}/round/1/run`, { replace: true })
+  }, [activeSession, saveActiveSession, navigate, exerciseId])
 
   const handleSkip = useCallback(() => {
     // Skip the current leg — stamp 0s and advance per the same rules as
@@ -686,6 +829,18 @@ export default function HyroxRoundLogger() {
   // stays mounted but is fully covered. Reload during either phase reads
   // phase from activeSession.hyrox and lands back on the right overlay.
 
+  // Batch 46 — countdown overlay. Renders 5-4-3-2-1 against the same
+  // black radial-glow backdrop. Auto-completes via useEffect when 5s elapsed.
+  if (hyrox.phase === 'countdown') {
+    return (
+      <CountdownOverlay
+        startTimestamp={hyrox.countdownStartTimestamp}
+        durationSec={COUNTDOWN_SEC}
+        onComplete={handleCountdownComplete}
+      />
+    )
+  }
+
   if (hyrox.phase === 'flash') {
     const elapsedFlashMs =
       typeof hyrox.flashStartTimestamp === 'number'
@@ -752,6 +907,8 @@ export default function HyroxRoundLogger() {
   // semantics. So if URL drifts (e.g. user manually edits), we trust the
   // state and ignore the URL.
 
+  const isReady = hyrox.phase === 'ready'
+
   return (
     <div
       className="fixed inset-0 z-[60] flex flex-col bg-black text-white overflow-y-auto"
@@ -759,38 +916,72 @@ export default function HyroxRoundLogger() {
         backgroundImage: `radial-gradient(ellipse 70% 40% at 50% 0%, rgba(234,179,8,0.18) 0%, rgba(234,179,8,0.08) 35%, rgba(0,0,0,0) 70%)`,
       }}
     >
-      <div className="w-full max-w-md mx-auto px-6 pt-6 pb-8 flex flex-col flex-1" style={{ gap: 18 }}>
+      <div
+        className="w-full max-w-md mx-auto px-4 pb-8 flex flex-col flex-1"
+        style={{
+          gap: 18,
+          // Batch 46 — push content below the iPhone notch / Dynamic Island.
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+        }}
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between">
           <button
             type="button"
             onClick={handleBack}
-            className="w-9 h-9 flex items-center justify-center rounded-full"
-            style={{ background: 'rgba(255,255,255,0.08)', color: 'white' }}
+            className="w-10 h-10 flex items-center justify-center rounded-full"
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'white' }}
             aria-label="Back to workout (pauses round clock)"
           >
-            ←
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
           </button>
           <div
-            className="text-[10px] uppercase tracking-wider font-bold px-3 py-1 rounded-full truncate max-w-[60%] text-center"
+            className="text-[10px] uppercase tracking-wider font-bold px-3 py-1 rounded-full truncate text-center"
             style={{
               background: 'rgba(234,179,8,0.12)',
               color: YELLOW_BRIGHT,
               border: `1px solid rgba(234,179,8,0.3)`,
+              maxWidth: '50%',
             }}
           >
             HYROX · {libraryEntry.name}
           </div>
-          <button
-            type="button"
-            onClick={handlePauseToggle}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-base"
-            style={{ background: 'rgba(255,255,255,0.08)', color: 'white' }}
-            aria-label={hyrox.isPaused ? 'Resume' : 'Pause'}
-          >
-            {hyrox.isPaused ? '▶' : '⏸'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {!isReady && (
+              <button
+                type="button"
+                onClick={handlePauseToggle}
+                className="w-10 h-10 flex items-center justify-center rounded-full text-base"
+                style={{
+                  background: hyrox.isPaused ? 'rgba(234,179,8,0.85)' : 'rgba(255,255,255,0.1)',
+                  color: hyrox.isPaused ? '#0a0a0a' : 'white',
+                }}
+                aria-label={hyrox.isPaused ? 'Resume' : 'Pause'}
+              >
+                {hyrox.isPaused ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleRestart}
+              className="w-10 h-10 flex items-center justify-center rounded-full"
+              style={{ background: 'rgba(255,255,255,0.08)', color: 'white' }}
+              aria-label="Restart workout"
+              title="Restart workout"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Round-progress dots */}
@@ -836,12 +1027,16 @@ export default function HyroxRoundLogger() {
           </div>
         </div>
 
-        {/* Gym clock — round clock per design doc §5.4 (continuous within
-            a round, resets only on round-transition). The leg label above
-            tells the user which leg they're on; the clock itself is the
-            "round clock" visual. */}
+        {/* Gym clock — Batch 46: enlarged via size="lg" so the clock is
+            the centerpiece. Round clock per design doc §5.4 (continuous
+            within a round, resets only on round-transition). */}
         <div className="flex justify-center" style={{ marginTop: 4 }}>
-          <GymClock elapsedSec={roundElapsedSec} mode="up" eyebrowOverride="ROUND CLOCK" />
+          <GymClock
+            elapsedSec={roundElapsedSec}
+            mode="up"
+            eyebrowOverride="ROUND CLOCK"
+            size="lg"
+          />
         </div>
 
         {/* Recent splits */}
@@ -857,28 +1052,65 @@ export default function HyroxRoundLogger() {
         {/* Spacer to push the action buttons toward the bottom */}
         <div className="flex-1" />
 
-        {/* Done · Stamp time (primary CTA). Stamp = segment elapsed (not
-            round elapsed) so the user sees the per-leg time they're about
-            to commit. The round-total reads off the round clock above. */}
-        <button
-          type="button"
-          onClick={handleDone}
-          className="w-full rounded-2xl py-4 font-bold text-lg active:scale-[0.98] transition-transform"
-          style={{ background: GREEN, color: '#0a0a0a', boxShadow: `0 8px 30px rgba(16,185,129,0.35)` }}
-        >
-          ✓ Done · Stamp {formatDuration(Math.max(0, Math.round(elapsedSec)))}
-        </button>
-
-        {/* Secondary actions */}
-        <div className="flex items-center justify-center" style={{ gap: 16 }}>
+        {isReady ? (
+          // Batch 46 — pre-clock state. User must explicitly tap to start
+          // the round. Yellow Start button matches HYROX brand + is bigger
+          // than the Done button to draw attention as the primary action.
           <button
             type="button"
-            onClick={handleSkip}
-            className="text-xs text-white/45 underline underline-offset-2"
+            onClick={handleStartCountdown}
+            className="w-full rounded-2xl py-5 font-bold text-xl active:scale-[0.98] transition-transform"
+            style={{
+              background: YELLOW,
+              color: '#0a0a0a',
+              boxShadow: `0 10px 36px rgba(234,179,8,0.45)`,
+            }}
           >
-            Skip {isRunLeg ? 'run' : 'station'}
+            Start
           </button>
-        </div>
+        ) : (
+          // Batch 46 — Done button restyle: yellow when ready (time has
+          // accumulated past 1s), muted when not yet (matching HYROX brand
+          // instead of the prior green emerald). Active-state on tap fades
+          // briefly to confirm the press.
+          (() => {
+            const ready = elapsedSec >= 1
+            return (
+              <button
+                type="button"
+                onClick={handleDone}
+                className="w-full rounded-2xl py-4 font-bold text-lg active:scale-[0.97] transition-transform group"
+                style={ready
+                  ? {
+                      background: YELLOW,
+                      color: '#0a0a0a',
+                      boxShadow: `0 8px 30px rgba(234,179,8,0.4)`,
+                    }
+                  : {
+                      background: 'rgba(234,179,8,0.18)',
+                      color: 'rgba(255,255,255,0.7)',
+                      border: '1px solid rgba(234,179,8,0.4)',
+                    }
+                }
+              >
+                ✓ Done · Stamp {formatDuration(Math.max(0, Math.round(elapsedSec)))}
+              </button>
+            )
+          })()
+        )}
+
+        {/* Secondary actions — only when actually logging */}
+        {!isReady && (
+          <div className="flex items-center justify-center" style={{ gap: 16 }}>
+            <button
+              type="button"
+              onClick={handleSkip}
+              className="text-xs text-white/45 underline underline-offset-2"
+            >
+              Skip {isRunLeg ? 'run' : 'station'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Paused overlay banner */}

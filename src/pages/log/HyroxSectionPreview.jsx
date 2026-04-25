@@ -15,12 +15,52 @@
 // for the day) renders a muted "✓ done · {total} · {delta}" treatment.
 
 import useStore from '../../store/useStore'
-import { getLastHyroxRoundSession, formatDuration } from '../../utils/helpers'
+import { getLastHyroxRoundSession, formatDuration, formatRec } from '../../utils/helpers'
 import { HYROX_STATIONS } from '../../data/hyroxStations'
 
 const YELLOW = '#EAB308'
 const YELLOW_DIM = 'rgba(234, 179, 8, 0.7)'
 const YELLOW_FAINT = 'rgba(234, 179, 8, 0.12)'
+
+// Batch 46 — Add-on card for non-hyrox-round entries inside a HYROX section
+// (running drills, optional skill-work stations). Renders compact info-only
+// card with name + rec text + "✓ Mark complete" button so users can check
+// them off without going through the full round logger.
+function HyroxAddOnCard({ exercise, onComplete }) {
+  const isDone = !!exercise?.completedAt
+  const recText = formatRec(exercise?.rec)
+  return (
+    <div
+      className="rounded-xl p-3"
+      style={{
+        background: isDone ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.3)',
+        border: `1px solid ${isDone ? 'rgba(255,255,255,0.08)' : YELLOW_FAINT}`,
+        opacity: isDone ? 0.55 : 1,
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-white truncate">{exercise.name}</div>
+          {recText && (
+            <div className="text-[12px] text-white/65 mt-1 leading-snug">{recText}</div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onComplete?.(exercise) }}
+          className="shrink-0 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-md transition-colors"
+          style={{
+            background: isDone ? 'rgba(16,185,129,0.18)' : 'transparent',
+            border: `1px solid ${isDone ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.2)'}`,
+            color: isDone ? 'rgb(110,231,183)' : 'rgba(255,255,255,0.85)',
+          }}
+        >
+          {isDone ? '✓ Done' : 'Mark done'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function stationName(stationId) {
   if (!stationId) return null
@@ -181,16 +221,22 @@ function HyroxRoundCard({ exercise, libraryEntry, sessions, onStart }) {
   )
 }
 
-export default function HyroxSectionPreview({ exercises, sessions, onStart }) {
+export default function HyroxSectionPreview({ exercises, sessions, onStart, onCompleteAddOn }) {
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
 
-  // Filter to hyrox-round entries only — section may contain a mix.
-  const hyroxRoundExes = exercises.filter(ex => {
+  // Section may contain a mix: hyrox-round entries get the immersive yellow
+  // card treatment; everything else (running, optional stations) renders as
+  // compact "Add-ons" cards beneath. Batch 46 fix — running entries used to
+  // disappear entirely when a HYROX section had no rounds (Glutes & Light Run
+  // bug).
+  const splitByType = exercises.reduce((acc, ex) => {
     const lib = exerciseLibrary.find(e => e.id === ex.exerciseId || e.name === ex.name)
-    return lib?.type === 'hyrox-round'
-  })
+    if (lib?.type === 'hyrox-round') acc.rounds.push({ ex, lib })
+    else acc.addOns.push({ ex, lib })
+    return acc
+  }, { rounds: [], addOns: [] })
 
-  if (hyroxRoundExes.length === 0) return null
+  if (splitByType.rounds.length === 0 && splitByType.addOns.length === 0) return null
 
   return (
     <div>
@@ -202,18 +248,34 @@ export default function HyroxSectionPreview({ exercises, sessions, onStart }) {
         HYROX
       </div>
       <div className="space-y-2">
-        {hyroxRoundExes.map(ex => {
-          const lib = exerciseLibrary.find(e => e.id === ex.exerciseId || e.name === ex.name)
-          return (
-            <HyroxRoundCard
-              key={ex.id}
-              exercise={ex}
-              libraryEntry={lib}
-              sessions={sessions}
-              onStart={onStart}
-            />
-          )
-        })}
+        {splitByType.rounds.map(({ ex, lib }) => (
+          <HyroxRoundCard
+            key={ex.id}
+            exercise={ex}
+            libraryEntry={lib}
+            sessions={sessions}
+            onStart={onStart}
+          />
+        ))}
+        {splitByType.addOns.length > 0 && (
+          <>
+            {splitByType.rounds.length > 0 && (
+              <div
+                className="pt-1 px-1 text-[10px] font-bold uppercase tracking-wider"
+                style={{ color: YELLOW_DIM }}
+              >
+                Add-ons
+              </div>
+            )}
+            {splitByType.addOns.map(({ ex }) => (
+              <HyroxAddOnCard
+                key={ex.id}
+                exercise={ex}
+                onComplete={onCompleteAddOn}
+              />
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

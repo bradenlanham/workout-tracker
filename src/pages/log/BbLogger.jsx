@@ -4085,6 +4085,18 @@ export default function BbLogger() {
                       navigate(`/log/hyrox/${encodeURIComponent(idOrName)}/start`)
                     }
                   }}
+                  onCompleteAddOn={(ex) => {
+                    // Batch 46 — running / station add-ons inside a HYROX
+                    // section: tap "Mark done" toggles completedAt on the
+                    // exercise so the card flips to ✓ Done state.
+                    setExercises(prev => prev.map(e => {
+                      if (e.id !== ex.id) return e
+                      return {
+                        ...e,
+                        completedAt: e.completedAt ? 0 : Date.now(),
+                      }
+                    }))
+                  }}
                 />
               </div>
             )

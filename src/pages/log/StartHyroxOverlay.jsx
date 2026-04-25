@@ -109,6 +109,54 @@ function PrescriptionRow({ label, value, sublabel, expanded, onToggle, children 
   )
 }
 
+// Batch 46 — yellow particles rising from the bottom edge of the screen,
+// drifting up at varied durations + sizes, then looping. Pure decorative
+// chrome that reinforces the HYROX brand vibe (similar to home-screen
+// particle effect). Memoized particle config so re-renders don't restart
+// animations mid-rise.
+function HyroxParticles({ count = 14 }) {
+  const particles = useMemo(() => {
+    return Array.from({ length: count }, (_, i) => ({
+      id: i,
+      left: Math.random() * 100,           // % horizontal
+      size: 3 + Math.random() * 7,         // 3–10px
+      duration: 6 + Math.random() * 8,     // 6–14s
+      delay: Math.random() * 6,            // up to 6s start delay
+      drift: -20 + Math.random() * 40,     // -20 to +20px sideways drift
+      opacity: 0.25 + Math.random() * 0.4, // 0.25–0.65
+    }))
+  }, [count])
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      {particles.map(p => (
+        <span
+          key={p.id}
+          className="absolute rounded-full"
+          style={{
+            left: `${p.left}%`,
+            bottom: '-20px',
+            width: `${p.size}px`,
+            height: `${p.size}px`,
+            background: '#EAB308',
+            boxShadow: `0 0 ${p.size * 2}px rgba(234,179,8,0.6)`,
+            opacity: p.opacity,
+            animation: `hyroxParticleRise ${p.duration}s ${p.delay}s ease-in-out infinite`,
+            ['--drift']: `${p.drift}px`,
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes hyroxParticleRise {
+          0%   { transform: translate(0, 0)               scale(0.85); opacity: 0; }
+          10%  { opacity: 1; }
+          80%  { opacity: 1; }
+          100% { transform: translate(var(--drift, 0), -110vh) scale(1.1); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 // Chip selector used by round count + rest chips.
 function ChipRow({ options, value, onChange, formatOption = (o) => o }) {
   return (
@@ -218,7 +266,15 @@ export default function StartHyroxOverlay() {
     )
   }
 
+  // Batch 46 — when the round template is "single-station" (e.g. SkiErg-only),
+  // the user can still hot-swap to a different station for today without
+  // breaking the template's prescribed cycle. Today's pick lives on the
+  // session-state and the template's `stationId` default reseeds next time.
+  // Pre-B46 the row read-only was "Single-station round — fixed by template."
   const isPool = Array.isArray(roundConfig.rotationPool) && roundConfig.rotationPool.length > 0 && !roundConfig.stationId
+  const stationOptions = isPool
+    ? roundConfig.rotationPool
+    : HYROX_STATIONS.map(s => s.id)
   const stationLabel = stationName(stationId)
   const runUnit = roundConfig?.runDimensions?.distance?.unit || 'm'
 
@@ -251,7 +307,29 @@ export default function StartHyroxOverlay() {
         backgroundImage: `radial-gradient(ellipse 70% 40% at 50% 0%, rgba(234,179,8,0.18) 0%, rgba(234,179,8,0.08) 35%, rgba(0,0,0,0) 70%)`,
       }}
     >
-      <div className="w-full max-w-md mx-auto px-6 pt-10 pb-8 flex flex-col flex-1">
+      {/* Batch 46 — yellow particles rising from bottom (HYROX brand vibe) */}
+      <HyroxParticles count={14} />
+
+      <div
+        className="w-full max-w-md mx-auto px-6 pb-8 flex flex-col flex-1 relative z-[1]"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+      >
+
+        {/* Batch 46 — Back arrow for explicit dismiss path. Mirrors header
+            controls used elsewhere in /log/* surfaces. */}
+        <div className="flex items-center mb-4">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            aria-label="Go back"
+            className="w-9 h-9 rounded-full flex items-center justify-center"
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
 
         {/* Top context chip + workout title */}
         <div className="text-center mb-6">
@@ -314,32 +392,37 @@ export default function StartHyroxOverlay() {
           <PrescriptionRow
             label="Station"
             value={stationLabel}
-            sublabel={isPool ? `Rotates from pool (${roundConfig.rotationPool.length})` : null}
+            sublabel={
+              isPool
+                ? `Rotates from pool (${roundConfig.rotationPool.length})`
+                : (stationId !== roundConfig.stationId ? `Today's pick (template default: ${stationName(roundConfig.stationId)})` : 'Tap to swap for today')
+            }
             expanded={openRow === 'station'}
             onToggle={() => setOpenRow(openRow === 'station' ? null : 'station')}
           >
-            {isPool ? (
-              <div className="flex flex-wrap gap-2 justify-center mt-2">
-                {roundConfig.rotationPool.map(sid => {
-                  const selected = sid === stationId
-                  return (
-                    <button
-                      key={sid}
-                      type="button"
-                      onClick={() => { setStationId(sid); setOpenRow(null) }}
-                      className="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
-                      style={selected
-                        ? { background: YELLOW, color: '#0a0a0a' }
-                        : { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.1)' }
-                      }
-                    >
-                      {stationName(sid)}
-                    </button>
-                  )
-                })}
+            <div className="flex flex-wrap gap-2 justify-center mt-2">
+              {stationOptions.map(sid => {
+                const selected = sid === stationId
+                return (
+                  <button
+                    key={sid}
+                    type="button"
+                    onClick={() => { setStationId(sid); setOpenRow(null) }}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
+                    style={selected
+                      ? { background: YELLOW, color: '#0a0a0a' }
+                      : { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.1)' }
+                    }
+                  >
+                    {stationName(sid)}
+                  </button>
+                )
+              })}
+            </div>
+            {!isPool && (
+              <div className="text-[11px] text-white/40 text-center mt-2">
+                Today's choice doesn't change the template — next session reseeds to {stationName(roundConfig.stationId)}.
               </div>
-            ) : (
-              <div className="text-[11px] text-white/40 text-center mt-1">Single-station round — fixed by template</div>
             )}
           </PrescriptionRow>
 
@@ -372,9 +455,9 @@ export default function StartHyroxOverlay() {
             <button
               type="button"
               onClick={handleSkip}
-              className="text-xs text-white/45 underline underline-offset-2"
+              className="text-xs text-white/55 underline underline-offset-2"
             >
-              Skip HYROX today
+              Go back
             </button>
           </div>
         </div>

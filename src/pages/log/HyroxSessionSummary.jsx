@@ -36,7 +36,7 @@
 // chart legend collapses + sidebar of bests replaces the chart. Mixed
 // history renders the chart with partial dashed series.
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import GymClock from '../../components/GymClock'
@@ -665,7 +665,17 @@ export default function HyroxSessionSummary() {
         backgroundImage: `radial-gradient(ellipse 70% 35% at 50% 0%, rgba(234,179,8,0.16) 0%, rgba(234,179,8,0) 100%)`,
       }}
     >
-      <div className="max-w-md mx-auto" style={{ padding: '24px 20px 80px' }}>
+      <div
+        className="max-w-md mx-auto"
+        style={{
+          // Batch 46 — safe-area top so the HYROX COMPLETE pill clears the
+          // iPhone Dynamic Island / notch.
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.25rem)',
+          paddingLeft: 16,
+          paddingRight: 16,
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.5rem)',
+        }}
+      >
         {/* HYROX COMPLETE pill */}
         <div className="flex justify-center mb-6">
           <div
@@ -769,7 +779,7 @@ export default function HyroxSessionSummary() {
         </div>
 
         {/* Round breakdown table */}
-        <div className="mb-6">
+        <div className="mb-5">
           <RoundBreakdown
             rounds={composedRounds}
             completedLegs={hyrox.completedLegs}
@@ -777,6 +787,16 @@ export default function HyroxSessionSummary() {
             prescription={prescription}
           />
         </div>
+
+        {/* Batch 46 — Session note text field. Adds an optional comment
+            to the HYROX exercise so users can capture how it felt. Persists
+            on blur into activeSession.exercises (matches the rounds[]
+            persistence path), so it round-trips through the BbLogger
+            session-save flow at finish-modal time. */}
+        <SummaryNoteField
+          exerciseId={libraryEntry?.id}
+          exerciseName={libraryEntry?.name || exerciseId}
+        />
 
         {/* Branching CTA */}
         <button
@@ -792,6 +812,62 @@ export default function HyroxSessionSummary() {
           {cta.label}
         </button>
       </div>
+    </div>
+  )
+}
+
+// Batch 46 — Session note field. Reads + writes the matching HYROX exercise's
+// `notes` string in `activeSession.exercises`. Locally-buffered so typing
+// doesn't fire a Zustand setter on every keystroke; commits on blur.
+function SummaryNoteField({ exerciseId, exerciseName }) {
+  const activeSession = useStore(s => s.activeSession)
+  const saveActiveSession = useStore(s => s.saveActiveSession)
+  const initial = (() => {
+    const exes = activeSession?.exercises || []
+    const match = exes.find(e =>
+      (exerciseId && e.exerciseId === exerciseId) ||
+      (exerciseName && e.name === exerciseName)
+    )
+    return match?.notes || ''
+  })()
+  const [value, setValue] = useState(initial)
+  const handleCommit = () => {
+    if (!activeSession) return
+    const exes = activeSession.exercises || []
+    const idx = exes.findIndex(e =>
+      (exerciseId && e.exerciseId === exerciseId) ||
+      (exerciseName && e.name === exerciseName)
+    )
+    if (idx === -1) return
+    const trimmed = value.trim()
+    if ((exes[idx].notes || '') === trimmed) return
+    const updated = [...exes]
+    updated[idx] = { ...updated[idx], notes: trimmed }
+    saveActiveSession({ ...activeSession, exercises: updated })
+  }
+  return (
+    <div className="mb-5">
+      <div
+        className="text-[10px] font-bold uppercase tracking-wider mb-2"
+        style={{ color: 'rgba(255,255,255,0.5)' }}
+      >
+        Note
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleCommit}
+        placeholder="How did this HYROX feel? Anything to remember…"
+        rows={2}
+        className="w-full rounded-xl text-sm resize-none"
+        style={{
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          color: 'white',
+          padding: '10px 12px',
+          fontFamily: 'inherit',
+        }}
+      />
     </div>
   )
 }
