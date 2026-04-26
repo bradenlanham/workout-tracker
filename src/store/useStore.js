@@ -87,6 +87,10 @@ const useStore = create(
       settings: {
         restTimerDuration: 90,
         accentColor: 'violet',
+        // Batch 49 — user-picked custom accent hex. Only consumed when
+        // accentColor === 'custom'. Default is HYROX yellow so a user who
+        // picks Custom without typing a hex gets a sensible starting point.
+        customAccentHex: '#EAB308',
         backgroundTheme: 'obsidian',
         userName: '',
         autoStartRest: true,

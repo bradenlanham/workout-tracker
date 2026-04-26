@@ -22,6 +22,7 @@ import ChooseStartingPoint from './pages/ChooseStartingPoint'
 import Welcome from './pages/Welcome'
 import Backfill from './pages/Backfill'
 import ExerciseLibraryManager from './pages/ExerciseLibraryManager'
+import { getTheme, applyAccentToRoot, setCustomAccentHex } from './theme'
 
 function ThemedApp() {
   const { settings, initSplits, initLibrary, sessions, hasCompletedOnboarding } = useStore()
@@ -31,6 +32,21 @@ function ThemedApp() {
     const theme = settings.backgroundTheme === 'daylight' ? 'daylight' : 'obsidian'
     document.documentElement.setAttribute('data-theme', theme)
   }, [settings.backgroundTheme])
+
+  // Batch 49 — prime the custom-hex cache SYNCHRONOUSLY during render so
+  // any child component that reads getTheme('custom') in its own render
+  // path gets the right value on first paint (no yellow flash before the
+  // user's custom color kicks in). Side-effect-free idempotent assignment.
+  setCustomAccentHex(settings.customAccentHex)
+
+  // Inject the CSS variables on <html> for the .accent-* classes after
+  // commit. Named themes paint directly via Tailwind class strings, so this
+  // is a no-op for them. Re-runs whenever accentColor or customAccentHex
+  // changes so a picked color applies instantly.
+  useEffect(() => {
+    const t = getTheme(settings.accentColor, settings.customAccentHex)
+    applyAccentToRoot(t)
+  }, [settings.accentColor, settings.customAccentHex])
 
   // Auto-create the built-in split + seed the exercise library on first
   // load. Both are idempotent — no-op on returning users.

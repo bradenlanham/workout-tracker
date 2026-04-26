@@ -220,7 +220,7 @@ export default function HamburgerMenu({ open, setOpen }) {
                       {/* Accent Color */}
                       <div>
                         <p className="text-sm font-semibold text-c-primary mb-2">Accent Color</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
                           {themeColors.map(t => (
                             <button
                               key={t.id}
@@ -239,7 +239,53 @@ export default function HamburgerMenu({ open, setOpen }) {
                               }}
                             />
                           ))}
+                          {/* Batch 49 — Custom hex picker. Native <input type="color">
+                              opens the OS picker on tap; we visually overlay it with
+                              a rainbow ring (so it reads as "custom") wrapped around
+                              the user's currently-picked hex. Selection commits via
+                              onChange — picking a color also flips accentColor to
+                              'custom'. */}
+                          <label
+                            className="relative cursor-pointer block"
+                            title="Custom — tap to pick a hex"
+                            style={{ width: '28px', height: '28px' }}
+                          >
+                            <input
+                              type="color"
+                              value={settings.customAccentHex || '#EAB308'}
+                              onChange={e => updateSettings({ accentColor: 'custom', customAccentHex: e.target.value })}
+                              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                              aria-label="Custom accent color"
+                            />
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                background: 'conic-gradient(from 0deg, #f43f5e, #f97316, #facc15, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #f43f5e)',
+                                outline: settings.accentColor === 'custom' ? '2px solid #fff' : 'none',
+                                outlineOffset: '2px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '50%',
+                                  backgroundColor: settings.customAccentHex || '#EAB308',
+                                }}
+                              />
+                            </div>
+                          </label>
                         </div>
+                        {settings.accentColor === 'custom' && (
+                          <p className="text-[11px] text-c-muted mt-1.5 tabular-nums">
+                            Custom: {settings.customAccentHex || '#EAB308'}
+                          </p>
+                        )}
                       </div>
 
                       {/* My Gyms (Batch 20d) — collapsible gym CRUD */}

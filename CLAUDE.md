@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 48 — Per-gym editor in ExerciseEditSheet; silences mid-session GymTagPrompt + Machine chip prompts)
+> Last updated: April 25, 2026 (Batch 49 — HYROX yellow accent preset + custom hex color picker)
 
 ## Rules for Claude
 
@@ -2226,6 +2226,37 @@ User feedback: "It starts to get a little bit overwhelming, the number of prompt
     - `src/pages/log/BbLogger.jsx` — `getDefaultMachineForGym` import + `libraryMachineFor` helper + seed priority extended in both `templateExercises` and `defaultExercises` paths.
 
 592. **Build.** `npx vite build --outDir /tmp/test-build` → 892.32 KB bundle / 240.03 KB gzipped (+14.95 KB / +3.96 KB vs Batch 45 followup, accounted for by the new Gyms section UI in ExerciseEditSheet (~12 KB) + the seed wiring + helper + store action (~3 KB)).
+
+### Batch 49 (April 25, 2026) — HYROX yellow accent preset + custom hex color picker
+
+User feedback: "I'd also like to add a stark yellow contrast theme… add a custom color picker theme where you can just select exactly what tone you want for the accent and have it applied. The yellow accent should match the HYROX accent." Two new entries in the accent picker — Yellow (matches HYROX brand `#EAB308`) and Custom (rainbow swatch wrapped around the user's picked hex). Custom uses CSS variables under the hood so the user can pick any hex without bundling new Tailwind classes; named themes keep their static class strings unchanged (zero risk).
+
+593. **YELLOW preset in `THEMES`** (`theme.js`). Tailwind classes `bg-yellow-500 / text-yellow-400 / etc.` (`yellow-500` IS HYROX `#EAB308`). Light-accent treatment per WCAG: `contrastText: '#1A1A1A'`, `textOnBg: 'text-black'` etc. so text on yellow buttons reads dark instead of white.
+
+594. **Custom-color helpers in `theme.js`.** `normalizeHex(input)` accepts `#RGB`/`#RRGGBB`/`RRGGBB`, returns `#RRGGBB` uppercase or null. `getContrastTextForHex(hex)` uses the WCAG-style luminance formula (0.299/0.587/0.114) with a 0.55 threshold — light hex → `#1A1A1A`, dark hex → `#FFFFFF`. Internal `lightenHex(hex, amount)` mixes toward white for the `:hover` state.
+
+595. **`getTheme('custom', customHex)` branch + module cache** (`theme.js`). `_customAccentHex` module-level cache primed via the new `setCustomAccentHex(hex)` setter so the 22 existing `getTheme(settings.accentColor)` call sites don't need an extra arg threaded through. App.jsx calls the setter synchronously during render, so children rendering in the same pass get the right hex without a flash. Custom theme returns `accent-bg / accent-text / accent-border / accent-ring / accent-bg-subtle / accent-bg-hover / accent-text-on-bg / accent-text-on-bg-muted / accent-text-on-bg-dim` — fixed CSS class names that read CSS variables.
+
+596. **`applyAccentToRoot(theme)`** (`theme.js`). Sets CSS variables on `<html>` for the accent: `--accent-hex / --accent-bg-hover / --accent-bg-subtle / --accent-border / --accent-ring / --accent-text / --accent-contrast / --accent-text-on-bg-muted / --accent-text-on-bg-dim`. No-op for named themes — they paint via Tailwind class strings, the variables stay unset (or stale from a prior custom session, harmless). Light-accent paths invert muted/dim opacity on a black base, dark accents stay on white.
+
+597. **`.accent-*` classes in `index.css`.** Static utility classes that consume the CSS variables: `.accent-bg / .accent-bg-hover:hover / .accent-bg-subtle / .accent-text / .accent-border / .accent-ring (sets --tw-ring-color) / .accent-text-on-bg / .accent-text-on-bg-muted / .accent-text-on-bg-dim`. These are the class strings the custom theme returns, so any consumer reading `theme.bg`, `theme.text`, etc. gets the right color whether the active accent is named or custom.
+
+598. **`settings.customAccentHex` default `'#EAB308'`** (`useStore.js`). HYROX yellow as the starting point so a user who taps Custom without picking a hex gets a sensible color out of the gate. New users + persist merge fall through cleanly via the existing settings deep-merge — no migration needed.
+
+599. **App.jsx integration.** `setCustomAccentHex(settings.customAccentHex)` runs synchronously during render to prime the cache before any child reads `getTheme('custom')`. `useEffect([settings.accentColor, settings.customAccentHex])` calls `applyAccentToRoot(getTheme(...))` after commit so a freshly-picked color applies instantly without a full reload.
+
+600. **HamburgerMenu picker — 11 named swatches + 1 custom** (`HamburgerMenu.jsx`). Grid bumped from 5 to 6 columns. The 12th cell is a `<label>` wrapping a hidden `<input type="color">` (native OS picker on tap — Chrome/Edge/Safari/iOS all expose a hex input inside the picker for users who want a specific value). Visually it's a 28px circle: outer rainbow conic-gradient ring (`#f43f5e → #f97316 → #facc15 → #22c55e → #06b6d4 → #3b82f6 → #8b5cf6 → #ec4899 → #f43f5e`) wrapping a 20px inner circle painted with the user's currently-picked hex. Selection state: 2px white outline on the outer ring. When the active accent is `'custom'`, a small `Custom: #XXXXXX` line renders below the grid in tabular-nums.
+
+601. **Verified live in preview** (port 5173, mobile 375×812). Six scenarios pass: (a) Yellow swatch tap → entire UI repaints HYROX yellow including hero CTA, today calendar circle, BottomNav home icon, dashboard dots; text on yellow surfaces reads dark via the `text-black` override. (b) Custom swatch tap opens the OS color picker; picking violet `#7C3AED` repaints everything violet incl. BottomNav home icon. (c) Switching to coral `#FF6B6B` (light accent) renders dark text on the hero CTA (`getContrastTextForHex` returned `#1A1A1A`). (d) Switching back to violet (named theme) renders identically to pre-Batch-49 violet — Tailwind class strings paint directly, CSS variables ignored. (e) HYROX UI surfaces (round logger / overlay / summary) keep their hardcoded brand yellow regardless of user accent — independent per design doc §12.4 ("Don't theme yellow with the user's accent — it's a fixed brand color"). (f) Console clean, no React warnings, no flash of wrong color on initial render.
+
+602. **Files modified.**
+    - `src/theme.js` — YELLOW preset + custom-color helpers (normalizeHex / getContrastTextForHex / lightenHex / hexToRgba / buildCustomTheme) + `getTheme('custom')` branch + `setCustomAccentHex` cache + `applyAccentToRoot`.
+    - `src/index.css` — `.accent-bg / .accent-text / .accent-border / .accent-ring / .accent-bg-subtle / .accent-bg-hover / .accent-text-on-bg / .accent-text-on-bg-muted / .accent-text-on-bg-dim` classes consuming CSS variables.
+    - `src/store/useStore.js` — `settings.customAccentHex` default `'#EAB308'`.
+    - `src/App.jsx` — synchronous cache prime + `useEffect` for `applyAccentToRoot`.
+    - `src/components/HamburgerMenu.jsx` — 6-column grid + custom-hex picker swatch with rainbow ring + native color input + `Custom: #XXXXXX` indicator.
+
+603. **Build.** `npx vite build --outDir /tmp/test-build` → 895.64 KB bundle / 241.02 KB gzipped (+3.32 KB / +0.99 KB vs Batch 48, accounted for by the custom-color helpers + applyAccentToRoot + the CSS variable / class additions + the picker UI). CSS bundle +0.97 KB (CSS-var classes).
 
 ---
 

@@ -106,6 +106,22 @@
   /* ── Ring offset matching card surface ───────────────────── */
   .ring-offset-card { --tw-ring-offset-color: var(--bg-card); }
 
+  /* ── Custom accent classes (theme.js id === 'custom') ─────
+     The 11 named themes paint via Tailwind class strings (bg-violet-500
+     etc.). For user-picked custom hex, theme.js returns these shared
+     class names, and applyAccentToRoot() injects matching CSS variables
+     on <html>. Named themes never read these vars; they're harmless when
+     unset. */
+  .accent-bg              { background-color: var(--accent-hex); }
+  .accent-bg-hover:hover  { background-color: var(--accent-bg-hover); }
+  .accent-bg-subtle       { background-color: var(--accent-bg-subtle); }
+  .accent-text            { color: var(--accent-text); }
+  .accent-border          { border-color: var(--accent-border); }
+  .accent-ring            { --tw-ring-color: var(--accent-ring); }
+  .accent-text-on-bg      { color: var(--accent-contrast); }
+  .accent-text-on-bg-muted { color: var(--accent-text-on-bg-muted); }
+  .accent-text-on-bg-dim   { color: var(--accent-text-on-bg-dim); }
+
   /* ── Entrance animations ──────────────────────────────────── */
   @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(16px); }
