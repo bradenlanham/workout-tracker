@@ -15,7 +15,7 @@ export default function HamburgerMenu({ open, setOpen }) {
   const renameGym       = useStore(s => s.renameGym)
   const setDefaultGymId = useStore(s => s.setDefaultGymId)
   const theme     = getTheme(settings.accentColor)
-  const [subScreen, setSubScreen]       = useState(null) // null | 'settings' | 'info'
+  const [subScreen, setSubScreen]       = useState(null) // null | 'profile' | 'workout' | 'info'
   const [showDataSection, setShowDataSection] = useState(false)
   const [showTrackingInfo, setShowTrackingInfo] = useState(false)
   const [showStreakInfo, setShowStreakInfo] = useState(false)
@@ -100,7 +100,10 @@ export default function HamburgerMenu({ open, setOpen }) {
               )}
               {subScreen && (
                 <span className="text-base font-bold absolute left-1/2 -translate-x-1/2">
-                  {subScreen === 'settings' ? 'Settings' : 'Info'}
+                  {subScreen === 'profile' ? 'Profile'
+                    : subScreen === 'workout' ? 'Workout Settings'
+                    : subScreen === 'info' ? 'Info'
+                    : ''}
                 </span>
               )}
               <button
@@ -119,18 +122,23 @@ export default function HamburgerMenu({ open, setOpen }) {
               {/* ── Main menu ───────────────────────────────────────────────── */}
               {!subScreen && (
                 <>
+                  <button className={rowClass} style={rowStyle} onClick={() => setSubScreen('profile')}>
+                    <span>Profile</span>
+                    <span className="text-c-dim">→</span>
+                  </button>
+
+                  <button className={rowClass} style={rowStyle} onClick={() => setSubScreen('workout')}>
+                    <span>Workout Settings</span>
+                    <span className="text-c-dim">→</span>
+                  </button>
+
                   <button className={rowClass} style={rowStyle} onClick={() => go('/splits')}>
-                    <span>My Splits</span>
+                    <span>Splits</span>
                     <span className="text-c-dim">→</span>
                   </button>
 
                   <button className={rowClass} style={rowStyle} onClick={() => go('/exercises')}>
-                    <span>My Exercises</span>
-                    <span className="text-c-dim">→</span>
-                  </button>
-
-                  <button className={rowClass} style={rowStyle} onClick={() => setSubScreen('settings')}>
-                    <span>Settings</span>
+                    <span>Exercise Library</span>
                     <span className="text-c-dim">→</span>
                   </button>
 
@@ -168,386 +176,375 @@ export default function HamburgerMenu({ open, setOpen }) {
                 </>
               )}
 
-              {/* ── Settings sub-screen ─────────────────────────────────────── */}
-              {subScreen === 'settings' && (
-                <div className="space-y-6 pt-4">
-
-                  {/* ── Profile Settings ────────────────────────────────────── */}
+              {/* ── Profile sub-screen ──────────────────────────────────────── */}
+              {subScreen === 'profile' && (
+                <div className="space-y-4 pt-4">
+                  {/* Your Name */}
                   <div>
-                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Profile Settings</p>
-                    <div className="space-y-4">
-                      {/* Your Name */}
-                      <div>
-                        <p className="text-sm font-semibold text-c-primary mb-2">Your Name</p>
-                        <input
-                          type="text"
-                          value={settings.userName || ''}
-                          onChange={e => updateSettings({ userName: e.target.value })}
-                          placeholder="Your name"
-                          className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-sm placeholder-gray-500 focus:outline-none"
+                    <p className="text-sm font-semibold text-c-primary mb-2">Your Name</p>
+                    <input
+                      type="text"
+                      value={settings.userName || ''}
+                      onChange={e => updateSettings({ userName: e.target.value })}
+                      placeholder="Your name"
+                      className="w-full bg-item text-c-primary rounded-xl px-3 py-2.5 text-sm placeholder-gray-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Theme */}
+                  <div>
+                    <p className="text-sm font-semibold text-c-primary mb-2">Theme</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => updateSettings({ backgroundTheme: 'obsidian' })}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                          settings.backgroundTheme !== 'daylight'
+                            ? `${theme.bg} text-white`
+                            : 'bg-item text-c-secondary'
+                        }`}
+                        style={settings.backgroundTheme !== 'daylight' ? { color: theme.contrastText } : undefined}
+                      >
+                        Obsidian
+                      </button>
+                      <button
+                        onClick={() => updateSettings({ backgroundTheme: 'daylight' })}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                          settings.backgroundTheme === 'daylight'
+                            ? `${theme.bg} text-white`
+                            : 'bg-item text-c-secondary'
+                        }`}
+                        style={settings.backgroundTheme === 'daylight' ? { color: theme.contrastText } : undefined}
+                      >
+                        Daylight
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Accent Color */}
+                  <div>
+                    <p className="text-sm font-semibold text-c-primary mb-2">Accent Color</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
+                      {themeColors.map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => updateSettings({ accentColor: t.id })}
+                          title={t.name}
+                          style={{
+                            backgroundColor: t.hex,
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            outline: settings.accentColor === t.id
+                              ? `2px solid ${t.id === 'white' ? '#888' : '#fff'}`
+                              : 'none',
+                            outlineOffset: '2px',
+                            border: t.id === 'white' ? '1px solid #555' : 'none',
+                          }}
                         />
-                      </div>
-
-                      {/* Theme */}
-                      <div>
-                        <p className="text-sm font-semibold text-c-primary mb-2">Theme</p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => updateSettings({ backgroundTheme: 'obsidian' })}
-                            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                              settings.backgroundTheme !== 'daylight'
-                                ? `${theme.bg} text-white`
-                                : 'bg-item text-c-secondary'
-                            }`}
-                            style={settings.backgroundTheme !== 'daylight' ? { color: theme.contrastText } : undefined}
-                          >
-                            Obsidian
-                          </button>
-                          <button
-                            onClick={() => updateSettings({ backgroundTheme: 'daylight' })}
-                            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                              settings.backgroundTheme === 'daylight'
-                                ? `${theme.bg} text-white`
-                                : 'bg-item text-c-secondary'
-                            }`}
-                            style={settings.backgroundTheme === 'daylight' ? { color: theme.contrastText } : undefined}
-                          >
-                            Daylight
-                          </button>
+                      ))}
+                      {/* Batch 49 — Custom hex picker. Native <input type="color">
+                          opens the OS picker on tap; we visually overlay it with
+                          a rainbow ring (so it reads as "custom") wrapped around
+                          the user's currently-picked hex. */}
+                      <label
+                        className="relative cursor-pointer block"
+                        title="Custom — tap to pick a hex"
+                        style={{ width: '28px', height: '28px' }}
+                      >
+                        <input
+                          type="color"
+                          value={settings.customAccentHex || '#EAB308'}
+                          onChange={e => updateSettings({ accentColor: 'custom', customAccentHex: e.target.value })}
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                          aria-label="Custom accent color"
+                        />
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            background: 'conic-gradient(from 0deg, #f43f5e, #f97316, #facc15, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #f43f5e)',
+                            outline: settings.accentColor === 'custom' ? '2px solid #fff' : 'none',
+                            outlineOffset: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '20px',
+                              height: '20px',
+                              borderRadius: '50%',
+                              backgroundColor: settings.customAccentHex || '#EAB308',
+                            }}
+                          />
                         </div>
-                      </div>
+                      </label>
+                    </div>
+                    {settings.accentColor === 'custom' && (
+                      <p className="text-[11px] text-c-muted mt-1.5 tabular-nums">
+                        Custom: {settings.customAccentHex || '#EAB308'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                      {/* Accent Color */}
-                      <div>
-                        <p className="text-sm font-semibold text-c-primary mb-2">Accent Color</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
-                          {themeColors.map(t => (
-                            <button
-                              key={t.id}
-                              onClick={() => updateSettings({ accentColor: t.id })}
-                              title={t.name}
-                              style={{
-                                backgroundColor: t.hex,
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '50%',
-                                outline: settings.accentColor === t.id
-                                  ? `2px solid ${t.id === 'white' ? '#888' : '#fff'}`
-                                  : 'none',
-                                outlineOffset: '2px',
-                                border: t.id === 'white' ? '1px solid #555' : 'none',
-                              }}
-                            />
-                          ))}
-                          {/* Batch 49 — Custom hex picker. Native <input type="color">
-                              opens the OS picker on tap; we visually overlay it with
-                              a rainbow ring (so it reads as "custom") wrapped around
-                              the user's currently-picked hex. Selection commits via
-                              onChange — picking a color also flips accentColor to
-                              'custom'. */}
-                          <label
-                            className="relative cursor-pointer block"
-                            title="Custom — tap to pick a hex"
-                            style={{ width: '28px', height: '28px' }}
-                          >
-                            <input
-                              type="color"
-                              value={settings.customAccentHex || '#EAB308'}
-                              onChange={e => updateSettings({ accentColor: 'custom', customAccentHex: e.target.value })}
-                              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
-                              aria-label="Custom accent color"
-                            />
-                            <div
-                              style={{
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '50%',
-                                background: 'conic-gradient(from 0deg, #f43f5e, #f97316, #facc15, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #f43f5e)',
-                                outline: settings.accentColor === 'custom' ? '2px solid #fff' : 'none',
-                                outlineOffset: '2px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: '20px',
-                                  height: '20px',
-                                  borderRadius: '50%',
-                                  backgroundColor: settings.customAccentHex || '#EAB308',
-                                }}
-                              />
-                            </div>
-                          </label>
-                        </div>
-                        {settings.accentColor === 'custom' && (
-                          <p className="text-[11px] text-c-muted mt-1.5 tabular-nums">
-                            Custom: {settings.customAccentHex || '#EAB308'}
+              {/* ── Workout Settings sub-screen ─────────────────────────────── */}
+              {subScreen === 'workout' && (
+                <div className="space-y-4 pt-4">
+                  {/* My Gyms (collapsible gym CRUD) */}
+                  <div>
+                    <button
+                      onClick={() => setShowGymsSection(v => !v)}
+                      className="w-full flex items-center justify-between py-1 text-left"
+                      aria-expanded={showGymsSection}
+                    >
+                      <span className="text-sm font-semibold text-c-primary">
+                        My Gyms
+                        {(settings.gyms?.length > 0) && (
+                          <span className="ml-2 text-xs font-normal text-c-muted tabular-nums">
+                            {settings.gyms.length}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-c-muted text-xs">{showGymsSection ? '▴' : '▾'}</span>
+                    </button>
+                    {showGymsSection && (
+                      <div className="mt-2 space-y-2">
+                        {(settings.gyms || []).length === 0 && (
+                          <p className="text-xs text-c-muted">
+                            No gyms yet. Add one below, or set a gym from the pre-session check-in.
                           </p>
                         )}
-                      </div>
-
-                      {/* My Gyms (Batch 20d) — collapsible gym CRUD */}
-                      <div>
-                        <button
-                          onClick={() => setShowGymsSection(v => !v)}
-                          className="w-full flex items-center justify-between py-1 text-left"
-                          aria-expanded={showGymsSection}
+                        {(settings.gyms || []).map(g => {
+                          const isDefault   = settings.defaultGymId === g.id
+                          const isEditing   = editingGymId === g.id
+                          const sessionHits = sessions.filter(s => s.gymId === g.id).length
+                          const taggedHits  = (exerciseLibrary || []).filter(
+                            ex => Array.isArray(ex.sessionGymTags) && ex.sessionGymTags.includes(g.id)
+                          ).length
+                          const handleRenameCommit = () => {
+                            const clean = editingGymLabel.trim()
+                            if (!clean || clean === g.label) { setEditingGymId(null); return }
+                            const ok = renameGym(g.id, clean)
+                            if (!ok) {
+                              alert('Another gym already uses that name.')
+                              return
+                            }
+                            setEditingGymId(null)
+                          }
+                          const handleDelete = () => {
+                            const parts = []
+                            if (sessionHits) parts.push(`${sessionHits} past session${sessionHits === 1 ? '' : 's'}`)
+                            if (taggedHits)  parts.push(`${taggedHits} tagged exercise${taggedHits === 1 ? '' : 's'}`)
+                            const detail = parts.length ? `\n\n${g.label} has ${parts.join(' and ')}. History stays, but exercise tags will be cleared.` : ''
+                            if (!window.confirm(`Delete "${g.label}"?${detail}`)) return
+                            removeGym(g.id)
+                          }
+                          return (
+                            <div key={g.id} className="bg-item rounded-xl px-3 py-2.5">
+                              <div className="flex items-center gap-2">
+                                {isEditing ? (
+                                  <input
+                                    autoFocus
+                                    type="text"
+                                    value={editingGymLabel}
+                                    onChange={e => setEditingGymLabel(e.target.value.slice(0, 40))}
+                                    onBlur={handleRenameCommit}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') handleRenameCommit()
+                                      if (e.key === 'Escape') setEditingGymId(null)
+                                    }}
+                                    className="flex-1 bg-card text-c-primary rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+                                  />
+                                ) : (
+                                  <span className="flex-1 text-sm font-semibold text-c-primary truncate">
+                                    {g.label}
+                                  </span>
+                                )}
+                                {isDefault && (
+                                  <span
+                                    className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                                    style={{ backgroundColor: `${theme.hex}22`, color: theme.hex }}
+                                  >
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-2 flex items-center gap-3 text-[11px] text-c-muted tabular-nums">
+                                <span>{sessionHits} session{sessionHits === 1 ? '' : 's'}</span>
+                                {taggedHits > 0 && <span>· {taggedHits} tagged</span>}
+                              </div>
+                              <div className="mt-1.5 flex items-center justify-end gap-1 text-xs font-semibold">
+                                {!isDefault && (
+                                  <button
+                                    onClick={() => setDefaultGymId(g.id)}
+                                    className="text-c-secondary hover:text-c-primary px-2 py-1"
+                                  >
+                                    Set default
+                                  </button>
+                                )}
+                                {!isEditing && (
+                                  <button
+                                    onClick={() => { setEditingGymId(g.id); setEditingGymLabel(g.label) }}
+                                    className="text-c-secondary hover:text-c-primary px-2 py-1"
+                                  >
+                                    Rename
+                                  </button>
+                                )}
+                                <button
+                                  onClick={handleDelete}
+                                  className="text-red-400 hover:text-red-300 px-2 py-1"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        <form
+                          onSubmit={e => {
+                            e.preventDefault()
+                            const clean = newGymLabel.trim()
+                            if (!clean) return
+                            const exists = (settings.gyms || []).some(g => g.label.toLowerCase() === clean.toLowerCase())
+                            if (exists) { alert('A gym with that name already exists.'); return }
+                            addGym(clean)
+                            setNewGymLabel('')
+                          }}
+                          className="flex items-center gap-2"
                         >
-                          <span className="text-sm font-semibold text-c-primary">
-                            My Gyms
-                            {(settings.gyms?.length > 0) && (
-                              <span className="ml-2 text-xs font-normal text-c-muted tabular-nums">
-                                {settings.gyms.length}
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-c-muted text-xs">{showGymsSection ? '▴' : '▾'}</span>
-                        </button>
-                        {showGymsSection && (
-                          <div className="mt-2 space-y-2">
-                            {(settings.gyms || []).length === 0 && (
-                              <p className="text-xs text-c-muted">
-                                No gyms yet. Add one below, or set a gym from the pre-session check-in.
-                              </p>
-                            )}
-                            {(settings.gyms || []).map(g => {
-                              const isDefault   = settings.defaultGymId === g.id
-                              const isEditing   = editingGymId === g.id
-                              const sessionHits = sessions.filter(s => s.gymId === g.id).length
-                              const taggedHits  = (exerciseLibrary || []).filter(
-                                ex => Array.isArray(ex.sessionGymTags) && ex.sessionGymTags.includes(g.id)
-                              ).length
-                              const handleRenameCommit = () => {
-                                const clean = editingGymLabel.trim()
-                                if (!clean || clean === g.label) { setEditingGymId(null); return }
-                                const ok = renameGym(g.id, clean)
-                                if (!ok) {
-                                  alert('Another gym already uses that name.')
-                                  return
-                                }
-                                setEditingGymId(null)
-                              }
-                              const handleDelete = () => {
-                                const parts = []
-                                if (sessionHits) parts.push(`${sessionHits} past session${sessionHits === 1 ? '' : 's'}`)
-                                if (taggedHits)  parts.push(`${taggedHits} tagged exercise${taggedHits === 1 ? '' : 's'}`)
-                                const detail = parts.length ? `\n\n${g.label} has ${parts.join(' and ')}. History stays, but exercise tags will be cleared.` : ''
-                                if (!window.confirm(`Delete "${g.label}"?${detail}`)) return
-                                removeGym(g.id)
-                              }
-                              return (
-                                <div key={g.id} className="bg-item rounded-xl px-3 py-2.5">
-                                  <div className="flex items-center gap-2">
-                                    {isEditing ? (
-                                      <input
-                                        autoFocus
-                                        type="text"
-                                        value={editingGymLabel}
-                                        onChange={e => setEditingGymLabel(e.target.value.slice(0, 40))}
-                                        onBlur={handleRenameCommit}
-                                        onKeyDown={e => {
-                                          if (e.key === 'Enter') handleRenameCommit()
-                                          if (e.key === 'Escape') setEditingGymId(null)
-                                        }}
-                                        className="flex-1 bg-card text-c-primary rounded-lg px-2 py-1.5 text-sm focus:outline-none"
-                                      />
-                                    ) : (
-                                      <span className="flex-1 text-sm font-semibold text-c-primary truncate">
-                                        {g.label}
-                                      </span>
-                                    )}
-                                    {isDefault && (
-                                      <span
-                                        className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
-                                        style={{ backgroundColor: `${theme.hex}22`, color: theme.hex }}
-                                      >
-                                        Default
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="mt-2 flex items-center gap-3 text-[11px] text-c-muted tabular-nums">
-                                    <span>{sessionHits} session{sessionHits === 1 ? '' : 's'}</span>
-                                    {taggedHits > 0 && <span>· {taggedHits} tagged</span>}
-                                  </div>
-                                  <div className="mt-1.5 flex items-center justify-end gap-1 text-xs font-semibold">
-                                    {!isDefault && (
-                                      <button
-                                        onClick={() => setDefaultGymId(g.id)}
-                                        className="text-c-secondary hover:text-c-primary px-2 py-1"
-                                      >
-                                        Set default
-                                      </button>
-                                    )}
-                                    {!isEditing && (
-                                      <button
-                                        onClick={() => { setEditingGymId(g.id); setEditingGymLabel(g.label) }}
-                                        className="text-c-secondary hover:text-c-primary px-2 py-1"
-                                      >
-                                        Rename
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={handleDelete}
-                                      className="text-red-400 hover:text-red-300 px-2 py-1"
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                            <form
-                              onSubmit={e => {
-                                e.preventDefault()
-                                const clean = newGymLabel.trim()
-                                if (!clean) return
-                                const exists = (settings.gyms || []).some(g => g.label.toLowerCase() === clean.toLowerCase())
-                                if (exists) { alert('A gym with that name already exists.'); return }
-                                addGym(clean)
-                                setNewGymLabel('')
-                              }}
-                              className="flex items-center gap-2"
-                            >
-                              <input
-                                type="text"
-                                value={newGymLabel}
-                                onChange={e => setNewGymLabel(e.target.value.slice(0, 40))}
-                                placeholder="Add a gym…"
-                                className="flex-1 bg-item text-c-primary rounded-xl px-3 py-2 text-sm placeholder-gray-500 focus:outline-none"
-                              />
-                              <button
-                                type="submit"
-                                disabled={!newGymLabel.trim()}
-                                className={`px-3 py-2 rounded-xl text-sm font-semibold ${
-                                  newGymLabel.trim() ? `${theme.bg} text-white` : 'bg-item text-c-faint'
-                                }`}
-                                style={newGymLabel.trim() ? { color: theme.contrastText } : undefined}
-                              >
-                                Add
-                              </button>
-                            </form>
-                          </div>
-                        )}
+                          <input
+                            type="text"
+                            value={newGymLabel}
+                            onChange={e => setNewGymLabel(e.target.value.slice(0, 40))}
+                            placeholder="Add a gym…"
+                            className="flex-1 bg-item text-c-primary rounded-xl px-3 py-2 text-sm placeholder-gray-500 focus:outline-none"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!newGymLabel.trim()}
+                            className={`px-3 py-2 rounded-xl text-sm font-semibold ${
+                              newGymLabel.trim() ? `${theme.bg} text-white` : 'bg-item text-c-faint'
+                            }`}
+                            style={newGymLabel.trim() ? { color: theme.contrastText } : undefined}
+                          >
+                            Add
+                          </button>
+                        </form>
                       </div>
+                    )}
+                  </div>
+
+                  {/* Default first set type */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">Default first set</p>
+                      <p className="text-xs text-c-dim mt-0.5">Warmup or working</p>
+                    </div>
+                    <div className="flex gap-1 bg-item rounded-xl p-0.5 shrink-0">
+                      <button
+                        onClick={() => updateSettings({ defaultFirstSetType: 'warmup' })}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                        style={settings.defaultFirstSetType !== 'working'
+                          ? { backgroundColor: theme.hex, color: theme.contrastText }
+                          : undefined}
+                      >
+                        Warm
+                      </button>
+                      <button
+                        onClick={() => updateSettings({ defaultFirstSetType: 'working' })}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                        style={settings.defaultFirstSetType === 'working'
+                          ? { backgroundColor: theme.hex, color: theme.contrastText }
+                          : undefined}
+                      >
+                        Work
+                      </button>
                     </div>
                   </div>
 
-                  {/* ── Workout Defaults ─────────────────────────────────────── */}
-                  <div>
-                    <p className="text-xs text-c-faint font-semibold uppercase tracking-widest mb-3">Workout Defaults</p>
-                    <div className="space-y-4">
-                      {/* Default first set type */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-c-primary">Default first set</p>
-                          <p className="text-xs text-c-dim mt-0.5">Warmup or working</p>
-                        </div>
-                        <div className="flex gap-1 bg-item rounded-xl p-0.5 shrink-0">
-                          <button
-                            onClick={() => updateSettings({ defaultFirstSetType: 'warmup' })}
-                            className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-                            style={settings.defaultFirstSetType !== 'working'
-                              ? { backgroundColor: theme.hex, color: theme.contrastText }
-                              : undefined}
-                          >
-                            Warm
-                          </button>
-                          <button
-                            onClick={() => updateSettings({ defaultFirstSetType: 'working' })}
-                            className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-                            style={settings.defaultFirstSetType === 'working'
-                              ? { backgroundColor: theme.hex, color: theme.contrastText }
-                              : undefined}
-                          >
-                            Work
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Auto-start rest timer */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-c-primary">Auto-start rest timer</p>
-                          <p className="text-xs text-c-dim mt-0.5">After logging a working set</p>
-                        </div>
-                        <button
-                          onClick={() => updateSettings({ autoStartRest: !settings.autoStartRest })}
-                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
-                          style={{ backgroundColor: settings.autoStartRest ? theme.hex : undefined }}
-                          aria-label="Toggle auto-start rest timer"
-                        >
-                          {!settings.autoStartRest && <span className="absolute inset-0 rounded-full bg-item" />}
-                          <span
-                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
-                            style={{ transform: settings.autoStartRest ? 'translateX(22px)' : 'translateX(2px)' }}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Rest timer chime */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-c-primary">Rest timer chime</p>
-                          <p className="text-xs text-c-dim mt-0.5">Play sound when timer ends</p>
-                        </div>
-                        <button
-                          onClick={() => updateSettings({ restTimerChime: !settings.restTimerChime })}
-                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
-                          style={{ backgroundColor: settings.restTimerChime ? theme.hex : undefined }}
-                          aria-label="Toggle rest timer chime"
-                        >
-                          {!settings.restTimerChime && <span className="absolute inset-0 rounded-full bg-item" />}
-                          <span
-                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
-                            style={{ transform: settings.restTimerChime ? 'translateX(22px)' : 'translateX(2px)' }}
-                          />
-                        </button>
-                      </div>
-
-                      {/* AI Coaching (Batch 16i; scope expanded in 16q) */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-c-primary">AI coaching</p>
-                          <p className="text-xs text-c-dim mt-0.5">Coach's Call tip + anomaly banners</p>
-                        </div>
-                        <button
-                          onClick={() => updateSettings({ enableAiCoaching: !settings.enableAiCoaching })}
-                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
-                          style={{ backgroundColor: settings.enableAiCoaching ? theme.hex : undefined }}
-                          aria-label="Toggle AI coaching"
-                        >
-                          {!settings.enableAiCoaching && <span className="absolute inset-0 rounded-full bg-item" />}
-                          <span
-                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
-                            style={{ transform: settings.enableAiCoaching ? 'translateX(22px)' : 'translateX(2px)' }}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Coach's Rec pill (Batch 16i) */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-c-primary">Show Rec pill</p>
-                          <p className="text-xs text-c-dim mt-0.5">Per-exercise free-text prescription slot</p>
-                        </div>
-                        <button
-                          onClick={() => updateSettings({ showRecPill: !settings.showRecPill })}
-                          className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
-                          style={{ backgroundColor: settings.showRecPill ? theme.hex : undefined }}
-                          aria-label="Toggle Rec pill"
-                        >
-                          {!settings.showRecPill && <span className="absolute inset-0 rounded-full bg-item" />}
-                          <span
-                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
-                            style={{ transform: settings.showRecPill ? 'translateX(22px)' : 'translateX(2px)' }}
-                          />
-                        </button>
-                      </div>
+                  {/* Auto-start rest timer */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">Auto-start rest timer</p>
+                      <p className="text-xs text-c-dim mt-0.5">After logging a working set</p>
                     </div>
+                    <button
+                      onClick={() => updateSettings({ autoStartRest: !settings.autoStartRest })}
+                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                      style={{ backgroundColor: settings.autoStartRest ? theme.hex : undefined }}
+                      aria-label="Toggle auto-start rest timer"
+                    >
+                      {!settings.autoStartRest && <span className="absolute inset-0 rounded-full bg-item" />}
+                      <span
+                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                        style={{ transform: settings.autoStartRest ? 'translateX(22px)' : 'translateX(2px)' }}
+                      />
+                    </button>
                   </div>
 
+                  {/* Rest timer chime */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">Rest timer chime</p>
+                      <p className="text-xs text-c-dim mt-0.5">Play sound when timer ends</p>
+                    </div>
+                    <button
+                      onClick={() => updateSettings({ restTimerChime: !settings.restTimerChime })}
+                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                      style={{ backgroundColor: settings.restTimerChime ? theme.hex : undefined }}
+                      aria-label="Toggle rest timer chime"
+                    >
+                      {!settings.restTimerChime && <span className="absolute inset-0 rounded-full bg-item" />}
+                      <span
+                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                        style={{ transform: settings.restTimerChime ? 'translateX(22px)' : 'translateX(2px)' }}
+                      />
+                    </button>
+                  </div>
+
+                  {/* AI Coaching */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">AI coaching</p>
+                      <p className="text-xs text-c-dim mt-0.5">Coach's Call tip + anomaly banners</p>
+                    </div>
+                    <button
+                      onClick={() => updateSettings({ enableAiCoaching: !settings.enableAiCoaching })}
+                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                      style={{ backgroundColor: settings.enableAiCoaching ? theme.hex : undefined }}
+                      aria-label="Toggle AI coaching"
+                    >
+                      {!settings.enableAiCoaching && <span className="absolute inset-0 rounded-full bg-item" />}
+                      <span
+                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                        style={{ transform: settings.enableAiCoaching ? 'translateX(22px)' : 'translateX(2px)' }}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Show Rec pill */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-c-primary">Show Rec pill</p>
+                      <p className="text-xs text-c-dim mt-0.5">Per-exercise free-text prescription slot</p>
+                    </div>
+                    <button
+                      onClick={() => updateSettings({ showRecPill: !settings.showRecPill })}
+                      className="relative w-11 h-6 rounded-full transition-colors shrink-0 overflow-hidden"
+                      style={{ backgroundColor: settings.showRecPill ? theme.hex : undefined }}
+                      aria-label="Toggle Rec pill"
+                    >
+                      {!settings.showRecPill && <span className="absolute inset-0 rounded-full bg-item" />}
+                      <span
+                        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                        style={{ transform: settings.showRecPill ? 'translateX(22px)' : 'translateX(2px)' }}
+                      />
+                    </button>
+                  </div>
                 </div>
               )}
 
