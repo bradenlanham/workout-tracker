@@ -75,14 +75,6 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
     config?.onNext?.(currentValueRef.current)
   }, [config])
 
-  // "Done ✓": marks the exercise as completed, then closes the numpad
-  const handleDone = useCallback((e) => {
-    e.preventDefault()
-    config?.onDone?.()
-    document.activeElement?.blur()
-    onClose()
-  }, [config, onClose])
-
   // "Hide ↓": just closes the numpad without marking done.
   // Lock scroll position before blurring to prevent layout-shift jump.
   const handleHide = useCallback((e) => {
@@ -189,34 +181,16 @@ export default function CustomNumpad({ config, isOpen, onClose }) {
           {config?.label || ''}
         </span>
 
-        {/* Next → – secondary outlined */}
+        {/* Next → – primary accent (only numpad action; Done lives on the
+            per-card "Mark as Done" button) */}
         <button
           onPointerDown={(e) => { press('next'); handleNext(e) }}
           onPointerUp={release}
           onPointerLeave={release}
           onPointerCancel={release}
-          style={{
-            ...outlineKeyStyle('next'),
-            fontSize: 14,
-            fontWeight: 600,
-            padding: '8px 18px',
-            borderRadius: 12,
-            height: 'auto',
-            whiteSpace: 'nowrap',
-          }}
+          style={accentKeyStyle('next')}
         >
           Next →
-        </button>
-
-        {/* Done ✓ – primary accent — marks exercise as completed + closes numpad */}
-        <button
-          onPointerDown={(e) => { press('done'); handleDone(e) }}
-          onPointerUp={release}
-          onPointerLeave={release}
-          onPointerCancel={release}
-          style={accentKeyStyle('done')}
-        >
-          Done ✓
         </button>
       </div>
 

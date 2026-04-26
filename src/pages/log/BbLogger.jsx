@@ -943,10 +943,14 @@ function ExerciseItem({
     if (!expanded && editingRec) commitRec()
     // eslint-disable-next-line
   }, [expanded])
-  const { settings, setRestEndTimestamp, dismissAnomaly, dismissGymPrompt } = useStore()
-  const addExerciseGymTag    = useStore(s => s.addExerciseGymTag)
-  const addSkipGymTagPrompt  = useStore(s => s.addSkipGymTagPrompt)
-  const addHiddenAtGym       = useStore(s => s.addHiddenAtGym)
+  const { settings, setRestEndTimestamp, dismissAnomaly } = useStore()
+  // Item 7 (post-workout feedback batch): when the user types a machine
+  // name mid-session, also write it to the library's defaultMachineByGym
+  // map AND auto-tag the gym. Mirrors the ExerciseEditSheet behavior so
+  // mid-session typing isn't a black hole — the value shows up next time
+  // the user opens the library, and the auto-tag prompt is silenced.
+  const addExerciseGymTag      = useStore(s => s.addExerciseGymTag)
+  const setDefaultMachineByGym = useStore(s => s.setDefaultMachineByGym)
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const numpadCtx = useContext(NumpadContext)
   const [recSheetOpen,    setRecSheetOpen]    = useState(false)
@@ -1453,29 +1457,6 @@ function ExerciseItem({
   const belowFloorDismissedThisSession = belowFloorDismissedFor != null && activeSessionId != null && belowFloorDismissedFor === activeSessionId
   const dismissBelowFloorAdvisory = useStore(s => s.dismissBelowFloorAdvisory)
 
-  // ── Gym-tag prompt (Batch 20b, spec §3.5.4) ─────────────────────────────
-  // Surface the "Tag X as available at Y?" prompt when the exercise has a
-  // library entry, the session has a gym set, the exercise isn't already
-  // tagged at this gym, AND the user hasn't opted out of prompts for this
-  // (exercise, gym) pair (either via "Always skip" -> skipGymTagPrompt, or
-  // via "Not this time" -> dismissedGymPrompts). libraryEntry.id (rather
-  // than exercise.exerciseId) is used as the prompt key because
-  // template-seeded exercises don't carry exerciseId until save time —
-  // using libraryEntry.id matches what addExerciseGymTag expects.
-  const promptKey = libraryEntry?.id
-    ? `${libraryEntry.id}:${currentGymId}`
-    : null
-  const gymPromptDismissedFor = promptKey
-    ? settings.dismissedGymPrompts?.[promptKey]
-    : null
-  const gymPromptDismissedThisSession = gymPromptDismissedFor != null && activeSessionId != null && gymPromptDismissedFor === activeSessionId
-  const showGymTagPrompt =
-    settings.enableAiCoaching &&
-    !!libraryEntry &&
-    !!currentGymId &&
-    shouldPromptGymTag(libraryEntry, currentGymId) &&
-    !gymPromptDismissedThisSession
-
   // ── Superset state (Batch 36) ──────────────────────────────────────────
   const priorSuperset = useMemo(
     () => getMostRecentSupersetPartners(allSessions, exercise.exerciseId || exercise.name),
@@ -1841,7 +1822,22 @@ function ExerciseItem({
                   anchorRef={machineBtnRef}
                   value={currentInstance}
                   options={machineOptions}
-                  onChange={val => onUpdate({ ...exercise, equipmentInstance: val })}
+                  onChange={val => {
+                    // Always update the in-session exercise value first so
+                    // the chip reflects the new state immediately.
+                    onUpdate({ ...exercise, equipmentInstance: val })
+                    // Item 7: when the user commits a non-empty machine
+                    // value AND a gym is set on the session, dual-write to
+                    // the library: defaultMachineByGym so it's the seed
+                    // next session, AND auto-tag the gym (typing a machine
+                    // value implies "this exercise IS at this gym"). This
+                    // mirrors the ExerciseEditSheet Save flow per Batch 48.
+                    const trimmed = (val || '').trim()
+                    if (trimmed && currentGymId && libraryEntry?.id) {
+                      setDefaultMachineByGym(libraryEntry.id, currentGymId, trimmed)
+                      addExerciseGymTag(libraryEntry.id, currentGymId)
+                    }
+                  }}
                   theme={theme}
                 />
               </div>
@@ -1882,30 +1878,11 @@ function ExerciseItem({
             </button>
           </div>
 
-          {/* Gym-tag prompt (Batch 20b) — rendered above AnomalyBanner so
-              tagging decisions come first and correctly-scoped history
-              reduces false-positive anomaly signals. */}
-          {showGymTagPrompt && (
-            <GymTagPrompt
-              exerciseName={exercise.name}
-              gymLabel={currentGymLabel}
-              theme={theme}
-              onTag={() => addExerciseGymTag(libraryEntry.id, currentGymId)}
-              onNotNow={() => dismissGymPrompt(libraryEntry.id, currentGymId)}
-              onHideHere={() => {
-                // Batch 28: confirm before hiding. Dual-write to hiddenAtGyms
-                // (filters the exercise out of the logger) AND skipGymTagPrompt
-                // (silences future prompts here). A different gym will still
-                // show this exercise + fire the prompt.
-                const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
-                  ? window.confirm(`${exercise.name} will no longer appear in workouts at ${currentGymLabel}. You can un-hide it later (Manage Exercises support coming next batch).`)
-                  : true
-                if (!ok) return
-                addHiddenAtGym(libraryEntry.id, currentGymId)
-                addSkipGymTagPrompt(libraryEntry.id, currentGymId)
-              }}
-            />
-          )}
+          {/* Item 7 (post-workout feedback batch): GymTagPrompt banner removed.
+              The library's Gyms section in ExerciseEditSheet is now the single
+              deliberate-config surface. Mid-session, typing a machine value
+              auto-tags the gym (see EquipmentInstancePopover onChange wiring
+              below) so the tag still happens silently for the common case. */}
 
           {/* Anomaly banner (Batch 16q) — plateau / regression / swing */}
           {showAnomalyBanner && (
@@ -2161,7 +2138,6 @@ function GroupLabel({ label, isCompleted }) {
   return (
     <div className={`flex items-center gap-2 px-1 pt-2 pb-1 ${isCompleted ? 'text-emerald-400' : 'text-c-muted'}`}>
       <span className="text-xs font-bold uppercase tracking-widest">{label}</span>
-      <div className="flex-1 h-px bg-current opacity-20" />
     </div>
   )
 }
@@ -2209,12 +2185,26 @@ function AddExercisePanel({ onAdd, onClose, theme, currentGymId = null, currentG
   // library, use it directly (the dedup win). Otherwise open the creation
   // modal so the user provides muscle + equipment up-front (§3.2.1).
   const handleAddTyped = () => {
-    const typed = query.trim()
+    // Item 3 (post-workout feedback batch): defensive guard. `query` is
+    // always a string from useState, but a buggy upstream prop or future
+    // refactor could make this throw — and a TypeError here was the most
+    // likely culprit for the user-reported "app crashed when adding an
+    // exercise mid-session" bug.
+    const typed = (query || '').trim()
     if (!typed) return
-    const topMatch = findSimilarExercises(typed, exerciseLibrary, {
-      suggestThreshold: 0.85,
-      max:              1,
-    })[0]
+    let topMatch
+    try {
+      topMatch = findSimilarExercises(typed, exerciseLibrary, {
+        suggestThreshold: 0.85,
+        max:              1,
+      })[0]
+    } catch (err) {
+      // Defensive — fuzzy match shouldn't throw, but if it does (e.g. on
+      // exotic input), fall through to the create modal rather than
+      // crashing the whole logger.
+      console.warn('findSimilarExercises failed:', err)
+      topMatch = null
+    }
     if (topMatch) {
       onAdd(topMatch.exercise.name, topMatch.exercise.id)
       onClose()
@@ -2231,9 +2221,15 @@ function AddExercisePanel({ onAdd, onClose, theme, currentGymId = null, currentG
       onAdd(newEntry.name, newEntry.id)
       onClose()
     } catch (err) {
-      // Validation failed (missing muscle/equipment) — CreateExerciseModal
-      // already guards this via disabled Save, so this is a defensive catch.
-      console.warn('Exercise creation failed:', err.message)
+      // Item 3: any throw from addExerciseToLibrary (validation failure,
+      // unexpected payload shape, type-aware constraint mismatch) used to
+      // bubble up unhandled and crash the logger. Now we surface a
+      // user-visible alert and keep the modal open so the user can retry.
+      console.warn('Exercise creation failed:', err)
+      const msg = err?.message || 'Unknown error'
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(`Couldn't add exercise: ${msg}`)
+      }
     }
   }
 
@@ -4192,7 +4188,7 @@ export default function BbLogger() {
         {!numpadIsOpen && (
           <button
             onClick={() => setShowAddPanel(true)}
-            className="w-full py-4 mt-2 rounded-2xl border-2 border-dashed border-c-base text-c-muted font-semibold flex items-center justify-center gap-2"
+            className="w-full py-4 mt-2 rounded-2xl text-c-muted font-semibold flex items-center justify-center gap-2"
           >
             <span className="text-xl">+</span> Add Exercise
           </button>
