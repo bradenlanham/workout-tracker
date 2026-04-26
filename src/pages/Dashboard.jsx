@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak } from '../utils/helpers'
+import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak, formatTimeAgo } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
 // ── Streak tier ───────────────────────────────────────────────────────────────
@@ -14,6 +14,10 @@ const STREAK_BADGE_CSS = `
 @keyframes dashMythicShimmer {
   0%   { background-position: 0% 50%; }
   100% { background-position: 200% 50%; }
+}
+@keyframes dashFadeInV2 {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 `
 
@@ -35,80 +39,24 @@ function getStreakTier(streak, themeHex) {
   return                   { name: 'Common',    color: themeHex,  isAnimated: false }
 }
 
-function StreakBadge({ streak, themeHex }) {
-  if (!streak || streak === 0) return null
-  const tier = getStreakTier(streak, themeHex)
-
-  if (tier.isAnimated) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0, marginTop: 8, marginRight: 6 }}>
-        {/* Animated gradient border wrapper */}
-        <div style={{
-          borderRadius: 20,
-          padding: 1.5,
-          background: tier.gradient,
-          backgroundSize: '300% 300%',
-          animation: `${tier.animName} 3s linear infinite`,
-          filter: tier.glow || undefined,
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '5px 13px',
-            borderRadius: 18,
-            backgroundColor: 'rgba(10,10,14,0.85)',
-          }}>
-            <span style={{ fontSize: 24, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
-            <span style={{ fontSize: 22, lineHeight: 1 }}>🔥</span>
-          </div>
-        </div>
-        <span style={{
-          fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
-          color: tier.color, textTransform: 'uppercase', lineHeight: 1, opacity: 0.9,
-        }}>
-          {tier.name}
-        </span>
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0, marginTop: 8, marginRight: 6 }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 5,
-        padding: '6px 14px',
-        borderRadius: 20,
-        border: `1.5px solid ${tier.color}`,
-        backgroundColor: 'rgba(0,0,0,0.25)',
-      }}>
-        <span style={{ fontSize: 24, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
-        <span style={{ fontSize: 22, lineHeight: 1 }}>🔥</span>
-      </div>
-      <span style={{
-        fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
-        color: tier.color, textTransform: 'uppercase', lineHeight: 1, opacity: 0.9,
-      }}>
-        {tier.name}
-      </span>
-    </div>
-  )
-}
-
 // ── Tutorial overlay ──────────────────────────────────────────────────────────
+// Re-anchored for v2 layout: hero card at top, week card mid-page,
+// streak row + recents below. Action buttons at the bottom of content.
 const TUTORIAL_STEPS = [
   {
     text: 'This is your next workout. Tap Start Session to begin.',
-    style: { top: 390, left: 16, right: 16 },
+    style: { top: 240, left: 16, right: 16 },
   },
   {
-    text: 'Log cardio sessions here — before, after, or anytime.',
-    style: { top: 488, left: 16, right: 16 },
+    text: 'Your week at a glance — the dot for each day fills as you train.',
+    style: { top: 470, left: 16, right: 16 },
   },
   {
-    text: 'Your week at a glance. Tap any day to see your history.',
-    style: { top: 566, left: 16, right: 16 },
+    text: 'Recent sessions live here. Tap one to see what you did.',
+    style: { top: 620, left: 16, right: 16 },
   },
   {
-    text: 'Settings, splits, and more live here.',
+    text: 'Settings, splits, and more live behind the menu.',
     style: { top: 62, right: 16, width: 220 },
   },
 ]
@@ -169,12 +117,7 @@ function SorenessModal({ workoutLabel, onRate, onSkip }) {
   )
 }
 
-const MON_DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-const MONTH_NAMES = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December',
-]
 
 function hexToRgba(hex, alpha) {
   const h = hex.replace('#', '')
@@ -199,11 +142,6 @@ function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Batch 16k — ISO timestamps in the store (sessions, cardio, rest days) are
-// UTC via `new Date().toISOString()`. Splitting on 'T' gives the UTC date,
-// which drifts a day for users west of UTC when they log in the evening.
-// Parse as Date and use LOCAL getDate/Month/Year so the calendar strip,
-// streak, and soreness check-in all land on the correct local day.
 function isoToLocalDateStr(iso) {
   if (!iso) return null
   return toDateStr(new Date(iso))
@@ -215,45 +153,82 @@ function daysBetween(a, b) {
   return Math.round((bMs - aMs) / 86400000)
 }
 
-// Checkmark SVG for completed circle
-function Checkmark({ color = '#fff' }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  )
+// ── ISO week (for "Week N" label inside the week card) ──────────────────────
+// Derived per ISO 8601 — week 1 contains the first Thursday of the year.
+function getIsoWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const dayNum = d.getUTCDay() || 7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
 }
 
-// ── Ambient particles (static — no re-render jitter) ─────────────────────────
-const PARTICLES = [
-  { w:3, left:'5%',  dur:'14s', delay:'-3s',  drift:'-15px', op:0.5 },
-  { w:2, left:'12%', dur:'19s', delay:'-8s',  drift:'20px',  op:0.35 },
-  { w:5, left:'18%', dur:'11s', delay:'-1s',  drift:'-25px', op:0.6 },
-  { w:2, left:'25%', dur:'22s', delay:'-14s', drift:'10px',  op:0.3 },
-  { w:4, left:'33%', dur:'16s', delay:'-6s',  drift:'-20px', op:0.55 },
-  { w:3, left:'40%', dur:'13s', delay:'-11s', drift:'30px',  op:0.4 },
-  { w:6, left:'47%', dur:'18s', delay:'-4s',  drift:'-10px', op:0.25 },
-  { w:2, left:'54%', dur:'21s', delay:'-16s', drift:'15px',  op:0.5 },
-  { w:4, left:'60%', dur:'12s', delay:'-7s',  drift:'-30px', op:0.45 },
-  { w:3, left:'67%', dur:'17s', delay:'-2s',  drift:'20px',  op:0.6 },
-  { w:5, left:'73%', dur:'20s', delay:'-13s', drift:'-15px', op:0.35 },
-  { w:2, left:'79%', dur:'15s', delay:'-9s',  drift:'25px',  op:0.5 },
-  { w:4, left:'85%', dur:'23s', delay:'-5s',  drift:'-20px', op:0.4 },
-  { w:3, left:'90%', dur:'10s', delay:'-17s', drift:'10px',  op:0.55 },
-  { w:2, left:'95%', dur:'16s', delay:'-3s',  drift:'-25px', op:0.3 },
-  { w:5, left:'8%',  dur:'19s', delay:'-12s', drift:'15px',  op:0.45 },
-  { w:3, left:'44%', dur:'14s', delay:'-8s',  drift:'-10px', op:0.5 },
-  { w:4, left:'70%', dur:'21s', delay:'-1s',  drift:'20px',  op:0.35 },
-]
+function formatVolume(lbs) {
+  if (lbs >= 1000) return `${(lbs / 1000).toFixed(1)}k`
+  return lbs === 0 ? '—' : `${lbs}`
+}
+
+function formatTime(mins) {
+  if (!mins || mins === 0) return '—'
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
+// Relative date label for recents row (e.g. "Yesterday · 47 min · 32k volume")
+function relativeDateLabel(iso) {
+  const local = isoToLocalDateStr(iso)
+  if (!local) return ''
+  const today = toDateStr(new Date())
+  const yest = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return toDateStr(d) })()
+  if (local === today) return 'Today'
+  if (local === yest) return 'Yesterday'
+  const d = new Date(iso)
+  const now = new Date()
+  const diffDays = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)
+  if (diffDays > 0 && diffDays < 7) {
+    return d.toLocaleDateString('en-US', { weekday: 'long' })
+  }
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Grade badge color (matches History/share-card semantics)
+function gradeBadgeStyle(grade, theme) {
+  switch (grade) {
+    case 'A+': return { bg: hexToRgba(theme.hex, 0.22), color: theme.hex, border: `1px solid ${hexToRgba(theme.hex, 0.4)}` }
+    case 'A':  return { bg: 'rgba(52,211,153,0.18)', color: '#34D399', border: '1px solid rgba(52,211,153,0.35)' }
+    case 'B':  return { bg: 'rgba(251,191,36,0.18)', color: '#FCD34D', border: '1px solid rgba(251,191,36,0.35)' }
+    case 'C':  return { bg: 'rgba(248,113,113,0.18)', color: '#FCA5A5', border: '1px solid rgba(248,113,113,0.35)' }
+    case 'D':  return { bg: 'rgba(220,38,38,0.18)', color: '#F87171', border: '1px solid rgba(220,38,38,0.35)' }
+    default:   return { bg: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.12)' }
+  }
+}
+
+// Compute the volume of a single session (top-level + nested drops).
+function sessionVolume(s) {
+  return (s.data?.exercises || []).reduce((exTotal, ex) => {
+    return exTotal + (ex.sets || []).reduce((setTotal, set) => {
+      const primary = (set.weight || 0) * (set.reps || 0)
+      const drops = Array.isArray(set.drops)
+        ? set.drops.reduce((d, dst) => d + (dst.weight || 0) * (dst.reps || 0), 0)
+        : 0
+      return setTotal + primary + drops
+    }, 0)
+  }, 0)
+}
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { sessions, settings, splits, activeSplitId, updateSession, customTemplates, cardioSessions, updateSettings, activeSession, restDaySessions, addRestDaySession, deleteRestDaySession, exerciseLibrary } = useStore()
-  const theme = getTheme(settings.accentColor)
-
+  const {
+    sessions, settings, splits, activeSplitId, updateSession, customTemplates,
+    cardioSessions, updateSettings, activeSession, restDaySessions,
+    addRestDaySession, deleteRestDaySession, exerciseLibrary,
+  } = useStore()
+  const theme = getTheme(settings.accentColor, settings.customAccentHex)
   const isDark = settings.backgroundTheme !== 'daylight'
 
-  // Determine if accent color is light (needs dark text)
+  // Light vs dark accent → text-on-bg color
   const accentIsLight = (() => {
     const hex = (theme.hex || '#000000').replace('#', '')
     const r = parseInt(hex.slice(0, 2), 16)
@@ -261,7 +236,7 @@ export default function Dashboard() {
     const b = parseInt(hex.slice(4, 6), 16)
     return (0.299 * r + 0.587 * g + 0.114 * b) > 160
   })()
-  const [showMonth, setShowMonth] = useState(false)
+
   const [showPreview, setShowPreview] = useState(false)
   const [previewWorkoutId, setPreviewWorkoutId] = useState(null)
   const [showSorenessModal, setShowSorenessModal] = useState(false)
@@ -270,30 +245,12 @@ export default function Dashboard() {
   const [pressedStreak, setPressedStreak] = useState(false)
   const [showTierModal, setShowTierModal] = useState(false)
   const [selectedDaySession, setSelectedDaySession] = useState(null)
-  const [selectedFutureDay, setSelectedFutureDay] = useState(null) // { dateStr, workoutId, isRest }
-
-  // ── Count-up animation (runs once on mount) ───────────────────────────────
-  const animRef = useRef(false)
-  const [animProgress, setAnimProgress] = useState(0)
-  useEffect(() => {
-    if (animRef.current) return
-    animRef.current = true
-    const start = performance.now()
-    const duration = 700
-    function tick(now) {
-      const elapsed = now - start
-      const p = Math.min(elapsed / duration, 1)
-      const ease = 1 - Math.pow(1 - p, 3)
-      setAnimProgress(ease)
-      if (p < 1) requestAnimationFrame(tick)
-    }
-    requestAnimationFrame(tick)
-  }, [])
-  const anim = (v) => Math.round(v * animProgress)
+  const [selectedFutureDay, setSelectedFutureDay] = useState(null)
+  const [weekDrawerOpen, setWeekDrawerOpen] = useState(false)
 
   const totalSessions = sessions.length
 
-  // ── Volume computation ────────────────────────────────────────────────────
+  // ── Volume / time computation ─────────────────────────────────────────────
   const getWeekVolume = (weekOffset = 0) => {
     const now = new Date()
     const startOfThisWeek = new Date(now)
@@ -306,21 +263,9 @@ export default function Dashboard() {
         const d = new Date(s.date)
         return d >= startOfThisWeek && d < endOfWeek
       })
-      .reduce((total, s) => {
-        return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
-          return exTotal + (ex.sets || []).reduce((setTotal, set) => {
-            // Batch 24 decision 2: include nested drop stages in volume.
-            const primary = (set.weight || 0) * (set.reps || 0)
-            const drops = Array.isArray(set.drops)
-              ? set.drops.reduce((d, dst) => d + (dst.weight || 0) * (dst.reps || 0), 0)
-              : 0
-            return setTotal + primary + drops
-          }, 0)
-        }, 0)
-      }, 0)
+      .reduce((total, s) => total + sessionVolume(s), 0)
   }
 
-  // ── Time in gym computation ───────────────────────────────────────────────
   const getWeekTime = (weekOffset = 0) => {
     const now = new Date()
     const startOfThisWeek = new Date(now)
@@ -336,52 +281,18 @@ export default function Dashboard() {
       .reduce((total, s) => total + (s.duration || 0), 0)
   }
 
-  const formatVolume = (lbs) => {
-    if (lbs >= 1000) return `${(lbs / 1000).toFixed(1)}k`
-    return lbs === 0 ? '—' : `${lbs}`
-  }
-
-  const formatTime = (mins) => {
-    if (!mins || mins === 0) return '—'
-    if (mins < 60) return `${mins}m`
-    const h = Math.floor(mins / 60)
-    const m = mins % 60
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-
   const volumeThisWeek = getWeekVolume(0)
   const volumeLastWeek = getWeekVolume(-1)
   const timeThisWeek   = getWeekTime(0)
   const timeLastWeek   = getWeekTime(-1)
 
-  // Days into the current Sun-start week (1 = Sun, 7 = Sat)
-  const daysIntoWeek = new Date().getDay() + 1
-
-  const totalVolume = sessions.reduce((total, s) => {
-    return total + (s.data?.exercises || []).reduce((exTotal, ex) => {
-      return exTotal + (ex.sets || []).reduce((setTotal, set) => {
-        // Batch 24 decision 2: include nested drop stages in total volume.
-        const primary = (set.weight || 0) * (set.reps || 0)
-        const drops = Array.isArray(set.drops)
-          ? set.drops.reduce((d, dst) => d + (dst.weight || 0) * (dst.reps || 0), 0)
-          : 0
-        return setTotal + primary + drops
-      }, 0)
-    }, 0)
-  }, 0)
-
   const hour = new Date().getHours()
   const timeGreeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   // ── Active split helpers ──────────────────────────────────────────────────
-  const activeSplit   = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
-  const rotation      = activeSplit?.rotation || BB_WORKOUT_SEQUENCE
-  const workoutSeq    = rotation.filter(t => t !== 'rest')
-
-  const splitSessionCount = sessions.filter(s => {
-    if (!activeSplit?.createdAt) return true
-    return new Date(s.date) >= new Date(activeSplit.createdAt)
-  }).length
+  const activeSplit  = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
+  const rotation     = activeSplit?.rotation || BB_WORKOUT_SEQUENCE
+  const workoutSeq   = rotation.filter(t => t !== 'rest')
 
   const streak = getWorkoutStreak(sessions, cardioSessions, restDaySessions)
 
@@ -414,7 +325,6 @@ export default function Dashboard() {
     const w = activeSplit?.workouts?.find(w => w.id === wId)
     return w?.emoji || BB_WORKOUT_EMOJI[wId] || '🏋️'
   }
-  const getShortName = (wId) => getWorkoutName(wId).split(' ')[0]
 
   function getLastExerciseData(exName) {
     const name = typeof exName === 'string' ? exName : exName?.name
@@ -429,37 +339,80 @@ export default function Dashboard() {
     return `Last: ${lastWorking.weight}×${lastWorking.reps}`
   }
 
-  const getFirstExercises = (workoutId, count = 3) => {
+  // First N exercises across ALL sections of a workout (for hero pill row).
+  // Pulls the first 3 exercise names from any section, in section order.
+  const getFirstExercisesAcrossSections = (workoutId, count = 3) => {
     const workout = activeSplit?.workouts?.find(w => w.id === workoutId)
     const sections = workout?.sections || BB_EXERCISE_GROUPS[workoutId] || []
-    const primarySection = sections.find(s => s.label === 'Primary') || sections[0]
-    if (!primarySection) return []
-    return (primarySection.exercises || []).slice(0, count).map(ex => typeof ex === 'string' ? ex : ex.name)
+    const out = []
+    for (const section of sections) {
+      for (const ex of (section.exercises || [])) {
+        const name = typeof ex === 'string' ? ex : ex?.name
+        if (name) out.push(name)
+        if (out.length >= count) return out
+      }
+    }
+    return out
+  }
+
+  // Total exercise count across all sections of a workout.
+  const getExerciseCount = (workoutId) => {
+    const workout = activeSplit?.workouts?.find(w => w.id === workoutId)
+    const sections = workout?.sections || BB_EXERCISE_GROUPS[workoutId] || []
+    return sections.reduce((total, s) => total + (s.exercises?.length || 0), 0)
+  }
+  const getSectionCount = (workoutId) => {
+    const workout = activeSplit?.workouts?.find(w => w.id === workoutId)
+    const sections = workout?.sections || BB_EXERCISE_GROUPS[workoutId] || []
+    return sections.length
+  }
+
+  // Day-of-cycle eyebrow ("Day 3 of 5"). Counts non-rest items only and
+  // returns the 1-based position of `recommendedWorkout` in workoutSeq.
+  // Falls back gracefully when the workout isn't in the sequence.
+  const getDayOfCycle = (workoutId) => {
+    if (!workoutSeq.length) return null
+    const idx = workoutSeq.indexOf(workoutId)
+    if (idx === -1) return null
+    return { day: idx + 1, total: workoutSeq.length }
+  }
+
+  // Days since last logged session of this workout type.
+  const getDaysSinceLastOfType = (workoutId) => {
+    const matches = sessions
+      .filter(s => s.type === workoutId)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+    if (!matches.length) return null
+    const last = new Date(matches[0].date)
+    const diff = Math.round((new Date() - last) / 86400000)
+    if (diff <= 0) return 'today'
+    if (diff === 1) return 'yesterday'
+    return `${diff} days ago`
   }
 
   // ── Soreness check-in (yesterday's session) ───────────────────────────────
   const today    = new Date()
   const todayStr = toDateStr(today)
-  const todayLogged = sessions.some(s => {
-    const d = isoToLocalDateStr(s.date)
-    return d === todayStr
-  })
+  const todayLogged = sessions.some(s => isoToLocalDateStr(s.date) === todayStr)
 
-  const yesterday    = new Date(today)
+  const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
   const yesterdayStr = toDateStr(yesterday)
 
   const yesterdayRotationItem = rotation?.length && sessions.length
     ? getRotationItemOnDate(yesterdayStr, sessions, rotation)
     : null
-  const yesterdayLogged = sessions.some(s => isoToLocalDateStr(s.date) === yesterdayStr) || cardioSessions.some(c => isoToLocalDateStr(c.date) === yesterdayStr) || (restDaySessions || []).some(r => isoToLocalDateStr(r.date) === yesterdayStr)
+  const yesterdayLogged =
+    sessions.some(s => isoToLocalDateStr(s.date) === yesterdayStr) ||
+    cardioSessions.some(c => isoToLocalDateStr(c.date) === yesterdayStr) ||
+    (restDaySessions || []).some(r => isoToLocalDateStr(r.date) === yesterdayStr)
   const missedYesterdayWorkout = (!todayLogged && yesterdayRotationItem && yesterdayRotationItem !== 'rest' && !yesterdayLogged)
     ? yesterdayRotationItem
     : null
   const recommendedWorkout = missedYesterdayWorkout ?? nextBb
 
   const activePreviewId = previewWorkoutId || recommendedWorkout
-  const previewWorkout = activeSplit?.workouts?.find(w => w.id === activePreviewId)
+  const previewWorkout  = activeSplit?.workouts?.find(w => w.id === activePreviewId)
   const previewSections = previewWorkout?.sections || BB_EXERCISE_GROUPS[activePreviewId] || []
 
   const pendingSorenessSession = sessions.find(s => {
@@ -481,7 +434,6 @@ export default function Dashboard() {
   const attachedCardio = pendingSorenessSession
     ? cardioSessions?.find(c => c.attachedToSessionId === pendingSorenessSession.id)
     : null
-
   const sorenessWorkoutLabel = pendingSorenessSession
     ? attachedCardio
       ? `${getWorkoutLabel(pendingSorenessSession)} + ${attachedCardio.type}`
@@ -490,28 +442,21 @@ export default function Dashboard() {
 
   const handleSorenessRate = (rating) => {
     if (!pendingSorenessSession) return
-    updateSession(pendingSorenessSession.id, {
-      soreness: { rating, date: yesterdayStr },
-    })
+    updateSession(pendingSorenessSession.id, { soreness: { rating, date: yesterdayStr } })
     setShowSorenessModal(false)
   }
-
   const handleSorenessSkip = () => {
     if (!pendingSorenessSession) return
-    updateSession(pendingSorenessSession.id, {
-      soreness: { skipped: true, date: yesterdayStr },
-    })
+    updateSession(pendingSorenessSession.id, { soreness: { skipped: true, date: yesterdayStr } })
     setShowSorenessModal(false)
   }
 
-  const restDayDateSet = new Set(
-    (restDaySessions || []).map(r => isoToLocalDateStr(r.date)).filter(Boolean)
-  )
+  const restDayDateSet = new Set((restDaySessions || []).map(r => isoToLocalDateStr(r.date)).filter(Boolean))
   const restDayLoggedToday = restDayDateSet.has(todayStr)
-  // Count rest day allotment per rotation cycle
-  const restDayAllotment = (rotation || []).filter(t => t === 'rest').length
 
-  const isRestDay = (nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout) || (restDayLoggedToday && !todayLogged)
+  const isRestDay =
+    (nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout) ||
+    (restDayLoggedToday && !todayLogged)
 
   // ── Session map ───────────────────────────────────────────────────────────
   const sessionByDate = {}
@@ -523,14 +468,8 @@ export default function Dashboard() {
     }
   })
 
-  const cardioDateSet = new Set(
-    (cardioSessions || [])
-      .filter(c => !c.attachedToSessionId)
-      .map(c => c.date)
-  )
-  const cardioAndWorkoutDateSet = new Set(
-    (cardioSessions || []).map(c => c.date)
-  )
+  const cardioDateSet = new Set((cardioSessions || []).filter(c => !c.attachedToSessionId).map(c => c.date))
+  const cardioAndWorkoutDateSet = new Set((cardioSessions || []).map(c => c.date))
 
   function getPlannedWorkout(daysAhead) {
     if (daysAhead < 0) return null
@@ -540,7 +479,6 @@ export default function Dashboard() {
     if (offset < 0) return null
     return workoutSeq[(base + offset) % workoutSeq.length]
   }
-
   function getFullRotationItem(daysAhead) {
     if (daysAhead < 0) return null
     const d = new Date(today)
@@ -584,142 +522,132 @@ export default function Dashboard() {
   }
 
   // ── Sun-Sat week days for circle calendar ────────────────────────────────
-  const sundayOffset = today.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+  const sundayOffset = today.getDay()
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today)
     d.setDate(today.getDate() - sundayOffset + i)
     return d
   })
 
-  // Count completed workout days this Sun-Sat week
   const weekCompletedCount = weekDays.filter(d => {
     const info = getDayInfo(d)
-    return info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio' || info.type === 'logged-rest' || info.type === 'today-logged-rest'
+    return info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
   }).length
 
-  // ── Sun-Sat week days (for monthly calendar) ──────────────────────────────
-  function getMonthDays() {
-    const year     = today.getFullYear()
-    const month    = today.getMonth()
-    const firstDay = new Date(year, month, 1)
-    const lastDay  = new Date(year, month + 1, 0)
-    const days     = []
-    for (let i = 0; i < firstDay.getDay(); i++) days.push(null)
-    for (let d = 1; d <= lastDay.getDate(); d++) days.push(new Date(year, month, d))
-    return days
-  }
+  const lastWeekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(today.getDate() - sundayOffset - 7 + i)
+    return d
+  })
+  const lastWeekCompletedCount = lastWeekDays.filter(d => {
+    const info = getDayInfo(d)
+    return info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
+  }).length
 
-  // ── Smart headline ────────────────────────────────────────────────────────
-  const lastSession = sessions.length > 0
-    ? sessions.slice().sort((a, b) => new Date(b.date) - new Date(a.date))[0]
-    : null
-  const daysSinceLastWorkout = lastSession
-    ? Math.round((new Date() - new Date(lastSession.date)) / 86400000)
-    : 999
-
-  function getSmartHeadline() {
-    if (isRestDay) {
+  // ── Week narrative sentence ───────────────────────────────────────────────
+  // Simple v1: "{N} sessions this week" + a comparison frame to last week
+  // + a single volume delta line. Per-muscle-group MoM is deferred.
+  function getWeekNarrative() {
+    if (weekCompletedCount === 0) {
       return {
-        headline: 'Rest day.',
-        sub: `Recovery is part of the plan. ${getWorkoutName(nextBb)} is up next.`,
+        text: 'No sessions yet this week — open day. Tap Start Session above.',
+        deltaText: null,
+        deltaColor: null,
       }
     }
-    if (todayLogged) {
-      const postPhrases = ['Done. ✓', 'Work done. ✓', 'Locked in. ✓', 'Session logged. ✓']
-      return {
-        headline: postPhrases[totalSessions % 4],
-        sub: `${totalSessions} sessions and counting.`,
+
+    const sessionWord = weekCompletedCount === 1 ? 'session' : 'sessions'
+    let frame = ''
+    if (lastWeekCompletedCount === 0) {
+      frame = `${weekCompletedCount} ${sessionWord} this week — strong start.`
+    } else if (weekCompletedCount > lastWeekCompletedCount) {
+      const diff = weekCompletedCount - lastWeekCompletedCount
+      frame = `${weekCompletedCount} ${sessionWord} this week, ${diff} ahead of last.`
+    } else if (weekCompletedCount < lastWeekCompletedCount) {
+      const diff = lastWeekCompletedCount - weekCompletedCount
+      frame = `${weekCompletedCount} ${sessionWord} this week, ${diff} behind last.`
+    } else {
+      frame = `${weekCompletedCount} ${sessionWord} this week, on pace with last.`
+    }
+
+    let deltaText = null
+    let deltaColor = null
+    if (volumeLastWeek > 0) {
+      const pct = ((volumeThisWeek - volumeLastWeek) / volumeLastWeek) * 100
+      if (pct > 5) {
+        deltaText = `Volume +${Math.round(pct)}% vs last.`
+        deltaColor = '#34D399'
+      } else if (pct < -5) {
+        deltaText = `Volume ${Math.round(pct)}% vs last.`
+        deltaColor = '#FCD34D'
       }
     }
-    if (daysSinceLastWorkout > 7 && streak <= 2) {
-      return {
-        headline: `Welcome back${settings.userName ? `, ${settings.userName}` : ''}.`,
-        sub: `You were gone ${daysSinceLastWorkout} days. You showed up — that's what matters.`,
-      }
-    }
-    if (streak >= 30) {
-      const phrases = ["You're a myth.", 'Mythic.']
-      return { headline: phrases[totalSessions % 2], sub: `${streak} days. Unreal.` }
-    }
-    if (streak >= 20) {
-      const phrases = ['Unstoppable.', `${streak} days strong.`]
-      return { headline: phrases[totalSessions % 2], sub: `${streak} days and counting.` }
-    }
-    if (streak >= 15) {
-      const phrases = ['On a tear.', `${streak} days straight.`]
-      return { headline: phrases[totalSessions % 2], sub: `Keep the streak alive.` }
-    }
-    if (streak >= 6) {
-      const phrases = [`${streak} days in.`, 'Keep stacking.']
-      return { headline: phrases[totalSessions % 2], sub: `${totalSessions} sessions logged.` }
-    }
-    const defaultPhrases = ["Let's work.", 'Time to build.', 'Get after it.']
-    return {
-      headline: defaultPhrases[totalSessions % 3],
-      sub: `${totalSessions} sessions logged. Keep stacking.`,
-    }
+
+    return { text: frame, deltaText, deltaColor }
   }
+  const weekNarrative = getWeekNarrative()
 
-  const { headline, sub } = getSmartHeadline()
+  // ── Recents (last 3 sessions) ─────────────────────────────────────────────
+  const recentSessions = sessions
+    .slice()
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 3)
 
-  // ── Volume & time insights ────────────────────────────────────────────────
-  function getVolumeInsight() {
-    if (volumeLastWeek === 0) {
-      if (volumeThisWeek > 0) return { text: '↑ Great start to the week.', color: '#34d399' }
-      return { text: 'No data yet.', color: 'var(--text-muted)' }
-    }
-    const pct = ((volumeThisWeek - volumeLastWeek) / volumeLastWeek) * 100
-    if (pct < -15) return { text: `↓ Volume down ${Math.round(Math.abs(pct))}% — but pace is fine.`, color: '#fbbf24' }
-    if (pct > 10)  return { text: `↑ Up ${Math.round(pct)}% from last week. Pushing harder.`, color: '#34d399' }
-    return { text: '≈ Tracking close to last week.', color: '#93c5fd' }
-  }
+  // ── Eyebrow + meta lines for the hero card ───────────────────────────────
+  const heroDayOfCycle = getDayOfCycle(recommendedWorkout)
+  const heroExercisePills = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
+    ? getFirstExercisesAcrossSections(recommendedWorkout, 3)
+    : []
+  const heroExerciseCount = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
+    ? getExerciseCount(recommendedWorkout)
+    : 0
+  const heroSectionCount = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
+    ? getSectionCount(recommendedWorkout)
+    : 0
+  const heroLastSeen = getDaysSinceLastOfType(recommendedWorkout)
 
-  function getTimeInsight() {
-    if (timeLastWeek === 0) {
-      if (timeThisWeek > 0) return { text: '↑ Good start.', color: '#34d399' }
-      return { text: 'No data yet.', color: 'var(--text-muted)' }
-    }
-    const diff = timeThisWeek - timeLastWeek
-    const absDiff = Math.abs(diff)
-    const label = absDiff < 60 ? `${absDiff}m` : `${Math.floor(absDiff/60)}h ${absDiff%60 > 0 ? `${absDiff%60}m` : ''}`
-    if (diff > 5)  return { text: `↑ ${label.trim()} more than last week.`, color: '#34d399' }
-    if (diff < -5) return { text: `↓ ${label.trim()} less than last week.`, color: '#fbbf24' }
-    return { text: '≈ About the same as last week.', color: '#93c5fd' }
-  }
-
-  const volumeInsight = getVolumeInsight()
-  const timeInsight   = getTimeInsight()
-
-  // ── CTA card styles ───────────────────────────────────────────────────────
-  const accentCardStyle = {
-    backgroundColor: hexToRgba(theme.hex, 0.82),
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
-    borderRadius: 20,
-    padding: '32px 20px 20px',
+  // ── Hero card style (workout state — accent gradient wash) ────────────────
+  const heroAccentCardStyle = {
+    margin: '0 16px',
+    borderRadius: 24,
+    padding: '20px 18px 18px',
+    background: `linear-gradient(135deg, ${hexToRgba(theme.hex, 0.18)} 0%, ${hexToRgba(theme.hex, 0.02)} 70%), var(--bg-card)`,
+    border: `1px solid ${hexToRgba(theme.hex, 0.22)}`,
+    boxShadow: `0 4px 30px ${hexToRgba(theme.hex, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
     position: 'relative',
+    overflow: 'hidden',
+  }
+
+  // Resume-state hero (in-progress session) — same geometry, accent fill.
+  const heroResumeCardStyle = {
+    margin: '0 16px',
+    borderRadius: 24,
+    padding: '24px 18px 18px',
+    backgroundColor: hexToRgba(theme.hex, 0.85),
+    backgroundImage: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.18) 0%, transparent 60%)',
+    border: `1px solid ${hexToRgba(theme.hex, 0.45)}`,
+    boxShadow: `0 8px 32px ${hexToRgba(theme.hex, 0.30)}, 0 2px 8px rgba(0,0,0,0.30)`,
+    position: 'relative',
+    overflow: 'hidden',
     color: theme.contrastText,
     textAlign: 'center',
-    overflow: 'hidden',
-    boxShadow: `0 8px 32px ${theme.hex}40, 0 2px 8px rgba(0,0,0,0.3)`,
-    borderTop: '1px solid rgba(255,255,255,0.25)',
   }
 
-  const ctaExercises = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
-    ? getFirstExercises(recommendedWorkout, 3)
-    : []
+  // Rest-state hero — fixed blue tint regardless of accent so users see
+  // they're in a different mode visually. Per design doc + critique mockup.
+  const heroRestCardStyle = {
+    margin: '0 16px',
+    borderRadius: 24,
+    padding: '20px 18px 18px',
+    background: 'linear-gradient(135deg, rgba(59,130,246,0.18) 0%, rgba(59,130,246,0.02) 70%), var(--bg-card)',
+    border: '1px solid rgba(59,130,246,0.22)',
+    boxShadow: '0 4px 30px rgba(59,130,246,0.10), inset 0 1px 0 rgba(255,255,255,0.04)',
+    position: 'relative',
+    overflow: 'hidden',
+  }
 
-  // ── Volume/time bar widths ────────────────────────────────────────────────
-  const volBarPct = volumeLastWeek === 0
-    ? (volumeThisWeek > 0 ? 100 : 0)
-    : Math.min((volumeThisWeek / volumeLastWeek) * 100, 100)
-  const timeBarPct = timeLastWeek === 0
-    ? (timeThisWeek > 0 ? 100 : 0)
-    : Math.min((timeThisWeek / timeLastWeek) * 100, 100)
-
-  // ── Fade-in animation delays ──────────────────────────────────────────────
   const fadeIn = (delay) => ({
-    animation: 'dashFadeIn 0.45s ease forwards',
+    animation: 'dashFadeInV2 0.4s ease forwards',
     animationDelay: `${delay}ms`,
     opacity: 0,
   })
@@ -727,681 +655,622 @@ export default function Dashboard() {
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 100 }}>
       <style>{`
-        @keyframes dashFadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes circleRingPulse {
-          0%, 100% { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 4px VAR_REPLACE_20; }
-          50%       { box-shadow: 0 0 0 2px VAR_REPLACE, 0 0 0 6px VAR_REPLACE_10; }
-        }
-        @keyframes particleDrift {
-          0%   { transform: translateY(100vh) translateX(0px); opacity: 0; }
-          10%  { opacity: 1; }
-          85%  { opacity: 0.7; }
-          100% { transform: translateY(-60px) translateX(var(--drift)); opacity: 0; }
-        }
         ${STREAK_BADGE_CSS}
       `}</style>
 
-      {/* ── Floating particles overlay ───────────────────────────────────────── */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'hidden', opacity: isDark ? 1 : 0.4 }}>
-        {PARTICLES.map((p, i) => (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: p.left,
-              width: p.w,
-              height: p.w,
-              borderRadius: p.w <= 3 ? 1 : '50%',
-              backgroundColor: theme.hex,
-              opacity: p.op,
-              animationName: 'particleDrift',
-              animationDuration: p.dur,
-              animationDelay: p.delay,
-              animationTimingFunction: 'linear',
-              animationIterationCount: 'infinite',
-              '--drift': p.drift,
-            }}
-          />
-        ))}
-      </div>
-
-      {/* ── Top radial glow ──────────────────────────────────────────────────── */}
+      {/* ── Subtle top radial glow only — no particles, no bottom glow ─────── */}
       <div style={{
         position: 'fixed', top: -120, left: '50%',
         transform: 'translateX(-50%)',
-        width: 500, height: 400,
-        background: `radial-gradient(ellipse at center, ${theme.hex}${isDark ? '20' : '0D'} 0%, ${theme.hex}${isDark ? '08' : '04'} 40%, transparent 70%)`,
+        width: 500, height: 380,
+        background: `radial-gradient(ellipse at center, ${theme.hex}${isDark ? '14' : '0A'} 0%, ${theme.hex}${isDark ? '06' : '02'} 40%, transparent 70%)`,
         pointerEvents: 'none', zIndex: 1,
       }} />
 
-      {/* ── Bottom radial glow (dark only) ───────────────────────────────────── */}
-      {isDark && (
-        <div style={{
-          position: 'fixed', bottom: -80, left: '50%',
-          transform: 'translateX(-50%)',
-          width: 600, height: 350,
-          background: 'radial-gradient(ellipse at center, rgba(30,20,60,0.5) 0%, transparent 70%)',
-          pointerEvents: 'none', zIndex: 1,
-        }} />
-      )}
-
-      {/* ── Page content (above ambient layer) ───────────────────────────────── */}
+      {/* ── Page content ────────────────────────────────────────────────────── */}
       <div style={{ position: 'relative', zIndex: 2 }}>
 
-      {/* ── SECTION 1: Hero Header ──────────────────────────────────────────── */}
-      <div
-        style={{
+        {/* ── 1. Header (greeting + name + ≡ menu hint) ─────────────────── */}
+        <div style={{
           ...fadeIn(0),
-          position: 'relative',
-          paddingTop: 'max(64px, calc(env(safe-area-inset-top) + 28px))',
-          padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 16px 20px',
-        }}
-      >
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em' }}>
-          {timeGreeting}{settings.userName ? `, ${settings.userName}` : ''}
-        </p>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, marginBottom: 4 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
-            {headline}
+          padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 20px 16px',
+        }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em' }}>
+            {timeGreeting}{settings.userName ? ',' : ''}
+          </p>
+          <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: '2px 0 0' }}>
+            {settings.userName || 'Welcome'}
           </h1>
-          <div
-            onPointerDown={() => setPressedStreak(true)}
-            onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
-            onPointerLeave={() => setPressedStreak(false)}
-            onPointerCancel={() => setPressedStreak(false)}
-            style={{ transform: pressedStreak ? 'scale(0.88)' : 'scale(1)', transition: 'transform 80ms ease', cursor: 'pointer' }}
-          >
-            <StreakBadge streak={streak} themeHex={theme.hex} />
-          </div>
-        </div>
-      </div>
-
-      {/* ── SECTION 2: Circle Calendar ──────────────────────────────────────── */}
-      <div style={{ ...fadeIn(100), padding: '0 16px', marginBottom: 10, marginTop: -28 }}>
-        {/* Header row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <button
-            onPointerDown={() => setShowMonth(v => !v)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}
-          >
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              THIS WEEK
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.7 }}>
-              {showMonth ? '▾' : '▸'}
-            </span>
-          </button>
         </div>
 
-        {/* Circle row */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          {weekDays.map((day, i) => {
-            const info        = getDayInfo(day)
-            const isToday     = toDateStr(day) === todayStr
-            const isDone      = info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
-            const isPending   = info.type === 'today-pending'
-            const isRestType  = info.type === 'today-rest' || info.type === 'past-rest' || info.type === 'future-rest'
-            const isLoggedRest = info.type === 'logged-rest' || info.type === 'today-logged-rest'
-            const isFutureDay = info.type === 'future'
-
-            let circleStyle = {}
-            let circleBg = isDark ? 'rgba(255,255,255,0.08)' : 'transparent'
-            let circleSize = 36
-
-            if (isDone) {
-              circleBg = theme.hex
-            } else if (isPending) {
-              circleBg = 'transparent'
-              circleStyle = {
-                border: `2px solid ${theme.hex}`,
-                boxShadow: `0 0 0 1px ${theme.hex}40`,
-              }
-            } else if (isRestType) {
-              circleSize = 10
-              circleBg = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'
-            } else if (isLoggedRest) {
-              circleSize = 10
-              circleBg = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'
-            } else {
-              // future or empty
-              circleBg = isDark ? 'rgba(255,255,255,0.06)' : 'transparent'
-              if (!isDark) {
-                circleStyle = { border: `1px solid ${theme.hex}4D` }
-              }
-            }
-
-            const isRestDot = isRestType || isLoggedRest
-
-            return (
-              <div
-                key={i}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}
+        {/* ── 2. Hero card — owns the fold ──────────────────────────────── */}
+        <div style={{ ...fadeIn(60), marginBottom: 12 }}>
+          {activeSession?.sessionStarted ? (
+            // (a) Resume in-progress session
+            <div style={heroResumeCardStyle}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ position: 'relative', display: 'inline-flex', width: 10, height: 10 }}>
+                  <span className="animate-ping" style={{ position: 'absolute', inset: 0, borderRadius: '50%', backgroundColor: theme.contrastText, opacity: 0.75 }} />
+                  <span style={{ position: 'relative', display: 'inline-flex', borderRadius: '50%', width: 10, height: 10, backgroundColor: theme.contrastText, opacity: 0.85 }} />
+                </span>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.7, margin: 0 }}>
+                  {activeSession.isPaused ? 'Paused' : 'In Progress'}
+                </p>
+              </div>
+              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, margin: 0 }}>
+                {getWorkoutEmoji(activeSession.type)} {getWorkoutName(activeSession.type)}
+              </p>
+              <p style={{ fontSize: 13, marginTop: 4, marginBottom: 18, opacity: 0.65 }}>
+                {activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length || 0} exercise{activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length === 1 ? '' : 's'} logged so far
+              </p>
+              <button
+                onClick={() => navigate(`/log/bb/${activeSession.type}`)}
+                style={{ width: '100%', background: 'rgba(0,0,0,0.20)', fontWeight: 700, fontSize: 16, padding: '14px 0', borderRadius: 14, border: 'none', cursor: 'pointer', color: theme.contrastText }}
               >
-                {/* Circle wrapper to keep day letter alignment consistent */}
-                <div style={{ height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {isRestDot ? (
-                    <div style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      backgroundColor: isLoggedRest
-                        ? (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.3)')
-                        : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'),
-                    }} />
-                  ) : (
-                    <button
-                      onPointerDown={(e) => {
-                        e.preventDefault()
-                        const dayKey = toDateStr(day)
-                        setPressedDay(dayKey)
-                        if (isDone) {
-                          const s = sessionByDate[dayKey]
-                          if (s) setSelectedDaySession(s)
-                        } else if (isFutureDay) {
-                          setSelectedFutureDay({ dateStr: dayKey, workoutId: info.planned, isRest: false })
-                        } else if (info.type === 'future-rest') {
-                          setSelectedFutureDay({ dateStr: dayKey, workoutId: null, isRest: true })
-                        } else if (info.type !== 'today-pending' && info.type !== 'today-rest') {
-                          navigate('/history')
-                        }
-                      }}
-                      onPointerUp={() => setPressedDay(null)}
-                      onPointerLeave={() => setPressedDay(null)}
-                      onPointerCancel={() => setPressedDay(null)}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: '50%',
-                        backgroundColor: circleBg,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transform: pressedDay === toDateStr(day) ? 'scale(0.82)' : 'scale(1)',
-                        transition: 'transform 80ms ease',
-                        flexShrink: 0,
-                        ...circleStyle,
-                      }}
-                    >
-                      {isDone && <Checkmark color={theme.contrastText} />}
-                    </button>
+                Resume Workout →
+              </button>
+            </div>
+          ) : isRestDay ? (
+            // (c) Today is a rest day — calm blue card
+            <div style={heroRestCardStyle}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#93C5FD', textTransform: 'uppercase', marginBottom: 8 }}>
+                Rest day
+              </p>
+              <p style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.15, color: 'var(--text-primary)', margin: 0 }}>
+                Recovery
+              </p>
+              <p style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 6, marginBottom: 14 }}>
+                {weekCompletedCount === 0
+                  ? 'Take it easy today.'
+                  : `${weekCompletedCount} active ${weekCompletedCount === 1 ? 'day' : 'days'} this week. You're on track.`}
+              </p>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => navigate('/cardio')}
+                  style={{
+                    flex: 1, padding: '12px 14px', borderRadius: 12,
+                    background: 'rgba(59,130,246,0.18)', color: '#93C5FD',
+                    border: '1px solid rgba(59,130,246,0.35)',
+                    fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                  }}
+                >
+                  Log light cardio
+                </button>
+                <button
+                  onClick={() => {
+                    if (restDayLoggedToday) {
+                      const todayEntry = (restDaySessions || []).find(r => isoToLocalDateStr(r.date) === todayStr)
+                      if (todayEntry) deleteRestDaySession(todayEntry.id)
+                    } else {
+                      addRestDaySession(new Date().toISOString())
+                    }
+                  }}
+                  style={{
+                    flex: 1, padding: '12px 14px', borderRadius: 12,
+                    background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                    fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                  }}
+                >
+                  {restDayLoggedToday ? '✓ Rest logged' : 'Log rest day'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            // (b) Today is a workout day — accent gradient hero
+            <div style={heroAccentCardStyle}>
+              <p style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: theme.hex,
+                marginBottom: 10,
+              }}>
+                {missedYesterdayWorkout ? 'Picking up from yesterday' : 'Today'}
+                {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
+                <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>
+                  {getWorkoutEmoji(recommendedWorkout)}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{
+                    fontSize: 24,
+                    fontWeight: 700,
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.15,
+                    color: 'var(--text-primary)',
+                    margin: 0,
+                  }}>
+                    {getWorkoutName(recommendedWorkout)}
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
+                    {heroSectionCount} section{heroSectionCount === 1 ? '' : 's'} · ~{heroExerciseCount} exercises
+                    {heroLastSeen ? ` · last did ${heroLastSeen}` : ''}
+                  </p>
+                </div>
+              </div>
+
+              {heroExercisePills.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, marginTop: 6 }}>
+                  {heroExercisePills.map((ex, i) => (
+                    <span key={i} style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid var(--border-subtle)',
+                      padding: '5px 10px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      color: 'var(--text-secondary)',
+                      fontWeight: 500,
+                    }}>
+                      {ex}
+                    </span>
+                  ))}
+                  {heroExerciseCount > heroExercisePills.length && (
+                    <span style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid var(--border-subtle)',
+                      padding: '5px 10px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      color: 'var(--text-muted)',
+                      fontWeight: 500,
+                    }}>
+                      +{heroExerciseCount - heroExercisePills.length} more
+                    </span>
                   )}
                 </div>
-                {/* Day label */}
-                <span style={{
-                  fontSize: 11,
-                  fontWeight: isToday ? 700 : 500,
-                  color: isToday ? theme.hex : 'var(--text-muted)',
-                  letterSpacing: '0.05em',
-                }}>
-                  {DAY_LABELS[i]}
-                </span>
+              )}
+
+              <button
+                onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
+                style={{
+                  width: '100%',
+                  background: theme.hex,
+                  color: theme.contrastText,
+                  padding: '14px 18px',
+                  borderRadius: 14,
+                  fontWeight: 700,
+                  fontSize: 15,
+                  boxShadow: `0 4px 20px ${hexToRgba(theme.hex, 0.35)}`,
+                  border: 'none',
+                  cursor: 'pointer',
+                  marginBottom: 6,
+                }}
+              >
+                Start Session →
+              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setShowPreview(true)}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text-secondary)',
+                    padding: '10px 14px',
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    fontSize: 13,
+                    border: '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Preview
+                </button>
+                <button
+                  onClick={() => {
+                    if (!restDayLoggedToday) {
+                      addRestDaySession(new Date().toISOString())
+                    }
+                  }}
+                  disabled={restDayLoggedToday}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255,255,255,0.05)',
+                    color: restDayLoggedToday ? 'var(--text-muted)' : 'var(--text-secondary)',
+                    padding: '10px 14px',
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    fontSize: 13,
+                    border: '1px solid var(--border-subtle)',
+                    cursor: restDayLoggedToday ? 'default' : 'pointer',
+                    opacity: restDayLoggedToday ? 0.6 : 1,
+                  }}
+                >
+                  {restDayLoggedToday ? '✓ Rest logged' : 'Skip · Rest'}
+                </button>
               </div>
-            )
-          })}
+            </div>
+          )}
         </div>
 
-        {/* Summary line */}
-        {activeSplit && (
-          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
-            {activeSplit.emoji} {activeSplit.name}
-          </p>
+        {/* ── 3. Soreness check-in (when applicable) ─────────────────────── */}
+        {pendingSorenessSession && (
+          <div style={{ ...fadeIn(140), padding: '0 16px', marginBottom: 12 }}>
+            <button
+              onClick={() => setShowSorenessModal(true)}
+              className="w-full rounded-2xl p-4 flex items-center gap-3 text-left"
+              style={{
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.06)',
+              }}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-0.5">Check-in</p>
+                <p className="font-semibold text-c-primary text-sm">
+                  Review yesterday's {sorenessWorkoutLabel} session.
+                </p>
+              </div>
+              <svg className="w-4 h-4 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         )}
 
-        {/* Monthly calendar expansion */}
-        <div style={{
-          maxHeight: showMonth ? '420px' : '0px',
-          overflow: 'hidden',
-          transition: 'max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
-        }}>
-          <div style={{ paddingTop: 16 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--text-primary)' }}>
-              {MONTH_NAMES[today.getMonth()]} {today.getFullYear()}
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
-              {DAY_LABELS.map((l, i) => (
-                <div key={i} style={{ textAlign: 'center', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>{l}</div>
-              ))}
+        {/* ── 4. Library-tagging banner (when applicable) ────────────────── */}
+        {(() => {
+          const pendingCount = (exerciseLibrary || []).filter(e => e.needsTagging).length
+          if (pendingCount === 0) return null
+          return (
+            <div style={{ ...fadeIn(160), padding: '0 16px', marginBottom: 12 }}>
+              <button
+                onPointerDown={() => navigate('/backfill')}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  gap: 8, padding: '10px 12px', borderRadius: 12,
+                  background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.35)',
+                  color: 'rgb(147,197,253)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                <span>Tag {pendingCount} custom {pendingCount === 1 ? 'exercise' : 'exercises'} to unlock smarter recommendations</span>
+                <span style={{ opacity: 0.7 }}>→</span>
+              </button>
             </div>
-            {/* Batch 16m: cells redesigned to match the weekly pill strip's
-                visual language — circles per day, state encoded via fill /
-                border / color. No stacked emojis, no floating cardio dot.
-                Active days get a filled accent circle; today-pending gets
-                an accent border; logged rest gets a subtle white fill;
-                rotation rest gets a dashed border; empty / future days
-                stay faint. Day number sits inside every circle for
-                scannable date reference. */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
-              {getMonthDays().map((day, i) => {
-                if (!day) return <div key={i} style={{ aspectRatio: '1' }} />
+          )
+        })()}
 
-                const info   = getDayInfo(day)
-                const t      = info.type
-                const isActive       = t === 'done' || t === 'today-done' || t === 'cardio' || t === 'today-cardio'
-                const isTodayPending = t === 'today-pending' || t === 'today-rest'
-                const isLoggedRest   = t === 'logged-rest' || t === 'today-logged-rest'
-                const isRotationRest = t === 'future-rest' || t === 'past-rest'
-                const isFutureDay    = t === 'future'
-                const isEmpty        = t === 'empty'
-                const isTodayCell    = t.startsWith('today-') || t === 'today-pending'
+        {/* ── 5. Week card — strip + computed sentence + drawer ───────────── */}
+        <div style={{ ...fadeIn(180), padding: '0 16px', marginBottom: 12 }}>
+          <button
+            onClick={() => setWeekDrawerOpen(o => !o)}
+            style={{
+              width: '100%',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-base)',
+              borderRadius: 18,
+              padding: '14px 16px 16px',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                This week
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                Week {getIsoWeek(today)}
+                <span style={{ marginLeft: 6, opacity: 0.7 }}>{weekDrawerOpen ? '▾' : '▸'}</span>
+              </span>
+            </div>
 
-                // State → visual mapping
-                let bg            = 'transparent'
-                let border        = 'none'
-                let textColor     = 'var(--text-faint)'
-                let fontWeight    = 500
-                let interactive   = false
+            {/* 7 Sun-Sat dots */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 12 }}>
+              {weekDays.map((day, i) => {
+                const info        = getDayInfo(day)
+                const isToday     = toDateStr(day) === todayStr
+                const isDone      = info.type === 'done' || info.type === 'today-done' || info.type === 'cardio' || info.type === 'today-cardio'
+                const isPending   = info.type === 'today-pending' || info.type === 'today-rest'
+                const isRestType  = info.type === 'past-rest' || info.type === 'future-rest'
+                const isLoggedRest= info.type === 'logged-rest' || info.type === 'today-logged-rest'
 
-                if (isActive) {
-                  bg         = theme.hex
-                  textColor  = theme.contrastText
+                let bg = 'transparent'
+                let border = 'none'
+                let textColor = 'var(--text-faint)'
+                let fontWeight = 500
+
+                if (isDone) {
+                  bg = theme.hex
+                  textColor = theme.contrastText
                   fontWeight = 700
-                  interactive = true
-                } else if (isTodayPending) {
-                  border     = `2px solid ${theme.hex}`
-                  textColor  = theme.hex
+                } else if (isPending) {
+                  border = `2px solid ${theme.hex}`
+                  textColor = theme.hex
                   fontWeight = 700
                 } else if (isLoggedRest) {
-                  bg         = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'
-                  textColor  = 'var(--text-secondary)'
+                  bg = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)'
+                  textColor = 'var(--text-secondary)'
                   fontWeight = 600
-                  if (t === 'today-logged-rest') border = `2px solid ${theme.hex}`
-                } else if (isRotationRest) {
-                  border     = `1px dashed ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'}`
-                  textColor  = 'var(--text-muted)'
-                  fontWeight = 500
-                } else if (isFutureDay) {
-                  border     = `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`
-                  textColor  = 'var(--text-muted)'
-                  fontWeight = 500
-                  interactive = true
+                  if (info.type === 'today-logged-rest') border = `2px solid ${theme.hex}`
+                } else if (isRestType) {
+                  border = `1px dashed ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'}`
+                  textColor = 'var(--text-muted)'
                 }
-                // else empty — just dim number, no shape
 
                 return (
-                  <button
+                  <div
                     key={i}
-                    onPointerDown={() => {
-                      if (isActive) {
-                        const s = sessionByDate[toDateStr(day)]
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      const dayKey = toDateStr(day)
+                      setPressedDay(dayKey)
+                      if (isDone) {
+                        const s = sessionByDate[dayKey]
                         if (s) setSelectedDaySession(s)
-                        else if (t === 'cardio' || t === 'today-cardio') navigate('/history')
-                      } else if (isFutureDay) {
-                        setSelectedFutureDay({ dateStr: toDateStr(day), workoutId: info.planned, isRest: false })
-                      } else if (t === 'future-rest') {
-                        setSelectedFutureDay({ dateStr: toDateStr(day), workoutId: null, isRest: true })
+                      } else if (info.type === 'future') {
+                        setSelectedFutureDay({ dateStr: dayKey, workoutId: info.planned, isRest: false })
+                      } else if (info.type === 'future-rest') {
+                        setSelectedFutureDay({ dateStr: dayKey, workoutId: null, isRest: true })
                       }
                     }}
+                    onPointerUp={() => setPressedDay(null)}
+                    onPointerLeave={() => setPressedDay(null)}
+                    onPointerCancel={() => setPressedDay(null)}
                     style={{
                       aspectRatio: '1',
                       borderRadius: '50%',
                       backgroundColor: bg,
                       border,
                       color: textColor,
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      cursor: interactive ? 'pointer' : 'default',
-                      padding: 0,
-                      lineHeight: 1,
+                      cursor: 'pointer',
+                      transform: pressedDay === toDateStr(day) ? 'scale(0.85)' : 'scale(1)',
+                      transition: 'transform 80ms ease',
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {day.getDate()}
+                    {DAY_LABELS[i]}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Computed narrative line */}
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--text-secondary)' }}>
+              {weekNarrative.text}
+              {weekNarrative.deltaText && (
+                <>
+                  {' '}
+                  <span style={{ color: weekNarrative.deltaColor || 'var(--text-secondary)', fontWeight: 600 }}>
+                    {weekNarrative.deltaText}
+                  </span>
+                </>
+              )}
+            </div>
+          </button>
+
+          {/* Drawer: existing 2-card volume/time stat block */}
+          <div style={{
+            maxHeight: weekDrawerOpen ? '260px' : '0px',
+            overflow: 'hidden',
+            transition: 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}>
+            <div style={{ paddingTop: 10, display: 'flex', gap: 10 }}>
+              {/* Volume */}
+              <div style={{
+                flex: 1,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 14,
+                padding: 14,
+              }}>
+                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
+                  Volume
+                </p>
+                <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
+                  {formatVolume(volumeThisWeek)} <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>lbs</span>
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Last week: {formatVolume(volumeLastWeek)}
+                </p>
+              </div>
+              {/* Time */}
+              <div style={{
+                flex: 1,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 14,
+                padding: 14,
+              }}>
+                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
+                  Time in gym
+                </p>
+                <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
+                  {formatTime(timeThisWeek)}
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Last week: {formatTime(timeLastWeek)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 6. Streak row (lifted out of header) ──────────────────────── */}
+        <div style={{ ...fadeIn(220), padding: '0 16px', marginBottom: 12 }}>
+          <div
+            onPointerDown={() => setPressedStreak(true)}
+            onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
+            onPointerLeave={() => setPressedStreak(false)}
+            onPointerCancel={() => setPressedStreak(false)}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-base)',
+              borderRadius: 14,
+              padding: '12px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              cursor: 'pointer',
+              transform: pressedStreak ? 'scale(0.985)' : 'scale(1)',
+              transition: 'transform 80ms ease',
+            }}
+          >
+            <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>🔥</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
+                  {streak}
+                </span>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  day{streak === 1 ? '' : 's'}
+                </span>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {nextTierText}
+              </p>
+            </div>
+            <span style={{
+              padding: '4px 10px',
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              background: hexToRgba(currentTier.color, 0.18),
+              color: currentTier.color,
+              border: `1px solid ${hexToRgba(currentTier.color, 0.4)}`,
+            }}>
+              {currentTier.name}
+            </span>
+          </div>
+        </div>
+
+        {/* ── 7. Recents (last 3 sessions) ──────────────────────────────── */}
+        <div style={{ ...fadeIn(260), padding: '0 16px', marginBottom: 16 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
+            Recent sessions
+          </p>
+          {recentSessions.length === 0 ? (
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 14,
+              padding: '16px 14px',
+              fontSize: 13,
+              color: 'var(--text-muted)',
+              textAlign: 'center',
+            }}>
+              No sessions yet — log your first workout to start tracking.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {recentSessions.map(s => {
+                const grade = s.grade || null
+                const badge = gradeBadgeStyle(grade, theme)
+                const vol = sessionVolume(s)
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedDaySession(s)}
+                    style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-base)',
+                      borderRadius: 14,
+                      padding: '12px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      width: '100%',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span style={{
+                      width: 28, height: 28, borderRadius: 8,
+                      background: badge.bg, color: badge.color, border: badge.border,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 700, fontSize: 12, flexShrink: 0,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {grade || '·'}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        margin: 0,
+                      }}>
+                        {getWorkoutEmoji(s.type)} {getWorkoutLabel(s)}
+                      </p>
+                      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                        {relativeDateLabel(s.date)}
+                        {s.duration ? ` · ${s.duration} min` : ''}
+                        {vol > 0 ? ` · ${formatVolume(vol)} vol` : ''}
+                      </p>
+                    </div>
+                    <span style={{ fontSize: 16, color: 'var(--text-faint)', flexShrink: 0 }}>›</span>
                   </button>
                 )
               })}
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── SECTION 3: Hero Workout Card ────────────────────────────────────── */}
-      <div style={{ ...fadeIn(200), padding: '0 16px', marginBottom: 10, position: 'relative' }}>
-        {/* Atmospheric glow */}
-        <div style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '75%',
-          height: '70%',
-          background: theme.hex,
-          filter: 'blur(60px)',
-          opacity: 0.22,
-          borderRadius: '50%',
-          pointerEvents: 'none',
-          zIndex: 0,
-        }} />
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          {activeSession?.sessionStarted ? (
-            <div style={accentCardStyle}>
-              <div style={{
-                position: 'absolute', inset: 0, pointerEvents: 'none',
-                background: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
-              }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ position: 'relative', display: 'inline-flex', width: 10, height: 10 }}>
-                  <span className="animate-ping" style={{ position: 'absolute', inset: 0, borderRadius: '50%', backgroundColor: theme.contrastText, opacity: 0.75 }} />
-                  <span style={{ position: 'relative', display: 'inline-flex', borderRadius: '50%', width: 10, height: 10, backgroundColor: theme.contrastText, opacity: 0.8 }} />
-                </span>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.7 }}>
-                  {activeSession.isPaused ? 'Paused' : 'In Progress'}
-                </p>
-              </div>
-              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2 }}>
-                {getWorkoutEmoji(activeSession.type)} {getWorkoutName(activeSession.type)}
-              </p>
-              <p style={{ fontSize: 13, marginTop: 4, marginBottom: 20, opacity: 0.6 }}>
-                {activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length || 0} exercise{activeSession.exercises?.filter(ex => ex.sets?.some(s => s.reps || s.weight)).length === 1 ? '' : 's'} logged so far
-              </p>
-              <button
-                onClick={() => navigate(`/log/bb/${activeSession.type}`)}
-                style={{ width: '100%', background: 'rgba(0,0,0,0.2)', fontWeight: 700, fontSize: 17, padding: '16px 0', borderRadius: 16, border: 'none', cursor: 'pointer', color: theme.contrastText }}
-              >
-                Resume Workout →
-              </button>
-            </div>
-          ) : isRestDay ? (
-            <div style={{
-              backgroundColor: hexToRgba(theme.hex, 0.82),
-              backgroundImage: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              borderRadius: 20,
-              padding: '32px 20px',
-              textAlign: 'center',
-              boxShadow: `0 8px 32px ${theme.hex}40`,
-            }}>
-              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, color: accentIsLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.6)' }}>Today</p>
-              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2, color: accentIsLight ? 'rgba(0,0,0,0.9)' : '#fff' }}>Rest Day</p>
-              <p style={{ fontSize: 13, marginTop: 12, fontWeight: 600, color: accentIsLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)' }}>
-                Next: {getWorkoutEmoji(nextBb)} {getWorkoutName(nextBb)}
-              </p>
-            </div>
-          ) : (
-            <div style={accentCardStyle}>
-              <div style={{
-                position: 'absolute', inset: 0, pointerEvents: 'none',
-                background: 'radial-gradient(ellipse at 30% 0%, rgba(255,255,255,0.15) 0%, transparent 60%)',
-              }} />
-              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, opacity: 0.6 }}>
-                {todayLogged ? 'Next in your split' : missedYesterdayWorkout ? 'Missed Yesterday' : 'Next Up'}
-              </p>
-              <p style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2 }}>
-                {getWorkoutName(recommendedWorkout)}
-              </p>
-              <div
-                onPointerDown={() => setShowPreview(true)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  marginTop: 8,
-                  marginBottom: 16,
-                  padding: '6px 14px',
-                  borderRadius: 20,
-                  border: `1px solid ${accentIsLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.35)'}`,
-                  backgroundColor: accentIsLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)',
-                  color: accentIsLight ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.9)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  letterSpacing: 0.3,
-                }}
-              >
-                Preview
-              </div>
-              {todayLogged ? (
-                <p style={{ fontSize: 13, marginTop: 12, opacity: 0.6 }}>Rest up — come back tomorrow.</p>
-              ) : (
-                <>
-                  <button
-                    onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
-                    style={{ width: '100%', background: 'rgba(0,0,0,0.2)', fontWeight: 700, fontSize: 17, padding: '16px 0', borderRadius: 16, border: 'none', cursor: 'pointer', color: theme.contrastText }}
-                  >
-                    Start Session →
-                  </button>
-                </>
-              )}
-            </div>
           )}
         </div>
-      </div>
 
-      {/* ── Soreness check-in prompt ─────────────────────────────────────────── */}
-      {pendingSorenessSession && (
-        <div style={{ ...fadeIn(280), padding: '0 16px', marginBottom: 10 }}>
+        {/* ── 8. Action buttons (Log Cardio / Log Rest Day) — lower placement */}
+        <div style={{ ...fadeIn(300), display: 'flex', justifyContent: 'center', gap: 4, paddingBottom: 8 }}>
           <button
-            onClick={() => setShowSorenessModal(true)}
-            className="w-full rounded-2xl p-4 flex items-center gap-3 text-left"
+            onClick={() => navigate('/cardio')}
             style={{
-              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-              backdropFilter: 'blur(18px)',
-              WebkitBackdropFilter: 'blur(18px)',
-              border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.06)',
+              background: 'none', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '10px 18px',
+              color: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)',
+              fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
             }}
           >
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-c-muted font-semibold uppercase tracking-widest mb-0.5">Check-in</p>
-              <p className="font-semibold text-c-primary text-sm">
-                Review yesterday's {sorenessWorkoutLabel} session.
-              </p>
-            </div>
-            <svg className="w-4 h-4 text-c-faint shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
             </svg>
+            Log Cardio
+          </button>
+          <button
+            onClick={() => {
+              if (restDayLoggedToday) {
+                const todayEntry = (restDaySessions || []).find(r => isoToLocalDateStr(r.date) === todayStr)
+                if (todayEntry) deleteRestDaySession(todayEntry.id)
+              } else {
+                addRestDaySession(new Date().toISOString())
+              }
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '10px 18px',
+              color: restDayLoggedToday
+                ? (isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.6)')
+                : (isDark ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.30)'),
+              fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+            }}
+          >
+            {restDayLoggedToday ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Rest Logged
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+                Log Rest Day
+              </>
+            )}
           </button>
         </div>
-      )}
-
-      {/* ── Backfill banner (Batch 16i: relocated from top-of-page to under
-           the hero card, above the stats row, so it doesn't encroach on
-           the "This Week" header). Shown only while needsTagging entries
-           remain in the library. Tap → /backfill. */}
-      {(() => {
-        const pendingCount = (exerciseLibrary || []).filter(e => e.needsTagging).length
-        if (pendingCount === 0) return null
-        return (
-          <div style={{ padding: '0 16px', marginBottom: 12 }}>
-            <button
-              onPointerDown={() => navigate('/backfill')}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                padding: '10px 12px',
-                borderRadius: 12,
-                background: 'rgba(59,130,246,0.12)',
-                border: '1px solid rgba(59,130,246,0.35)',
-                color: 'rgb(147,197,253)',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <span>Tag {pendingCount} custom {pendingCount === 1 ? 'exercise' : 'exercises'} to unlock smarter recommendations</span>
-              <span style={{ opacity: 0.7 }}>→</span>
-            </button>
-          </div>
-        )
-      })()}
-
-      {/* ── SECTION 4: Stat Cards ────────────────────────────────────────────── */}
-      <div style={{ ...fadeIn(300), padding: '0 16px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 10 }}>
-
-          {/* Volume card */}
-          <div style={{
-            flex: 1,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-            backdropFilter: 'blur(18px)',
-            WebkitBackdropFilter: 'blur(18px)',
-            border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.06)',
-            borderRadius: 16,
-            padding: 14,
-          }}>
-            <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
-              Volume
-            </p>
-            {/* This week */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
-              <span style={{ fontSize: 24, fontWeight: 800, color: theme.hex, lineHeight: 1, letterSpacing: '-0.02em' }}>
-                {formatVolume(anim(volumeThisWeek))}
-              </span>
-            </div>
-            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>
-              This week ({daysIntoWeek}d)
-            </p>
-            {/* Last week */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
-              <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-dim)', lineHeight: 1 }}>
-                {formatVolume(anim(volumeLastWeek))}
-              </span>
-            </div>
-            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>Last week</p>
-            {/* Comparison bar */}
-            <div style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 8, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${volBarPct}%`,
-                background: `linear-gradient(90deg, ${theme.hex}, ${theme.hex}aa)`,
-                borderRadius: 2,
-                transition: 'width 0.7s ease',
-              }} />
-            </div>
-            {/* Insight */}
-            <p style={{ fontSize: 10, color: volumeInsight.color, lineHeight: 1.4 }}>
-              {volumeInsight.text}
-            </p>
-          </div>
-
-          {/* Time in Gym card */}
-          <div style={{
-            flex: 1,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-            backdropFilter: 'blur(18px)',
-            WebkitBackdropFilter: 'blur(18px)',
-            border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.06)',
-            borderRadius: 16,
-            padding: 14,
-          }}>
-            <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
-              Time in Gym
-            </p>
-            {/* This week */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
-              <span style={{ fontSize: 24, fontWeight: 800, color: theme.hex, lineHeight: 1, letterSpacing: '-0.02em' }}>
-                {formatTime(anim(timeThisWeek))}
-              </span>
-            </div>
-            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>
-              This week ({daysIntoWeek}d)
-            </p>
-            {/* Last week */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 3 }}>
-              <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-dim)', lineHeight: 1 }}>
-                {formatTime(anim(timeLastWeek))}
-              </span>
-            </div>
-            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>Last week</p>
-            {/* Comparison bar */}
-            <div style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 8, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${timeBarPct}%`,
-                background: `linear-gradient(90deg, ${theme.hex}, ${theme.hex}aa)`,
-                borderRadius: 2,
-                transition: 'width 0.7s ease',
-              }} />
-            </div>
-            {/* Insight */}
-            <p style={{ fontSize: 10, color: timeInsight.color, lineHeight: 1.4 }}>
-              {timeInsight.text}
-            </p>
-          </div>
-
-        </div>
-      </div>
-
-      {/* ── SECTION 5: Log Cardio + Log Rest Day ghost buttons ─────────────── */}
-      <div style={{ ...fadeIn(420), display: 'flex', justifyContent: 'center', gap: 4, paddingBottom: 8 }}>
-        <button
-          onClick={() => navigate('/cardio')}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            padding: '10px 20px',
-            color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
-          Log Cardio
-        </button>
-        <button
-          onClick={() => {
-            if (restDayLoggedToday) {
-              // Un-log: find and remove today's rest day entry
-              const todayEntry = (restDaySessions || []).find(r => isoToLocalDateStr(r.date) === todayStr)
-              if (todayEntry) deleteRestDaySession(todayEntry.id)
-            } else {
-              addRestDaySession(new Date().toISOString())
-            }
-          }}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            padding: '10px 20px',
-            color: restDayLoggedToday
-              ? (isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)')
-              : (isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.22)'),
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {restDayLoggedToday ? (
-            <>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              Rest Logged
-            </>
-          ) : (
-            <>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-              Log Rest Day
-            </>
-          )}
-        </button>
-      </div>
 
       </div>{/* end content wrapper */}
 
@@ -1419,12 +1288,8 @@ export default function Dashboard() {
               onClick={() => setShowTierModal(false)}
               style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: 'rgba(255,255,255,0.4)', lineHeight: 1, padding: '4px 8px' }}
             >×</button>
-
             <svg width="240" height="240" viewBox="0 0 240 240" style={{ overflow: 'visible' }}>
-              {/* Background track */}
               <circle cx="120" cy="120" r="90" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="14" />
-
-              {/* Tier arc segments */}
               {RING_TIERS.map((tier, i) => {
                 const next = RING_TIERS[i + 1]
                 const isCurrent = streak >= tier.minStreak && (!next || streak < next.minStreak)
@@ -1444,14 +1309,10 @@ export default function Dashboard() {
                   />
                 )
               })}
-
-              {/* Tick marks at tier boundaries */}
               {[51.4, 144, 195.4, 298].map((angle, i) => {
                 const pos = polarToCart(120, 120, 90, angle)
                 return <circle key={i} cx={pos.x} cy={pos.y} r={4} fill="white" opacity={0.6} />
               })}
-
-              {/* Progress dot */}
               {(() => {
                 const progressAngle = Math.min(streak, TIER_MAX_DISPLAY) / TIER_MAX_DISPLAY * 360
                 const pos = polarToCart(120, 120, 90, progressAngle)
@@ -1465,12 +1326,9 @@ export default function Dashboard() {
                   />
                 )
               })()}
-
-              {/* Center text */}
               <text x="120" y="108" textAnchor="middle" fill="white" fontSize="42" fontWeight="800">{streak}</text>
               <text x="120" y="132" textAnchor="middle" fill="rgba(255,255,255,0.5)" fontSize="13">days</text>
             </svg>
-
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 1, color: currentTier.color, marginTop: 8 }}>
               {currentTier.name}
             </div>
@@ -1516,9 +1374,7 @@ export default function Dashboard() {
             padding: '20px 16px 40px',
             zIndex: 201,
           }}>
-            {/* Drag handle */}
             <div style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 auto 16px' }} />
-            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
                 <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>
@@ -1540,7 +1396,6 @@ export default function Dashboard() {
                 }}
               >×</button>
             </div>
-            {/* Exercise list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {(selectedDaySession.data?.exercises || []).map((ex, i) => {
                 const setsToShow = (ex.sets || []).filter(s => s.weight || s.reps)
