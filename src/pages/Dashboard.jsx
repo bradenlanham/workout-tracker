@@ -39,6 +39,63 @@ function getStreakTier(streak, themeHex) {
   return                   { name: 'Common',    color: themeHex,  isAnimated: false }
 }
 
+function StreakBadge({ streak, themeHex }) {
+  if (!streak || streak === 0) return null
+  const tier = getStreakTier(streak, themeHex)
+
+  if (tier.isAnimated) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0, marginTop: 8, marginRight: 6 }}>
+        <div style={{
+          borderRadius: 20,
+          padding: 1.5,
+          background: tier.gradient,
+          backgroundSize: '300% 300%',
+          animation: `${tier.animName} 3s linear infinite`,
+          filter: tier.glow || undefined,
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '5px 13px',
+            borderRadius: 18,
+            backgroundColor: 'rgba(10,10,14,0.85)',
+          }}>
+            <span style={{ fontSize: 24, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
+            <span style={{ fontSize: 22, lineHeight: 1 }}>🔥</span>
+          </div>
+        </div>
+        <span style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
+          color: tier.color, textTransform: 'uppercase', lineHeight: 1, opacity: 0.9,
+        }}>
+          {tier.name}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0, marginTop: 8, marginRight: 6 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '6px 14px',
+        borderRadius: 20,
+        border: `1.5px solid ${tier.color}`,
+        backgroundColor: 'rgba(0,0,0,0.25)',
+      }}>
+        <span style={{ fontSize: 24, fontWeight: 800, color: tier.color, lineHeight: 1 }}>{streak}</span>
+        <span style={{ fontSize: 22, lineHeight: 1 }}>🔥</span>
+      </div>
+      <span style={{
+        fontSize: 9, fontWeight: 700, letterSpacing: 1.5,
+        color: tier.color, textTransform: 'uppercase', lineHeight: 1, opacity: 0.9,
+      }}>
+        {tier.name}
+      </span>
+    </div>
+  )
+}
+
 // ── Tutorial overlay ──────────────────────────────────────────────────────────
 // Re-anchored for v2 layout: hero card at top, week card mid-page,
 // streak row + recents below. Action buttons at the bottom of content.
@@ -670,17 +727,37 @@ export default function Dashboard() {
       {/* ── Page content ────────────────────────────────────────────────────── */}
       <div style={{ position: 'relative', zIndex: 2 }}>
 
-        {/* ── 1. Header (greeting + name + ≡ menu hint) ─────────────────── */}
+        {/* ── 1. Header (greeting + name on the left, streak top-right) ── */}
         <div style={{
           ...fadeIn(0),
-          padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 20px 16px',
+          padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 16px 16px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
         }}>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em' }}>
-            {timeGreeting}{settings.userName ? ',' : ''}
-          </p>
-          <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: '2px 0 0' }}>
-            {settings.userName || 'Welcome'}
-          </h1>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em' }}>
+              {timeGreeting}{settings.userName ? ',' : ''}
+            </p>
+            <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: '2px 0 0' }}>
+              {settings.userName || 'Welcome'}
+            </h1>
+          </div>
+          <div
+            onPointerDown={() => setPressedStreak(true)}
+            onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
+            onPointerLeave={() => setPressedStreak(false)}
+            onPointerCancel={() => setPressedStreak(false)}
+            style={{
+              transform: pressedStreak ? 'scale(0.88)' : 'scale(1)',
+              transition: 'transform 80ms ease',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <StreakBadge streak={streak} themeHex={theme.hex} />
+          </div>
         </div>
 
         {/* ── 2. Hero card — owns the fold ──────────────────────────────── */}
@@ -1092,133 +1169,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── 6. Streak row (lifted out of header) ──────────────────────── */}
-        <div style={{ ...fadeIn(220), padding: '0 16px', marginBottom: 12 }}>
-          <div
-            onPointerDown={() => setPressedStreak(true)}
-            onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
-            onPointerLeave={() => setPressedStreak(false)}
-            onPointerCancel={() => setPressedStreak(false)}
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-base)',
-              borderRadius: 14,
-              padding: '12px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              cursor: 'pointer',
-              transform: pressedStreak ? 'scale(0.985)' : 'scale(1)',
-              transition: 'transform 80ms ease',
-            }}
-          >
-            <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>🔥</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
-                  {streak}
-                </span>
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                  day{streak === 1 ? '' : 's'}
-                </span>
-              </div>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {nextTierText}
-              </p>
-            </div>
-            <span style={{
-              padding: '4px 10px',
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              background: hexToRgba(currentTier.color, 0.18),
-              color: currentTier.color,
-              border: `1px solid ${hexToRgba(currentTier.color, 0.4)}`,
-            }}>
-              {currentTier.name}
-            </span>
-          </div>
-        </div>
-
-        {/* ── 7. Recents (last 3 sessions) ──────────────────────────────── */}
-        <div style={{ ...fadeIn(260), padding: '0 16px', marginBottom: 16 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
-            Recent sessions
-          </p>
-          {recentSessions.length === 0 ? (
-            <div style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 14,
-              padding: '16px 14px',
-              fontSize: 13,
-              color: 'var(--text-muted)',
-              textAlign: 'center',
-            }}>
-              No sessions yet — log your first workout to start tracking.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {recentSessions.map(s => {
-                const grade = s.grade || null
-                const badge = gradeBadgeStyle(grade, theme)
-                const vol = sessionVolume(s)
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => setSelectedDaySession(s)}
-                    style={{
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--border-base)',
-                      borderRadius: 14,
-                      padding: '12px 14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      width: '100%',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span style={{
-                      width: 28, height: 28, borderRadius: 8,
-                      background: badge.bg, color: badge.color, border: badge.border,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 700, fontSize: 12, flexShrink: 0,
-                      fontVariantNumeric: 'tabular-nums',
-                    }}>
-                      {grade || '·'}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        margin: 0,
-                      }}>
-                        {getWorkoutEmoji(s.type)} {getWorkoutLabel(s)}
-                      </p>
-                      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-                        {relativeDateLabel(s.date)}
-                        {s.duration ? ` · ${s.duration} min` : ''}
-                        {vol > 0 ? ` · ${formatVolume(vol)} vol` : ''}
-                      </p>
-                    </div>
-                    <span style={{ fontSize: 16, color: 'var(--text-faint)', flexShrink: 0 }}>›</span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* ── 8. Action buttons (Log Cardio / Log Rest Day) — lower placement */}
-        <div style={{ ...fadeIn(300), display: 'flex', justifyContent: 'center', gap: 4, paddingBottom: 8 }}>
+        {/* ── 6. Action buttons (Log Cardio / Log Rest Day) ────────────── */}
+        <div style={{ ...fadeIn(220), display: 'flex', justifyContent: 'center', gap: 4, paddingBottom: 8 }}>
           <button
             onClick={() => navigate('/cardio')}
             style={{
