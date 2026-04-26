@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak, formatTimeAgo } from '../utils/helpers'
+import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak, getSplitSessionCount, formatTimeAgo } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
 // ── Streak tier ───────────────────────────────────────────────────────────────
@@ -92,6 +92,58 @@ function StreakBadge({ streak, themeHex }) {
       }}>
         {tier.name}
       </span>
+    </div>
+  )
+}
+
+// ── Compact 3-metric tile used in the header (Total / Split / Streak) ───────
+function MetricStat({ number, label, numberColor, labelColor, suffix, animatedTier }) {
+  const numStyle = {
+    fontSize: 22,
+    fontWeight: 800,
+    letterSpacing: '-0.02em',
+    lineHeight: 1,
+    color: numberColor || 'var(--text-primary)',
+    fontVariantNumeric: 'tabular-nums',
+    display: 'inline-flex',
+    alignItems: 'baseline',
+    gap: 3,
+  }
+  const labStyle = {
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: labelColor || 'var(--text-muted)',
+    marginTop: 4,
+    lineHeight: 1,
+  }
+  // Render an animated gradient ring for Legendary / Mythic streaks.
+  const numberNode = animatedTier ? (
+    <span style={{
+      display: 'inline-block',
+      padding: '2px 4px',
+      borderRadius: 8,
+      background: animatedTier.gradient,
+      backgroundSize: '300% 300%',
+      animation: `${animatedTier.animName} 3s linear infinite`,
+      filter: animatedTier.glow || undefined,
+    }}>
+      <span style={{ ...numStyle, padding: '2px 6px', borderRadius: 6, backgroundColor: 'rgba(10,10,14,0.85)' }}>
+        {number}
+        {suffix && <span style={{ fontSize: 14 }}>{suffix}</span>}
+      </span>
+    </span>
+  ) : (
+    <span style={numStyle}>
+      {number}
+      {suffix && <span style={{ fontSize: 14 }}>{suffix}</span>}
+    </span>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 0 }}>
+      {numberNode}
+      <span style={labStyle}>{label}</span>
     </div>
   )
 }
@@ -275,6 +327,93 @@ function sessionVolume(s) {
   }, 0)
 }
 
+// Last N sessions of a given workout type, oldest → newest, with derived volume.
+function workoutTypeHistory(sessions, workoutId, take = 8) {
+  const matches = (sessions || [])
+    .filter(s => s.type === workoutId && s.mode !== 'cardio')
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(-take)
+  return matches.map(s => ({
+    date: s.date,
+    volume: sessionVolume(s),
+    duration: s.duration || 0,
+    grade: s.grade || null,
+  }))
+}
+
+// Mini line chart showing volume across the last N sessions of this workout.
+// Inline SVG, no dependencies. Sized to slot in where the exercise pills lived
+// (~52px tall) so the hero card height stays the same.
+function VolumeSparkline({ history, accent }) {
+  if (!history || history.length < 2) return null
+  const w = 320
+  const h = 52
+  const pad = 6
+  const vols = history.map(p => p.volume)
+  const min = Math.min(...vols)
+  const max = Math.max(...vols)
+  const range = Math.max(max - min, 1)
+  const xStep = (w - pad * 2) / Math.max(history.length - 1, 1)
+  const yFor = v => h - pad - ((v - min) / range) * (h - pad * 2)
+  const xFor = i => pad + i * xStep
+  const pathD = history.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(p.volume).toFixed(1)}`).join(' ')
+  const areaD = `${pathD} L ${xFor(history.length - 1).toFixed(1)} ${h - pad} L ${xFor(0).toFixed(1)} ${h - pad} Z`
+  const lastVol = vols[vols.length - 1]
+  const prevVol = vols[vols.length - 2]
+  const pct = prevVol > 0 ? ((lastVol - prevVol) / prevVol) * 100 : 0
+  const deltaText = pct > 1 ? `+${Math.round(pct)}%` : pct < -1 ? `${Math.round(pct)}%` : 'flat'
+  const deltaColor = pct > 1 ? '#34D399' : pct < -1 ? '#FCD34D' : 'var(--text-muted)'
+  return (
+    <div style={{ position: 'relative', marginTop: 4 }}>
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', height: h }}>
+        <path d={areaD} fill={accent} fillOpacity="0.10" />
+        <path d={pathD} fill="none" stroke={accent} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {history.map((p, i) => {
+          const isLast = i === history.length - 1
+          return (
+            <circle
+              key={i}
+              cx={xFor(i)}
+              cy={yFor(p.volume)}
+              r={isLast ? 3.5 : 2}
+              fill={isLast ? accent : 'rgba(255,255,255,0.5)'}
+            />
+          )
+        })}
+      </svg>
+      <div style={{
+        position: 'absolute', top: 2, right: 2, display: 'flex', gap: 6, alignItems: 'baseline',
+        fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+      }}>
+        <span style={{ color: 'var(--text-muted)' }}>{history.length}-session vol</span>
+        <span style={{ color: deltaColor }}>{deltaText}</span>
+      </div>
+    </div>
+  )
+}
+
+// Static particle anchors — same pattern as v1 dashboard, drift upward.
+const PARTICLES = [
+  { w: 3, left: '5%',  dur: '14s', delay: '-3s',  drift: '-15px', op: 0.5 },
+  { w: 2, left: '12%', dur: '19s', delay: '-8s',  drift: '20px',  op: 0.35 },
+  { w: 5, left: '18%', dur: '11s', delay: '-1s',  drift: '-25px', op: 0.6 },
+  { w: 2, left: '25%', dur: '22s', delay: '-14s', drift: '10px',  op: 0.3 },
+  { w: 4, left: '33%', dur: '16s', delay: '-6s',  drift: '-20px', op: 0.55 },
+  { w: 3, left: '40%', dur: '13s', delay: '-11s', drift: '30px',  op: 0.4 },
+  { w: 6, left: '47%', dur: '18s', delay: '-4s',  drift: '-10px', op: 0.25 },
+  { w: 2, left: '54%', dur: '21s', delay: '-16s', drift: '15px',  op: 0.5 },
+  { w: 4, left: '60%', dur: '12s', delay: '-7s',  drift: '-30px', op: 0.45 },
+  { w: 3, left: '67%', dur: '17s', delay: '-2s',  drift: '20px',  op: 0.6 },
+  { w: 5, left: '73%', dur: '20s', delay: '-13s', drift: '-15px', op: 0.35 },
+  { w: 2, left: '79%', dur: '15s', delay: '-9s',  drift: '25px',  op: 0.5 },
+  { w: 4, left: '85%', dur: '23s', delay: '-5s',  drift: '-20px', op: 0.4 },
+  { w: 3, left: '90%', dur: '10s', delay: '-17s', drift: '10px',  op: 0.55 },
+  { w: 2, left: '95%', dur: '16s', delay: '-3s',  drift: '-25px', op: 0.3 },
+  { w: 5, left: '8%',  dur: '19s', delay: '-12s', drift: '15px',  op: 0.45 },
+  { w: 3, left: '44%', dur: '14s', delay: '-8s',  drift: '-10px', op: 0.5 },
+  { w: 4, left: '70%', dur: '21s', delay: '-1s',  drift: '20px',  op: 0.35 },
+]
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const {
@@ -352,6 +491,7 @@ export default function Dashboard() {
   const workoutSeq   = rotation.filter(t => t !== 'rest')
 
   const streak = getWorkoutStreak(sessions, cardioSessions, restDaySessions)
+  const splitSessionCount = activeSplit ? getSplitSessionCount(sessions, activeSplit) : 0
 
   const RING_TIERS = [
     { name: 'Common',    startAngle: 0,     endAngle: 51.4,  color: theme.hex,  minStreak: 0  },
@@ -652,9 +792,6 @@ export default function Dashboard() {
 
   // ── Eyebrow + meta lines for the hero card ───────────────────────────────
   const heroDayOfCycle = getDayOfCycle(recommendedWorkout)
-  const heroExercisePills = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
-    ? getFirstExercisesAcrossSections(recommendedWorkout, 3)
-    : []
   const heroExerciseCount = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
     ? getExerciseCount(recommendedWorkout)
     : 0
@@ -662,6 +799,23 @@ export default function Dashboard() {
     ? getSectionCount(recommendedWorkout)
     : 0
   const heroLastSeen = getDaysSinceLastOfType(recommendedWorkout)
+
+  // Volume sparkline source — last 8 sessions of this workout type, in
+  // chronological order. Shown when ≥2 sessions exist.
+  const heroVolumeHistory = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
+    ? workoutTypeHistory(sessions, recommendedWorkout, 8)
+    : []
+  // Fallback to exercise pills when history is too thin to plot.
+  const heroExercisePills = (!isRestDay && !activeSession?.sessionStarted && !todayLogged && heroVolumeHistory.length < 2)
+    ? getFirstExercisesAcrossSections(recommendedWorkout, 3)
+    : []
+  // Average duration across the last few sessions (when we have any).
+  const heroAvgDuration = (() => {
+    const withDur = heroVolumeHistory.filter(p => p.duration > 0)
+    if (withDur.length === 0) return null
+    const sum = withDur.reduce((t, p) => t + p.duration, 0)
+    return Math.round(sum / withDur.length)
+  })()
 
   // ── Hero card style (workout state — accent gradient wash) ────────────────
   const heroAccentCardStyle = {
@@ -713,9 +867,40 @@ export default function Dashboard() {
     <div style={{ minHeight: '100vh', paddingBottom: 100 }}>
       <style>{`
         ${STREAK_BADGE_CSS}
+        @keyframes particleDrift {
+          0%   { transform: translateY(100vh) translateX(0px); opacity: 0; }
+          10%  { opacity: 1; }
+          85%  { opacity: 0.7; }
+          100% { transform: translateY(-60px) translateX(var(--drift)); opacity: 0; }
+        }
       `}</style>
 
-      {/* ── Subtle top radial glow only — no particles, no bottom glow ─────── */}
+      {/* ── Floating particles (drift upward, accent color) ───────────────── */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'hidden', opacity: isDark ? 1 : 0.4 }}>
+        {PARTICLES.map((p, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: p.left,
+              width: p.w,
+              height: p.w,
+              borderRadius: p.w <= 3 ? 1 : '50%',
+              backgroundColor: theme.hex,
+              opacity: p.op,
+              animationName: 'particleDrift',
+              animationDuration: p.dur,
+              animationDelay: p.delay,
+              animationTimingFunction: 'linear',
+              animationIterationCount: 'infinite',
+              '--drift': p.drift,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* ── Subtle top radial glow ────────────────────────────────────────── */}
       <div style={{
         position: 'fixed', top: -120, left: '50%',
         transform: 'translateX(-50%)',
@@ -750,13 +935,26 @@ export default function Dashboard() {
             onPointerLeave={() => setPressedStreak(false)}
             onPointerCancel={() => setPressedStreak(false)}
             style={{
-              transform: pressedStreak ? 'scale(0.88)' : 'scale(1)',
+              transform: pressedStreak ? 'scale(0.94)' : 'scale(1)',
               transition: 'transform 80ms ease',
               cursor: 'pointer',
               flexShrink: 0,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 14,
+              paddingTop: 6,
             }}
           >
-            <StreakBadge streak={streak} themeHex={theme.hex} />
+            <MetricStat number={totalSessions} label="Total" />
+            <MetricStat number={splitSessionCount} label="Split" />
+            <MetricStat
+              number={streak}
+              label={currentTier.name}
+              numberColor={currentTier.color}
+              labelColor={currentTier.color}
+              suffix={streak > 0 ? '🔥' : null}
+              animatedTier={currentTier.isAnimated ? currentTier : null}
+            />
           </div>
         </div>
 
@@ -865,12 +1063,17 @@ export default function Dashboard() {
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
                     {heroSectionCount} section{heroSectionCount === 1 ? '' : 's'} · ~{heroExerciseCount} exercises
-                    {heroLastSeen ? ` · last did ${heroLastSeen}` : ''}
+                    {heroAvgDuration ? ` · avg ${heroAvgDuration}m` : ''}
+                    {heroLastSeen ? ` · last ${heroLastSeen}` : ''}
                   </p>
                 </div>
               </div>
 
-              {heroExercisePills.length > 0 && (
+              {heroVolumeHistory.length >= 2 ? (
+                <div style={{ marginTop: 6, marginBottom: 14 }}>
+                  <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} />
+                </div>
+              ) : heroExercisePills.length > 0 ? (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, marginTop: 6 }}>
                   {heroExercisePills.map((ex, i) => (
                     <span key={i} style={{
@@ -899,7 +1102,7 @@ export default function Dashboard() {
                     </span>
                   )}
                 </div>
-              )}
+              ) : null}
 
               <button
                 onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
@@ -956,7 +1159,7 @@ export default function Dashboard() {
                     opacity: restDayLoggedToday ? 0.6 : 1,
                   }}
                 >
-                  {restDayLoggedToday ? '✓ Rest logged' : 'Skip · Rest'}
+                  {restDayLoggedToday ? '✓ Rest logged' : 'Log Rest Day'}
                 </button>
               </div>
             </div>
@@ -1009,17 +1212,15 @@ export default function Dashboard() {
           )
         })()}
 
-        {/* ── 5. Week card — strip + computed sentence + drawer ───────────── */}
+        {/* ── 5. Week card — strip + computed sentence (always-visible) ─── */}
         <div style={{ ...fadeIn(180), padding: '0 16px', marginBottom: 12 }}>
-          <button
-            onClick={() => setWeekDrawerOpen(o => !o)}
+          <div
             style={{
               width: '100%',
               background: 'var(--bg-card)',
               border: '1px solid var(--border-base)',
               borderRadius: 18,
               padding: '14px 16px 16px',
-              cursor: 'pointer',
               textAlign: 'left',
             }}
           >
@@ -1029,7 +1230,6 @@ export default function Dashboard() {
               </span>
               <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
                 Week {getIsoWeek(today)}
-                <span style={{ marginLeft: 6, opacity: 0.7 }}>{weekDrawerOpen ? '▾' : '▸'}</span>
               </span>
             </div>
 
@@ -1120,57 +1320,49 @@ export default function Dashboard() {
                 </>
               )}
             </div>
-          </button>
+          </div>
 
-          {/* Drawer: existing 2-card volume/time stat block */}
-          <div style={{
-            maxHeight: weekDrawerOpen ? '260px' : '0px',
-            overflow: 'hidden',
-            transition: 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1)',
-          }}>
-            <div style={{ paddingTop: 10, display: 'flex', gap: 10 }}>
-              {/* Volume */}
-              <div style={{
-                flex: 1,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 14,
-                padding: 14,
-              }}>
-                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
-                  Volume
-                </p>
-                <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
-                  {formatVolume(volumeThisWeek)} <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>lbs</span>
-                </p>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  Last week: {formatVolume(volumeLastWeek)}
-                </p>
-              </div>
-              {/* Time */}
-              <div style={{
-                flex: 1,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 14,
-                padding: 14,
-              }}>
-                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
-                  Time in gym
-                </p>
-                <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
-                  {formatTime(timeThisWeek)}
-                </p>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  Last week: {formatTime(timeLastWeek)}
-                </p>
-              </div>
+          {/* Always-visible 2-card volume/time stat block */}
+          <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
+            <div style={{
+              flex: 1,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 14,
+              padding: 14,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
+                Volume
+              </p>
+              <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
+                {formatVolume(volumeThisWeek)} <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>lbs</span>
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                Last week: {formatVolume(volumeLastWeek)}
+              </p>
+            </div>
+            <div style={{
+              flex: 1,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 14,
+              padding: 14,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
+                Time in gym
+              </p>
+              <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
+                {formatTime(timeThisWeek)}
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                Last week: {formatTime(timeLastWeek)}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* ── 6. Action buttons (Log Cardio / Log Rest Day) ────────────── */}
-        <div style={{ ...fadeIn(220), display: 'flex', justifyContent: 'center', gap: 4, paddingBottom: 8 }}>
+        {/* ── 6. Log Cardio (rest day already lives in the hero) ─────────── */}
+        <div style={{ ...fadeIn(220), display: 'flex', justifyContent: 'center', paddingBottom: 8 }}>
           <button
             onClick={() => navigate('/cardio')}
             style={{
@@ -1186,41 +1378,6 @@ export default function Dashboard() {
               <polyline points="12 6 12 12 16 14" />
             </svg>
             Log Cardio
-          </button>
-          <button
-            onClick={() => {
-              if (restDayLoggedToday) {
-                const todayEntry = (restDaySessions || []).find(r => isoToLocalDateStr(r.date) === todayStr)
-                if (todayEntry) deleteRestDaySession(todayEntry.id)
-              } else {
-                addRestDaySession(new Date().toISOString())
-              }
-            }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 7,
-              padding: '10px 18px',
-              color: restDayLoggedToday
-                ? (isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.6)')
-                : (isDark ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.30)'),
-              fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-            }}
-          >
-            {restDayLoggedToday ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Rest Logged
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-                Log Rest Day
-              </>
-            )}
           </button>
         </div>
 
