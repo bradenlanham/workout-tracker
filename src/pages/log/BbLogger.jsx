@@ -932,6 +932,12 @@ function ExerciseItem({
   const [showPrev, setShowPrev] = useState(false)
   const [editingRec, setEditingRec] = useState(false)
   const [recDraft, setRecDraft]     = useState(exercise.rec || '')
+  // Post-batch redesign: notes row no longer occupies a dedicated row by
+  // default. The pencil pill (1/3 of the action row) toggles an inline
+  // editor that expands when active. Pre-existing notes auto-mark the
+  // pencil pill so users see at a glance that the exercise has notes.
+  const [notesOpen, setNotesOpen] = useState(false)
+  const notesInputRef = useRef(null)
 
   const commitRec = () => {
     const val = (recDraft || '').trim().slice(0, 20)
@@ -2046,47 +2052,89 @@ function ExerciseItem({
             <span className="text-lg leading-none">+</span> Add Set
           </button>
 
-          <input
-            type="text"
-            value={exercise.notes}
-            onChange={e => onUpdate({ ...exercise, notes: e.target.value })}
-            placeholder="Notes for this exercise…"
-            className="w-full bg-item rounded-xl px-3 py-2.5 text-sm text-c-secondary placeholder-gray-400"
-          />
-          {lastExNotes && (
-            <p className="text-xs text-c-muted mt-1 italic">Last time: {lastExNotes}</p>
-          )}
-
-          {!exercise.done ? (
-            inActiveSuperset ? (
-              // In a live superset, the per-card finish action ends the WHOLE
-              // group at once and snaps every member to Completed together.
-              // Indigo styling matches the SS chip palette so the visual
-              // language is consistent.
-              <button
-                type="button"
-                onClick={() => onFinishSuperset?.(exercise.id)}
-                className="w-full py-3 rounded-xl bg-indigo-500/20 border border-indigo-500/50 text-indigo-200 text-sm font-bold flex items-center justify-center gap-2"
-              >
-                <span>↔</span> Finish superset
-              </button>
+          {/* Post-batch redesign: action row shares one line with the notes
+              pencil pill on the left (1/3 width) and the primary action on
+              the right (2/3 width). The dedicated "Notes for this exercise"
+              row is gone — tap the pencil to expand an inline editor below.
+              Pencil pill flips to a filled accent state when notes are set
+              so you can see at a glance which exercises carry context. */}
+          <div className="w-full flex items-stretch gap-2">
+            <button
+              type="button"
+              aria-label={notesOpen ? 'Close notes' : (exercise.notes ? 'Edit notes' : 'Add notes')}
+              title={exercise.notes ? `Notes: ${exercise.notes}` : 'Add notes'}
+              onClick={() => {
+                setNotesOpen(v => {
+                  const next = !v
+                  if (next) {
+                    // Auto-focus on open so the user can start typing immediately.
+                    requestAnimationFrame(() => notesInputRef.current?.focus())
+                  } else {
+                    notesInputRef.current?.blur()
+                  }
+                  return next
+                })
+              }}
+              className={`basis-1/3 py-3 rounded-xl text-base font-semibold flex items-center justify-center transition-colors ${
+                exercise.notes
+                  ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
+                  : 'bg-item text-c-muted border border-transparent'
+              }`}
+            >
+              <span aria-hidden="true">✏️</span>
+            </button>
+            {!exercise.done ? (
+              inActiveSuperset ? (
+                <button
+                  type="button"
+                  onClick={() => onFinishSuperset?.(exercise.id)}
+                  className="basis-2/3 py-3 rounded-xl bg-indigo-500/20 border border-indigo-500/50 text-indigo-200 text-sm font-bold flex items-center justify-center gap-2"
+                >
+                  <span>↔</span> Finish superset
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={markDone}
+                  className="basis-2/3 py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-sm font-bold flex items-center justify-center gap-2"
+                >
+                  <span>✓</span> Mark as Done
+                </button>
+              )
             ) : (
               <button
                 type="button"
-                onClick={markDone}
-                className="w-full py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-sm font-bold flex items-center justify-center gap-2"
+                onClick={() => onUpdate({ ...exercise, done: false })}
+                className="basis-2/3 py-3 rounded-xl bg-item text-c-muted text-sm font-semibold"
               >
-                <span>✓</span> Mark as Done
+                Undo completion
               </button>
-            )
-          ) : (
-            <button
-              type="button"
-              onClick={() => onUpdate({ ...exercise, done: false })}
-              className="w-full py-2.5 rounded-xl bg-item text-c-muted text-sm font-semibold"
-            >
-              Undo completion
-            </button>
+            )}
+          </div>
+          {notesOpen && (
+            <input
+              ref={notesInputRef}
+              type="text"
+              value={exercise.notes || ''}
+              onChange={e => onUpdate({ ...exercise, notes: e.target.value })}
+              onBlur={() => {
+                // Auto-collapse on blur unless the input is empty AND was
+                // never typed in — keeps the editor sticky during fast
+                // tapping but doesn't trap the user in expanded state.
+                if (!exercise.notes) setNotesOpen(false)
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === 'Escape') {
+                  e.currentTarget.blur()
+                  setNotesOpen(false)
+                }
+              }}
+              placeholder="Notes for this exercise…"
+              className="w-full bg-item rounded-xl px-3 py-2.5 text-sm text-c-secondary placeholder-gray-400"
+            />
+          )}
+          {lastExNotes && !notesOpen && (
+            <p className="text-xs text-c-muted mt-1 italic">Last time: {lastExNotes}</p>
           )}
         </div>
       )}
@@ -3042,6 +3090,12 @@ export default function BbLogger() {
 
   const [exercises,      setExercises]      = useState(() => savedSession?.exercises || defaultExercises)
   const [sessionNotes,   setSessionNotes]   = useState(() => savedSession?.sessionNotes || '')
+  // Post-batch redesign: session notes is now a tap-to-expand button styled
+  // like + Add Exercise, stacked just below it. Default closed unless the
+  // saved session already has notes (so users land on a session with notes
+  // already visible without an extra tap).
+  const [sessionNotesOpen, setSessionNotesOpen] = useState(() => Boolean(savedSession?.sessionNotes))
+  const sessionNotesRef = useRef(null)
   const [showAddPanel,   setShowAddPanel]   = useState(false)
   const [showConfirm,    setShowConfirm]    = useState(false)
 
@@ -4218,18 +4272,43 @@ export default function BbLogger() {
           </div>
         )}
 
-        {/* Session notes – hidden when numpad is open */}
+        {/* Session notes — post-batch redesign: button-styled like
+            "+ Add Exercise" above, stacked just beneath with a small gap.
+            Tap to expand an inline textarea. Slightly smaller py than + Add
+            Exercise (py-3 vs py-4) per the visual hierarchy ask. */}
         {!numpadIsOpen && (
-        <div className="bg-card rounded-2xl p-4">
-          <p className="text-xs text-c-muted mb-2 font-semibold uppercase tracking-wide">Session Notes</p>
-          <textarea
-            value={sessionNotes}
-            onChange={e => setSessionNotes(e.target.value)}
-            placeholder="How did the session go? Any notes…"
-            rows={3}
-            className="w-full bg-item text-c-secondary rounded-xl px-3 py-2.5 text-sm placeholder-gray-400 resize-none"
-          />
-        </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setSessionNotesOpen(v => {
+                  const next = !v
+                  if (next) {
+                    requestAnimationFrame(() => sessionNotesRef.current?.focus())
+                  } else {
+                    sessionNotesRef.current?.blur()
+                  }
+                  return next
+                })
+              }}
+              className="w-full py-3 mt-1 rounded-2xl text-c-muted font-medium flex items-center justify-center gap-2 text-sm"
+            >
+              <span aria-hidden="true">✏️</span> Session Notes
+            </button>
+            {sessionNotesOpen && (
+              <textarea
+                ref={sessionNotesRef}
+                value={sessionNotes}
+                onChange={e => setSessionNotes(e.target.value)}
+                onBlur={() => {
+                  if (!sessionNotes) setSessionNotesOpen(false)
+                }}
+                placeholder="How did the session go? Any notes…"
+                rows={3}
+                className="w-full bg-item text-c-secondary rounded-xl px-3 py-2.5 text-sm placeholder-gray-400 resize-none mt-1"
+              />
+            )}
+          </div>
         )}
       </div>
 
