@@ -341,14 +341,13 @@ function workoutTypeHistory(sessions, workoutId, take = 8) {
   }))
 }
 
-// Mini line chart showing volume across the last N sessions of this workout.
-// Inline SVG, no dependencies. Sized to slot in where the exercise pills lived
-// (~52px tall) so the hero card height stays the same.
-function VolumeSparkline({ history, accent }) {
+// Tiny corner sparkline — sits in the top-right of the hero card. Just the
+// area + line + dots; the delta/label live elsewhere or on tap.
+function VolumeSparkline({ history, accent, width = 86, height = 34 }) {
   if (!history || history.length < 2) return null
-  const w = 320
-  const h = 52
-  const pad = 6
+  const w = width
+  const h = height
+  const pad = 3
   const vols = history.map(p => p.volume)
   const min = Math.min(...vols)
   const max = Math.max(...vols)
@@ -358,38 +357,36 @@ function VolumeSparkline({ history, accent }) {
   const xFor = i => pad + i * xStep
   const pathD = history.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(p.volume).toFixed(1)}`).join(' ')
   const areaD = `${pathD} L ${xFor(history.length - 1).toFixed(1)} ${h - pad} L ${xFor(0).toFixed(1)} ${h - pad} Z`
-  const lastVol = vols[vols.length - 1]
-  const prevVol = vols[vols.length - 2]
-  const pct = prevVol > 0 ? ((lastVol - prevVol) / prevVol) * 100 : 0
-  const deltaText = pct > 1 ? `+${Math.round(pct)}%` : pct < -1 ? `${Math.round(pct)}%` : 'flat'
-  const deltaColor = pct > 1 ? '#34D399' : pct < -1 ? '#FCD34D' : 'var(--text-muted)'
   return (
-    <div style={{ position: 'relative', marginTop: 4 }}>
-      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', height: h }}>
-        <path d={areaD} fill={accent} fillOpacity="0.10" />
-        <path d={pathD} fill="none" stroke={accent} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {history.map((p, i) => {
-          const isLast = i === history.length - 1
-          return (
-            <circle
-              key={i}
-              cx={xFor(i)}
-              cy={yFor(p.volume)}
-              r={isLast ? 3.5 : 2}
-              fill={isLast ? accent : 'rgba(255,255,255,0.5)'}
-            />
-          )
-        })}
-      </svg>
-      <div style={{
-        position: 'absolute', top: 2, right: 2, display: 'flex', gap: 6, alignItems: 'baseline',
-        fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-      }}>
-        <span style={{ color: 'var(--text-muted)' }}>{history.length}-session vol</span>
-        <span style={{ color: deltaColor }}>{deltaText}</span>
-      </div>
-    </div>
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }}>
+      <path d={areaD} fill={accent} fillOpacity="0.14" />
+      <path d={pathD} fill="none" stroke={accent} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+      {history.map((p, i) => {
+        const isLast = i === history.length - 1
+        return (
+          <circle
+            key={i}
+            cx={xFor(i)}
+            cy={yFor(p.volume)}
+            r={isLast ? 2.6 : 1.4}
+            fill={isLast ? accent : 'rgba(255,255,255,0.45)'}
+          />
+        )
+      })}
+    </svg>
   )
+}
+
+// Volume delta label — pairs with the sparkline.
+function volumeDelta(history) {
+  if (!history || history.length < 2) return null
+  const last = history[history.length - 1].volume
+  const prev = history[history.length - 2].volume
+  if (prev <= 0) return null
+  const pct = ((last - prev) / prev) * 100
+  if (Math.abs(pct) < 1) return { text: 'flat', color: 'var(--text-muted)' }
+  if (pct > 0) return { text: `+${Math.round(pct)}%`, color: '#34D399' }
+  return { text: `${Math.round(pct)}%`, color: '#FCD34D' }
 }
 
 // Static particle anchors — same pattern as v1 dashboard, drift upward.
@@ -419,8 +416,26 @@ export default function Dashboard() {
   const {
     sessions, settings, splits, activeSplitId, updateSession, customTemplates,
     cardioSessions, updateSettings, activeSession, restDaySessions,
-    addRestDaySession, deleteRestDaySession, exerciseLibrary,
+    addRestDaySession, deleteRestDaySession, exerciseLibrary, importData,
   } = useStore()
+
+  // ── Auto-seed demo data on first load (worktree-only convenience) ────────
+  // When the device has zero sessions, pull /seed-data.json from the dev
+  // server and merge it into the store via importData (which expects raw
+  // JSON text). Sets a localStorage flag so we never re-seed once the user
+  // has interacted with the app.
+  useEffect(() => {
+    if (sessions.length > 0) return
+    if (localStorage.getItem('dashboard-v2-seeded') === '1') return
+    localStorage.setItem('dashboard-v2-seeded', '1')
+    fetch('/seed-data.json')
+      .then(r => r.ok ? r.text() : null)
+      .then(text => {
+        if (!text) return
+        try { importData(text) } catch (e) { console.warn('seed import failed', e) }
+      })
+      .catch(() => {})
+  }, [sessions.length, importData])
   const theme = getTheme(settings.accentColor, settings.customAccentHex)
   const isDark = settings.backgroundTheme !== 'daylight'
 
@@ -596,17 +611,13 @@ export default function Dashboard() {
   yesterday.setDate(today.getDate() - 1)
   const yesterdayStr = toDateStr(yesterday)
 
-  const yesterdayRotationItem = rotation?.length && sessions.length
-    ? getRotationItemOnDate(yesterdayStr, sessions, rotation)
-    : null
   const yesterdayLogged =
     sessions.some(s => isoToLocalDateStr(s.date) === yesterdayStr) ||
     cardioSessions.some(c => isoToLocalDateStr(c.date) === yesterdayStr) ||
     (restDaySessions || []).some(r => isoToLocalDateStr(r.date) === yesterdayStr)
-  const missedYesterdayWorkout = (!todayLogged && yesterdayRotationItem && yesterdayRotationItem !== 'rest' && !yesterdayLogged)
-    ? yesterdayRotationItem
-    : null
-  const recommendedWorkout = missedYesterdayWorkout ?? nextBb
+  // Always recommend the next workout in the rotation — no "picking up
+  // yesterday's missed workout" branch. Today is today.
+  const recommendedWorkout = nextBb
 
   const activePreviewId = previewWorkoutId || recommendedWorkout
   const previewWorkout  = activeSplit?.workouts?.find(w => w.id === activePreviewId)
@@ -912,49 +923,56 @@ export default function Dashboard() {
       {/* ── Page content ────────────────────────────────────────────────────── */}
       <div style={{ position: 'relative', zIndex: 2 }}>
 
-        {/* ── 1. Header (greeting + name on the left, streak top-right) ── */}
+        {/* ── 1. Header — greeting (thin), then name + 3 metrics on one row ─ */}
         <div style={{
           ...fadeIn(0),
-          padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 16px 16px 20px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: 12,
+          padding: 'max(64px, calc(env(safe-area-inset-top) + 28px)) 16px 14px 20px',
         }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em' }}>
-              {timeGreeting}{settings.userName ? ',' : ''}
-            </p>
-            <h1 style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: '2px 0 0' }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.01em', marginBottom: 4 }}>
+            {timeGreeting}{settings.userName ? ',' : ''}
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <h1 style={{
+              fontSize: 26,
+              fontWeight: 800,
+              lineHeight: 1,
+              letterSpacing: '-0.02em',
+              color: 'var(--text-primary)',
+              margin: 0,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flexShrink: 1,
+            }}>
               {settings.userName || 'Welcome'}
             </h1>
-          </div>
-          <div
-            onPointerDown={() => setPressedStreak(true)}
-            onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
-            onPointerLeave={() => setPressedStreak(false)}
-            onPointerCancel={() => setPressedStreak(false)}
-            style={{
-              transform: pressedStreak ? 'scale(0.94)' : 'scale(1)',
-              transition: 'transform 80ms ease',
-              cursor: 'pointer',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 14,
-              paddingTop: 6,
-            }}
-          >
-            <MetricStat number={totalSessions} label="Total" />
-            <MetricStat number={splitSessionCount} label="Split" />
-            <MetricStat
-              number={streak}
-              label={currentTier.name}
-              numberColor={currentTier.color}
-              labelColor={currentTier.color}
-              suffix={streak > 0 ? '🔥' : null}
-              animatedTier={currentTier.isAnimated ? currentTier : null}
-            />
+            <div
+              onPointerDown={() => setPressedStreak(true)}
+              onPointerUp={() => { setPressedStreak(false); setShowTierModal(true) }}
+              onPointerLeave={() => setPressedStreak(false)}
+              onPointerCancel={() => setPressedStreak(false)}
+              style={{
+                transform: pressedStreak ? 'scale(0.94)' : 'scale(1)',
+                transition: 'transform 80ms ease',
+                cursor: 'pointer',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <MetricStat number={totalSessions} label="Total" />
+              <MetricStat number={splitSessionCount} label="Split" />
+              <MetricStat
+                number={streak}
+                label={currentTier.name}
+                numberColor={currentTier.color}
+                labelColor={currentTier.color}
+                suffix={streak > 0 ? '🔥' : null}
+                animatedTier={currentTier.isAnimated ? currentTier : null}
+              />
+            </div>
           </div>
         </div>
 
@@ -1043,10 +1061,10 @@ export default function Dashboard() {
                 color: theme.hex,
                 marginBottom: 10,
               }}>
-                {missedYesterdayWorkout ? 'Picking up from yesterday' : 'Today'}
+                Today
                 {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
               </p>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
                 <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>
                   {getWorkoutEmoji(recommendedWorkout)}
                 </span>
@@ -1061,48 +1079,45 @@ export default function Dashboard() {
                   }}>
                     {getWorkoutName(recommendedWorkout)}
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
-                    {heroSectionCount} section{heroSectionCount === 1 ? '' : 's'} · ~{heroExerciseCount} exercises
-                    {heroAvgDuration ? ` · avg ${heroAvgDuration}m` : ''}
-                    {heroLastSeen ? ` · last ${heroLastSeen}` : ''}
-                  </p>
-                </div>
-              </div>
-
-              {heroVolumeHistory.length >= 2 ? (
-                <div style={{ marginTop: 6, marginBottom: 14 }}>
-                  <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} />
-                </div>
-              ) : heroExercisePills.length > 0 ? (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, marginTop: 6 }}>
-                  {heroExercisePills.map((ex, i) => (
-                    <span key={i} style={{
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid var(--border-subtle)',
-                      padding: '5px 10px',
-                      borderRadius: 999,
-                      fontSize: 11,
-                      color: 'var(--text-secondary)',
-                      fontWeight: 500,
-                    }}>
-                      {ex}
-                    </span>
-                  ))}
-                  {heroExerciseCount > heroExercisePills.length && (
-                    <span style={{
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid var(--border-subtle)',
-                      padding: '5px 10px',
-                      borderRadius: 999,
-                      fontSize: 11,
-                      color: 'var(--text-muted)',
-                      fontWeight: 500,
-                    }}>
-                      +{heroExerciseCount - heroExercisePills.length} more
-                    </span>
+                  {/* Smart meta — temporal info first when we have history,
+                      scope info as the cold-start fallback. */}
+                  {heroVolumeHistory.length >= 2 ? (
+                    <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
+                      {heroAvgDuration ? `~${heroAvgDuration} min typical` : ''}
+                      {heroAvgDuration && heroLastSeen ? ' · ' : ''}
+                      {heroLastSeen ? `last done ${heroLastSeen}` : ''}
+                    </p>
+                  ) : (
+                    <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
+                      ~{heroExerciseCount} exercise{heroExerciseCount === 1 ? '' : 's'}
+                      {heroSectionCount > 1 ? ` · ${heroSectionCount} sections` : ''}
+                      {heroLastSeen ? ` · last done ${heroLastSeen}` : ''}
+                    </p>
                   )}
                 </div>
-              ) : null}
+                {/* Tiny corner sparkline + delta — top-right of the hero,
+                    only when we have ≥2 prior sessions of this workout. */}
+                {heroVolumeHistory.length >= 2 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
+                    <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={84} height={32} />
+                    {(() => {
+                      const d = volumeDelta(heroVolumeHistory)
+                      if (!d) return null
+                      return (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
+                          color: d.color,
+                        }}>
+                          {d.text} vol
+                        </span>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
