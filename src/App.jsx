@@ -5,6 +5,7 @@ import HamburgerMenu from './components/HamburgerMenu'
 import BottomNav from './components/BottomNav'
 import RestTimer from './components/RestTimer'
 import Toast from './components/Toast'
+import ErrorBoundary from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
 import Log from './pages/Log'
 import History from './pages/History'
@@ -59,7 +60,7 @@ function ThemedApp() {
   const isNewUser = !hasCompletedOnboarding && sessions.length === 0
 
   return (
-    <>
+    <ErrorBoundary>
       <div className="min-h-screen bg-base text-c-primary max-w-lg mx-auto relative">
         <Routes>
           <Route path="/" element={<Navigate to={isNewUser ? '/welcome' : '/dashboard'} replace />} />
@@ -102,7 +103,7 @@ function ThemedApp() {
       <BottomNav onMenuOpen={() => setMenuOpen(true)} menuOpen={menuOpen} />
       <RestTimer />
       <Toast />
-    </>
+    </ErrorBoundary>
   )
 }
 
