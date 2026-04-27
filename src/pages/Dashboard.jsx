@@ -729,7 +729,7 @@ export default function Dashboard() {
   const restDayLoggedToday = restDayDateSet.has(todayStr)
 
   const isRestDay =
-    (nextRotationItem === 'rest' && !todayLogged && !missedYesterdayWorkout) ||
+    (nextRotationItem === 'rest' && !todayLogged) ||
     (restDayLoggedToday && !todayLogged)
 
   // ── Session map ───────────────────────────────────────────────────────────
