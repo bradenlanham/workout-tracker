@@ -523,6 +523,15 @@ export default function Dashboard() {
     return (0.299 * r + 0.587 * g + 0.114 * b) > 160
   })()
 
+  // Daylight + light accent = the accent is invisible against the white
+  // background. Fall back to a dark color for any text/stroke that lives
+  // on the page chrome (eyebrow, streak digit, sparkline, etc.). Keeps
+  // pure obsidian + dark accents using the actual accent color.
+  const lightBgWithLightAccent = !isDark && accentIsLight
+  const safeAccent = lightBgWithLightAccent ? '#1A1A1A' : theme.hex
+  const safeAccentSubtle = lightBgWithLightAccent ? '#475569' : theme.hex
+  const dividerColor = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)'
+
   const [showPreview, setShowPreview] = useState(false)
   const [previewWorkoutId, setPreviewWorkoutId] = useState(null)
   const [showSorenessModal, setShowSorenessModal] = useState(false)
@@ -904,13 +913,17 @@ export default function Dashboard() {
   })()
 
   // ── Hero card style (workout state — accent gradient wash) ────────────────
+  // In daylight + a light accent the pale gradient is invisible against
+  // the white card; swap to safeAccent at low opacity so the card still
+  // has visible structure.
+  const heroSurfaceColor = lightBgWithLightAccent ? safeAccent : theme.hex
   const heroAccentCardStyle = {
     margin: '0 16px',
     borderRadius: 24,
     padding: '20px 18px 18px',
-    background: `linear-gradient(135deg, ${hexToRgba(theme.hex, 0.18)} 0%, ${hexToRgba(theme.hex, 0.02)} 70%), var(--bg-card)`,
-    border: `1px solid ${hexToRgba(theme.hex, 0.22)}`,
-    boxShadow: `0 4px 30px ${hexToRgba(theme.hex, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
+    background: `linear-gradient(135deg, ${hexToRgba(heroSurfaceColor, 0.10)} 0%, ${hexToRgba(heroSurfaceColor, 0.02)} 70%), var(--bg-card)`,
+    border: `1px solid ${hexToRgba(heroSurfaceColor, 0.18)}`,
+    boxShadow: `0 4px 30px ${hexToRgba(heroSurfaceColor, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
     position: 'relative',
     overflow: 'hidden',
   }
@@ -1040,17 +1053,17 @@ export default function Dashboard() {
               <div style={{ padding: '0 12px' }}>
                 <MetricStat number={totalSessions} label="Total" />
               </div>
-              <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.18)' }} />
+              <div style={{ width: 1, alignSelf: 'stretch', background: dividerColor }} />
               <div style={{ padding: '0 12px' }}>
                 <MetricStat number={splitSessionCount} label="Split" />
               </div>
-              <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.18)' }} />
+              <div style={{ width: 1, alignSelf: 'stretch', background: dividerColor }} />
               <div style={{ padding: '0 12px 0 14px' }}>
                 <MetricStat
                   number={streak}
                   label="Streak"
-                  numberColor={currentTier.color}
-                  labelColor={currentTier.color}
+                  numberColor={currentTier.name === 'Common' ? safeAccent : currentTier.color}
+                  labelColor={currentTier.name === 'Common' ? safeAccent : currentTier.color}
                   suffix={streak > 0 ? '🔥' : null}
                   animatedTier={currentTier.isAnimated ? currentTier : null}
                 />
@@ -1150,7 +1163,7 @@ export default function Dashboard() {
                     fontWeight: 700,
                     letterSpacing: '0.08em',
                     textTransform: 'uppercase',
-                    color: theme.hex,
+                    color: safeAccent,
                     margin: 0,
                   }}>
                     Today
@@ -1180,7 +1193,7 @@ export default function Dashboard() {
                     </div>
                     {heroVolumeHistory.length >= 2 && (
                       <div style={{ flex: 1, minWidth: 30, display: 'flex', alignItems: 'flex-end' }}>
-                        <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={120} height={26} />
+                        <VolumeSparkline history={heroVolumeHistory} accent={safeAccentSubtle} width={120} height={26} />
                       </div>
                     )}
                   </div>
@@ -1244,13 +1257,13 @@ export default function Dashboard() {
                 onClick={() => navigate(`/log/bb/${recommendedWorkout}`)}
                 style={{
                   width: '100%',
-                  background: theme.hex,
-                  color: theme.contrastText,
+                  background: lightBgWithLightAccent ? safeAccent : theme.hex,
+                  color: lightBgWithLightAccent ? '#FFFFFF' : theme.contrastText,
                   padding: '14px 18px',
                   borderRadius: 14,
                   fontWeight: 700,
                   fontSize: 15,
-                  boxShadow: `0 4px 20px ${hexToRgba(theme.hex, 0.35)}`,
+                  boxShadow: `0 4px 20px ${hexToRgba(lightBgWithLightAccent ? safeAccent : theme.hex, 0.35)}`,
                   border: 'none',
                   cursor: 'pointer',
                   marginBottom: 6,
@@ -1385,18 +1398,18 @@ export default function Dashboard() {
                 let fontWeight = 500
 
                 if (isDone) {
-                  bg = theme.hex
-                  textColor = theme.contrastText
+                  bg = lightBgWithLightAccent ? safeAccent : theme.hex
+                  textColor = lightBgWithLightAccent ? '#FFFFFF' : theme.contrastText
                   fontWeight = 700
                 } else if (isPending) {
-                  border = `2px solid ${theme.hex}`
-                  textColor = theme.hex
+                  border = `2px solid ${safeAccent}`
+                  textColor = safeAccent
                   fontWeight = 700
                 } else if (isLoggedRest) {
                   bg = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)'
                   textColor = 'var(--text-secondary)'
                   fontWeight = 600
-                  if (info.type === 'today-logged-rest') border = `2px solid ${theme.hex}`
+                  if (info.type === 'today-logged-rest') border = `2px solid ${safeAccent}`
                 } else if (isRestType) {
                   border = `1px dashed ${isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'}`
                   textColor = 'var(--text-muted)'
