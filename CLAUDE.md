@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 25, 2026 (Batch 50 — post-workout feedback batch: UI polish, crash defenses, numpad Done removed, auto-tag-on-machine-entry, GymTagPrompt removed, notes redesign)
+> Last updated: April 27, 2026 (post-B51 stability pass — Dashboard rest-day crash fix, CreateExerciseModal hooks fix, top-level ErrorBoundary, ESLint with rules-of-hooks + no-undef as errors)
 
 ## Rules for Claude
 
@@ -8,7 +8,25 @@
 2. **Update this file** after every batch of changes. Add new features to "Recent Changes", update file structure if files were added/removed, and update store shape if state changed. Update the "Last updated" date.
 3. **Git is fully writable from the sandbox.** Claude runs `git` directly — creates worktrees, commits, pushes feature branches, and merges to main. Never `--force` push. Never skip hooks (`--no-verify`).
 4. **Validate builds** with `npx vite build --outDir /tmp/test-build`. Never build to the mounted `dist/` folder (Vite can't emit there — EPERM).
-5. **Feature branches for non-trivial changes.** Not for review (user doesn't review), but to give a clean revert point and a Vercel preview URL before merging to main. Small fixes can go straight to main.
+5. **Run `npm run lint` before every commit.** ESLint is wired with `react-hooks/rules-of-hooks` + `no-undef` as errors — these catch the two bug classes that crashed the app on April 26 (dangling identifier ref + hook after early return). Exit code must be 0 before merging. `exhaustive-deps` and `no-unused-vars` stay as warnings (visible but non-blocking).
+6. **Feature branches for non-trivial changes.** Not for review (user doesn't review), but to give a clean revert point and a Vercel preview URL before merging to main. Small fixes can go straight to main.
+
+## Pre-flight checklist for redesign batches
+
+The April 26 crash bugs (`missedYesterdayWorkout` dangling ref + `CreateExerciseModal` hooks-after-early-return) both slipped past ~12 polish rounds because verification was happy-path-only — the dev loop only exercised one split type and one modal-open state. Run this checklist before merging any redesign batch:
+
+- [ ] `npm run lint` → exit 0 (errors block; warnings are fine).
+- [ ] `npx vite build --outDir /tmp/test-build` → success.
+- [ ] Walk the redesigned surface in preview against THREE state combinations:
+  - [ ] **Empty data** (`sessions: []`, no splits beyond built-in).
+  - [ ] **Populated weight-only data** (BamBam's Blueprint active, sessions logged).
+  - [ ] **HYROX-active data** (HYROX Hybrid active, with or without sessions).
+- [ ] For surfaces with rotation/calendar logic: test today=rest AND today=workout (HYROX Hybrid Sunday=rest is a quick toggle).
+- [ ] For surfaces with modals/sheets: open it, close it, re-open it. Watch console for "Rendered more hooks than during the previous render."
+- [ ] Open browser console → verify zero new errors AND zero new warnings.
+- [ ] If the surface reads `theme.hex` for foreground colors: test daylight + a light accent (the pale-green case is the known-bad combination).
+
+The top-level `ErrorBoundary` (April 27) catches any render error and shows a recovery banner with the stack trace + Reload + recovery-page link, so the worst-case future bug is contained — but the checklist still matters because the boundary is recovery, not prevention.
 
 ---
 
@@ -2288,6 +2306,46 @@ User-reported live-feedback batch from a Lanhammer session — see plan at `C:\U
     - `src/pages/log/BbLogger.jsx` — items 1, 2, 3, 7, 10, 11 (largest diff): + Add Exercise styling, GroupLabel, handleAddTyped + handleCreateSave defenses, EquipmentInstancePopover dual-write, GymTagPrompt block deletion + state cleanup, per-exercise notes redesign (pencil pill + Mark as Done shared row + inline-expand input), Session Notes redesign (button + inline-expand textarea).
 
 614. **Build.** `npx vite build --outDir /tmp/test-build` → 895.53 KB bundle / 241.01 KB gzipped (−0.11 KB / −0.01 KB vs Batch 49 — net wash). Items 1/2/3/7 verified live (port 5184, mobile 375×812): clean labels, no dashed border, gym auto-tag confirmed end-to-end via `localStorage` round-trip showing `defaultMachineByGym: { gym_vasa: "TestHoist" }` + `sessionGymTags: ['gym_vasa']` after typing one machine value. Items 5/10/11 not preview-verified — pushed straight to main per user instruction; user will report from production.
+
+### Batch 51 (April 25–26, 2026) — Dashboard v2 (B51)
+
+615. **Dashboard rewrite.** Hero card owns the fold; narrative replaces the v1 6-stat grid; sparkline + computed weekly sentence; tier-colored streak; particles preserved. Iterated across ~12 polish rounds with the user. See `HANDOFF-B51.md` for the full retrospective and the design principles distilled (one hero per fold, factual labels over interpreted ones, sparklines need a metric label, daylight contrast pattern).
+
+### Post-B51 stability pass (April 27, 2026) — three crash fixes + ESLint + ErrorBoundary
+
+The day after Dashboard v2 merged, two render crashes surfaced (one for the user himself on a HYROX split, one for his brother on the deployed PWA). Both bugs were specific code paths the dev loop never exercised during ~12 polish rounds. This pass fixes both and ships defensive layers so the next render bug becomes a recoverable banner instead of a fully gray screen.
+
+616. **Dashboard `missedYesterdayWorkout` ReferenceError fix** (`8c91576`). Line 732 of `Dashboard.jsx` referenced a variable that was deleted during the v2 rewrite ("picking up from yesterday" branch was removed per HANDOFF-B51 design principle #7) but one orphan reference was left behind. JS `&&` short-circuit evaluation hid the bug for any rotation without `'rest'` entries (BamBam's Blueprint), so v1's polish loop never tripped it. Crashed deterministically for any user whose split has rest days when today's slot lands on rest. Fix: drop the `&& !missedYesterdayWorkout` clause. One-line change.
+
+617. **Lesson learned: previous-session "don't revert" advice was overstated** (post-mortem). The April 26 black-screen incident was misdiagnosed as a cache problem, leading to a fix-forward path (vercel.json cache headers, /recovery.html, boot-time diagnostic) that was useful infrastructure but didn't address the actual bug. The previous session pushed back on the user's revert instinct citing "asset hash churn risk" — that argument was technically true but practically minimal. **Heuristic going forward: if a known-good revert exists, take it first, then debug forward.** Reverting is reversible; users hitting a crash for hours while we investigate isn't.
+
+618. **CreateExerciseModal Rules of Hooks violation fix** (`f05aaa4`). `useMemo` for `canSave` was declared AFTER `if (!open) return null`. When the modal toggled open, hook count differed between renders → React threw "Rendered more hooks than during the previous render" → whole tree unmounted → fully gray screen with no UI. Trigger: Exercise Library (`/exercises`) → tap "+ New" button. Fix: lift the `useMemo` above the early return. A codebase-wide audit found no other instances of this pattern.
+
+619. **Top-level ErrorBoundary** (`006892c`, `src/components/ErrorBoundary.jsx`). Wraps the route tree + chrome (Routes / HamburgerMenu / BottomNav / RestTimer / Toast) so any future render error renders a recovery banner instead of unmounting the app. Banner shows the error message + collapsible stack/component-tree details + a Reload button (cache-busts via query string) + a link to `/recovery.html`. Captured errors push onto `window.__appErrors` so the boot-time diagnostic from the April 26 incident still sees them on screenshot probes. Future render bugs are now recoverable in-place without delete-and-reinstall cycles.
+
+620. **ESLint with `rules-of-hooks` + `no-undef` as errors** (`35e01d0`). Both bugs above would have been caught at edit time by lint:
+    - `no-undef` → catches dangling identifier references like `missedYesterdayWorkout`.
+    - `react-hooks/rules-of-hooks` → catches hooks called after early returns or inside conditionals.
+    Style rules (semi/quotes/indent) deliberately off — no churn pass on 100+ files. `exhaustive-deps` and `no-unused-vars` stay as warnings. `npm run lint` runs `eslint src --quiet`. Current state: 0 errors, 2 trivial unused-var warnings in `helpers.js` (`belowFloor`, `thisRunLeg`).
+
+621. **CLAUDE.md Rule 5 added: run `npm run lint` before every commit.** Plus a "Pre-flight checklist for redesign batches" section above with concrete steps to walk three state combinations (empty / weight-only / HYROX-active) before merging. Both v2 bugs would have been caught by following that checklist.
+
+622. **Files modified.**
+    - `src/pages/Dashboard.jsx` — one-line `missedYesterdayWorkout` fix.
+    - `src/components/CreateExerciseModal.jsx` — `useMemo` lifted above early return.
+    - `src/components/ErrorBoundary.jsx` (new) — class component with getDerivedStateFromError + componentDidCatch.
+    - `src/App.jsx` — wrap Routes + chrome in `<ErrorBoundary>`.
+    - `package.json` — `lint` script added.
+    - `.eslintrc.cjs` (new) — config with rules-of-hooks + no-undef as errors.
+    - `CLAUDE.md` — Rule 5 (lint), Pre-flight checklist section, this entry.
+
+623. **Verification.** Reproduced both bugs live in dev preview before fixing. Verified both fixes live in dev preview after fixing. Ran a runtime sweep of all 9 main routes + all 6 HYROX workouts + all 5 BamBam workouts + key surfaces (StartHyroxOverlay, ExerciseEditSheet on HYROX-round, ChooseStartingPoint, hamburger menu, tier modal, preview overlay, custom accent) — zero new errors anywhere. Lint passes with 0 errors. Build passes (897.41 KB bundle / 241.39 KB gzipped post-ErrorBoundary, +1.78 KB from boundary code).
+
+624. **Open followups.**
+    - **Storage-failure UX defense** (toast on save failure / quota banner) — defer until Supabase migration so it gets built once, not twice. Pre-Supabase silent localStorage failures are a real concern (might explain BAMBAM's empty `sessions[]`) but the right fix is integrated with the offline-queue infrastructure that Supabase Phase 1 needs anyway.
+    - **`useStore.js` `addSession` audit** — clean; the silent-failure path is in Zustand's default localStorage adapter, not in user code. Documented in HANDOFF-BLACK-SCREEN-DEBUG.md.
+    - **CI for lint** — `npm run lint` on push via GitHub Actions. Not shipped today; user can add when ready.
+    - **B60 SplitManager polish** — queued as the next redesign batch (small, low-risk warm-up after this incident). See `HANDOFF-B60.md`.
 
 ---
 
