@@ -1147,7 +1147,7 @@ export default function Dashboard() {
                 Today
                 {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 14 }}>
                 {/* Emoji + workout name as a tight inline group, so the
                     flex gap doesn't push them apart. */}
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, maxWidth: '50%' }}>
