@@ -1136,57 +1136,67 @@ export default function Dashboard() {
           ) : (
             // (b) Today is a workout day — accent gradient hero
             <div style={heroAccentCardStyle}>
-              <p style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                color: theme.hex,
-                marginBottom: 10,
-              }}>
-                Today
-                {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
-              </p>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 14 }}>
-                {/* Emoji + workout name as a tight inline group, so the
-                    flex gap doesn't push them apart. */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, maxWidth: '50%' }}>
-                  <span style={{ fontSize: 22, lineHeight: 1 }}>
-                    {getWorkoutEmoji(recommendedWorkout)}
-                  </span>
+              {/* Card-level flex: left side carries the eyebrow + title
+                  row stacked, right side carries the 3-row stat column.
+                  The right column starts at the eyebrow line so its top
+                  row (LAST) sits at the top-right corner of the card.
+                  alignItems:stretch makes both columns share full
+                  height, so the column's last row (VOLUME) lands flush
+                  with the title-row baseline. */}
+              <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                   <p style={{
-                    fontSize: 22,
+                    fontSize: 11,
                     fontWeight: 700,
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.15,
-                    color: 'var(--text-primary)',
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color: theme.hex,
                     margin: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
                   }}>
-                    {getWorkoutName(recommendedWorkout)}
+                    Today
+                    {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
                   </p>
-                </div>
-                {/* Sparkline fills the space between the workout title
-                    and the right-side stat stack. The chart is purely
-                    visual; its meaning lives in the right-column
-                    "VOLUME" row that pairs an arrow with the metric
-                    name. */}
-                {heroVolumeHistory.length >= 2 && (
-                  <div style={{ flex: 1, minWidth: 30, display: 'flex', alignItems: 'center' }}>
-                    <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={120} height={26} />
+                  {/* Title row sits at the bottom of the left column so
+                      it shares a baseline with the right column's last
+                      row (VOLUME). */}
+                  <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, maxWidth: '60%' }}>
+                      <span style={{ fontSize: 22, lineHeight: 1 }}>
+                        {getWorkoutEmoji(recommendedWorkout)}
+                      </span>
+                      <p style={{
+                        fontSize: 22,
+                        fontWeight: 700,
+                        letterSpacing: '-0.02em',
+                        lineHeight: 1.15,
+                        color: 'var(--text-primary)',
+                        margin: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {getWorkoutName(recommendedWorkout)}
+                      </p>
+                    </div>
+                    {heroVolumeHistory.length >= 2 && (
+                      <div style={{ flex: 1, minWidth: 30, display: 'flex', alignItems: 'flex-end' }}>
+                        <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={120} height={26} />
+                      </div>
+                    )}
                   </div>
-                )}
-                {/* Right stat column — order top→bottom: LAST recency,
-                    AVERAGE duration, then VOLUME (arrow + label) at the
-                    bottom labeling the sparkline in the middle. */}
+                </div>
+                {/* Right stat column — top→bottom: LAST → AVERAGE →
+                    VOLUME. justifyContent:space-between distributes the
+                    rows across the full card-row height, so LAST sits
+                    at the eyebrow line and VOLUME sits at the title
+                    baseline. */}
                 {(heroAvgDuration || heroLastSeen || heroVolumeHistory.length >= 2) && (
                   <div style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
-                    gap: 4, flexShrink: 0, minWidth: 0,
+                    justifyContent: 'space-between',
+                    flexShrink: 0, minWidth: 0,
                   }}>
-                    {heroLastSeen && (
+                    {heroLastSeen ? (
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
                           {heroLastSeen}
@@ -1195,8 +1205,8 @@ export default function Dashboard() {
                           Last
                         </span>
                       </div>
-                    )}
-                    {heroAvgDuration && (
+                    ) : <span />}
+                    {heroAvgDuration ? (
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
                           ~{heroAvgDuration}m
@@ -1205,10 +1215,10 @@ export default function Dashboard() {
                           Average
                         </span>
                       </div>
-                    )}
-                    {heroVolumeHistory.length >= 2 && (() => {
+                    ) : <span />}
+                    {heroVolumeHistory.length >= 2 ? (() => {
                       const trend = volumeTrend(heroVolumeHistory)
-                      if (!trend) return null
+                      if (!trend) return <span />
                       const arrow = trend.direction === 'up' ? '↗' : trend.direction === 'down' ? '↘' : '→'
                       return (
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
@@ -1225,7 +1235,7 @@ export default function Dashboard() {
                           </span>
                         </div>
                       )
-                    })()}
+                    })() : <span />}
                   </div>
                 )}
               </div>
