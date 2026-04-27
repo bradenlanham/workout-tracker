@@ -491,26 +491,8 @@ export default function Dashboard() {
   const {
     sessions, settings, splits, activeSplitId, updateSession, customTemplates,
     cardioSessions, updateSettings, activeSession, restDaySessions,
-    addRestDaySession, deleteRestDaySession, exerciseLibrary, importData,
+    addRestDaySession, deleteRestDaySession, exerciseLibrary,
   } = useStore()
-
-  // ── Auto-seed demo data on first load (worktree-only convenience) ────────
-  // When the device has zero sessions, pull /seed-data.json from the dev
-  // server and merge it into the store via importData (which expects raw
-  // JSON text). Sets a localStorage flag so we never re-seed once the user
-  // has interacted with the app.
-  useEffect(() => {
-    if (sessions.length > 0) return
-    if (localStorage.getItem('dashboard-v2-seeded') === '1') return
-    localStorage.setItem('dashboard-v2-seeded', '1')
-    fetch('/seed-data.json')
-      .then(r => r.ok ? r.text() : null)
-      .then(text => {
-        if (!text) return
-        try { importData(text) } catch (e) { console.warn('seed import failed', e) }
-      })
-      .catch(() => {})
-  }, [sessions.length, importData])
   const theme = getTheme(settings.accentColor, settings.customAccentHex)
   const isDark = settings.backgroundTheme !== 'daylight'
 
