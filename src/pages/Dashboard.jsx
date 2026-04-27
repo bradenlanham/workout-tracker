@@ -347,11 +347,11 @@ function workoutTypeHistory(sessions, workoutId, take = 8) {
   }))
 }
 
-// Tiny corner sparkline — sits in the top-right of the hero card. Just the
-// area + line + dots; the delta/label live elsewhere or on tap.
-function VolumeSparkline({ history, accent, width = 86, height = 34 }) {
+// Sparkline that scales to its container. Uses a fixed viewBox + 100% width
+// so flex parents control its actual size. height stays fixed in pixels.
+function VolumeSparkline({ history, accent, height = 28, fillWidth = true, width = 120 }) {
   if (!history || history.length < 2) return null
-  const w = width
+  const w = width // viewBox width — internal coord space, not rendered px
   const h = height
   const pad = 3
   const vols = history.map(p => p.volume)
@@ -363,10 +363,17 @@ function VolumeSparkline({ history, accent, width = 86, height = 34 }) {
   const xFor = i => pad + i * xStep
   const pathD = history.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(p.volume).toFixed(1)}`).join(' ')
   const areaD = `${pathD} L ${xFor(history.length - 1).toFixed(1)} ${h - pad} L ${xFor(0).toFixed(1)} ${h - pad} Z`
+  const renderedWidth = fillWidth ? '100%' : width
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }}>
+    <svg
+      width={renderedWidth}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      style={{ display: 'block', overflow: 'visible' }}
+    >
       <path d={areaD} fill={accent} fillOpacity="0.14" />
-      <path d={pathD} fill="none" stroke={accent} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+      <path d={pathD} fill="none" stroke={accent} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       {history.map((p, i) => {
         const isLast = i === history.length - 1
         return (
@@ -1078,28 +1085,33 @@ export default function Dashboard() {
                 Today
                 {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                 <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>
                   {getWorkoutEmoji(recommendedWorkout)}
                 </span>
                 <p style={{
-                  fontSize: 24,
+                  fontSize: 22,
                   fontWeight: 700,
                   letterSpacing: '-0.02em',
                   lineHeight: 1.15,
                   color: 'var(--text-primary)',
                   margin: 0,
-                  flex: 1,
-                  minWidth: 0,
+                  flexShrink: 0,
+                  maxWidth: '40%',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}>
                   {getWorkoutName(recommendedWorkout)}
                 </p>
-                {/* Compact stat stack on the right — concrete facts only.
-                    Two right-aligned rows: typical duration + recency.
-                    Hidden until we have at least one prior session. */}
+                {/* Sparkline grows to fill the remaining space between
+                    the workout title and the right-side stat stack. */}
+                <div style={{ flex: 1, minWidth: 30, display: 'flex', alignItems: 'center' }}>
+                  {heroVolumeHistory.length >= 2 && (
+                    <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={120} height={28} />
+                  )}
+                </div>
+                {/* Concrete facts on the right — average duration + recency. */}
                 {(heroAvgDuration || heroLastSeen) && (
                   <div style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
@@ -1111,7 +1123,7 @@ export default function Dashboard() {
                           ~{heroAvgDuration}m
                         </span>
                         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                          typical
+                          Average
                         </span>
                       </div>
                     )}
@@ -1121,7 +1133,7 @@ export default function Dashboard() {
                           {heroLastSeen}
                         </span>
                         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                          last
+                          Last
                         </span>
                       </div>
                     )}
