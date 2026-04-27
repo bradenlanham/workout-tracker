@@ -402,6 +402,68 @@ function volumeDelta(history) {
   return { text: `${Math.round(pct)}%`, color: '#FCD34D' }
 }
 
+// Trend takeaway label for the sparkline. Linear regression slope across
+// the window expressed as % of mean per session — robust against the
+// noisy single-session % delta. Special-cases "Best in N" when the
+// latest data point is also the window high.
+function volumeTrend(history) {
+  if (!history || history.length < 3) return null
+  const vols = history.map(p => p.volume)
+  const n = vols.length
+  const xMean = (n - 1) / 2
+  const yMean = vols.reduce((a, b) => a + b, 0) / n
+  let num = 0, den = 0
+  for (let i = 0; i < n; i++) {
+    num += (i - xMean) * (vols[i] - yMean)
+    den += (i - xMean) ** 2
+  }
+  const slope = den > 0 ? num / den : 0
+  const slopePct = yMean > 0 ? slope / yMean : 0
+  const latest = vols[n - 1]
+  const max = Math.max(...vols)
+  const atPeak = latest >= max && n >= 3
+
+  if (slopePct > 0.03) {
+    return {
+      label: atPeak ? `Best in ${n}` : 'Trending up',
+      direction: 'up',
+      color: '#34D399',
+    }
+  }
+  if (slopePct < -0.03) {
+    return { label: 'Trending down', direction: 'down', color: '#FCD34D' }
+  }
+  return { label: 'Holding steady', direction: 'steady', color: 'var(--text-muted)' }
+}
+
+// Tiny SVG corner-bracket — horizontal stub then a vertical drop with
+// a small arrow head, used to visually join the trend label to the
+// sparkline below it.
+function JoinerArrow({ color = 'currentColor' }) {
+  return (
+    <svg width="12" height="14" viewBox="0 0 12 14" style={{ display: 'inline-block', verticalAlign: 'middle' }} aria-hidden="true">
+      <path
+        d="M 1 2 L 8 2 L 8 11"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.7"
+      />
+      <path
+        d="M 6 9 L 8 12 L 10 9"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.7"
+      />
+    </svg>
+  )
+}
+
 // Static particle anchors — same pattern as v1 dashboard, drift upward.
 const PARTICLES = [
   { w: 3, left: '5%',  dur: '14s', delay: '-3s',  drift: '-15px', op: 0.5 },
@@ -1107,10 +1169,34 @@ export default function Dashboard() {
                   </p>
                 </div>
                 {/* Sparkline grows to fill the remaining space between
-                    the workout title and the right-side stat stack. */}
-                <div style={{ flex: 1, minWidth: 30, display: 'flex', alignItems: 'center' }}>
+                    the workout title and the right-side stat stack. The
+                    trend label sits above with a small joining arrow
+                    that drops down toward the chart. */}
+                <div style={{ flex: 1, minWidth: 30, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 1 }}>
+                  {(() => {
+                    const trend = volumeTrend(heroVolumeHistory)
+                    if (!trend) return null
+                    return (
+                      <span style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        color: trend.color,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        marginLeft: 6,
+                      }}>
+                        {trend.label}
+                        <JoinerArrow color={trend.color} />
+                      </span>
+                    )
+                  })()}
                   {heroVolumeHistory.length >= 2 && (
-                    <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={120} height={28} />
+                    <div style={{ width: '100%' }}>
+                      <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={120} height={26} />
+                    </div>
                   )}
                 </div>
                 {/* Concrete facts on the right — average duration + recency. */}
