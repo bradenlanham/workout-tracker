@@ -12,6 +12,94 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
+    <script>
+      // Debug instrumentation — surfaces failures that would otherwise be a
+      // silent black screen. Captures errors before/during React mount, and
+      // if the React tree never appears within 6s, replaces the empty root
+      // with a diagnostic UI so the user can screenshot and send it.
+      (function () {
+        window.__appErrors = [];
+        window.addEventListener('error', function (e) {
+          window.__appErrors.push({
+            t: 'error',
+            m: (e && e.message) || 'unknown error',
+            s: (e && e.filename) || '',
+            ln: (e && e.lineno) || 0,
+            stack: (e && e.error && e.error.stack) || '',
+          });
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason;
+          window.__appErrors.push({
+            t: 'rejection',
+            m: (r && r.message) || (typeof r === 'string' ? r : 'unknown'),
+            stack: (r && r.stack) || '',
+          });
+        });
+        window.__diagnosticTimer = setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!root || root.children.length > 0) return; // React mounted, all good
+          showDiag(root);
+        }, 6000);
+        function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }); }
+        function showDiag(root) {
+          var html = '';
+          html += '<div style="padding:20px;font-family:-apple-system,system-ui,sans-serif;max-width:640px;margin:auto;color:#F9FAFB;background:#111827;min-height:100vh;line-height:1.5">';
+          html += '<h1 style="font-size:22px;margin:12px 0 4px">⚠ App failed to start</h1>';
+          html += '<p style="color:#9CA3AF;font-size:13px;margin:0 0 20px">Diagnostic info below — please screenshot and send to support.</p>';
+          html += '<div style="background:#1F2937;border:1px solid #374151;border-radius:12px;padding:14px;font-family:ui-monospace,SF Mono,monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;line-height:1.4">';
+          html += '<strong style="color:#FBBF24">Errors caught (' + window.__appErrors.length + '):</strong>\n';
+          if (window.__appErrors.length === 0) {
+            html += '(none — bundle may have failed to load entirely)\n';
+          } else {
+            for (var i = 0; i < window.__appErrors.length; i++) {
+              var er = window.__appErrors[i];
+              html += '\n#' + (i + 1) + ' [' + er.t + '] ' + esc(er.m) + '\n';
+              if (er.s) html += '  ' + esc(er.s) + ':' + er.ln + '\n';
+              if (er.stack) html += '  ' + esc(er.stack.slice(0, 500)) + '\n';
+            }
+          }
+          html += '\n<strong style="color:#FBBF24">Bundle status:</strong> checking…\n';
+          html += '\n<strong style="color:#FBBF24">User Agent:</strong>\n' + esc(navigator.userAgent) + '\n';
+          html += '\n<strong style="color:#FBBF24">URL:</strong>\n' + esc(location.href) + '\n';
+          html += '\n<strong style="color:#FBBF24">localStorage key present:</strong> ' + (function () { try { return localStorage.getItem('workout-tracker-v1') ? 'yes' : 'no'; } catch (e) { return 'inaccessible (' + e.message + ')'; } })() + '\n';
+          html += '\n<strong style="color:#FBBF24">Standalone PWA:</strong> ' + (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone ? 'yes' : 'no') + '\n';
+          html += '\n<strong style="color:#FBBF24">Cookies enabled:</strong> ' + navigator.cookieEnabled + '\n';
+          html += '</div>';
+          html += '<div style="margin-top:18px;display:flex;flex-direction:column;gap:10px">';
+          html += '<a href="/recovery.html" style="color:#1A1A1A;background:#FBBF24;font-weight:700;text-decoration:none;padding:14px 18px;border-radius:12px;display:block;text-align:center">📦 Go to data recovery</a>';
+          html += '<button onclick="location.reload(true)" style="color:#F9FAFB;background:#374151;border:0;font-weight:700;padding:14px 18px;border-radius:12px;font-size:15px;cursor:pointer">↻ Try again (force refresh)</button>';
+          html += '</div>';
+          html += '</div>';
+          root.innerHTML = html;
+          // Probe the bundle URL to see if it's reachable + correct content-type
+          var script = document.querySelector('script[type="module"][src]');
+          var bundleUrl = script ? script.src : '';
+          if (bundleUrl) {
+            try {
+              fetch(bundleUrl, { method: 'GET', cache: 'no-store' }).then(function (r) {
+                var ct = r.headers.get('content-type') || '(none)';
+                var line = 'Bundle status: HTTP ' + r.status + ' · content-type=' + ct + ' · ok=' + r.ok;
+                root.innerHTML = root.innerHTML.replace('Bundle status:</strong> checking…', 'Bundle status:</strong> ' + esc(line));
+              }, function (err) {
+                root.innerHTML = root.innerHTML.replace('Bundle status:</strong> checking…', 'Bundle status:</strong> fetch failed: ' + esc(err.message || err));
+              });
+            } catch (e) {
+              root.innerHTML = root.innerHTML.replace('Bundle status:</strong> checking…', 'Bundle status:</strong> fetch unsupported');
+            }
+          } else {
+            root.innerHTML = root.innerHTML.replace('Bundle status:</strong> checking…', 'Bundle status:</strong> no module script tag found in HTML');
+          }
+        }
+        // Expose so React can clear the timer if it mounts in time
+        window.__clearDiagnosticTimer = function () {
+          if (window.__diagnosticTimer) {
+            clearTimeout(window.__diagnosticTimer);
+            window.__diagnosticTimer = null;
+          }
+        };
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

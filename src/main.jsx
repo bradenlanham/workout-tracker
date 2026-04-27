@@ -8,8 +8,22 @@ if (screen?.orientation?.lock) {
   screen.orientation.lock('portrait').catch(() => {})
 }
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+try {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+  // Clear the index.html diagnostic timer — React mounted successfully.
+  if (window.__clearDiagnosticTimer) window.__clearDiagnosticTimer()
+} catch (e) {
+  // Push the error onto the diagnostic queue and let the timer surface it.
+  if (window.__appErrors) {
+    window.__appErrors.push({
+      t: 'mount-error',
+      m: (e && e.message) || String(e),
+      stack: (e && e.stack) || '',
+    })
+  }
+  throw e
+}
