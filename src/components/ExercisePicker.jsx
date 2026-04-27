@@ -14,6 +14,23 @@ import CreateExerciseModal from './CreateExerciseModal'
 //   2. "Search all muscles" checkbox — default ON. When OFF, search is
 //      scoped to the active tab's muscle filter.
 //
+// Batch 53 — search + usage upgrades:
+//   3. Hybrid substring + fuzzy search. Substring matches first; token-
+//      subset then trigram (>= 0.5) fuzzy matches appended below. Catches
+//      token-order variants ("DB Lateral" → "Lateral DB Raises") and
+//      typos ("Pec deck" → "Pec Dec") that pure substring missed. Fuzzy-
+//      only rows get a small "≈" glyph so the user understands the match.
+//   4. Per-row distinct-session usage count ("Logged 8 times" / "Logged
+//      once" / "Never logged"). Lookup keyed on exerciseId with name
+//      fallback for pre-Batch-15 sessions. Drops are nested in parent
+//      sets so they don't double-count at the exercise level.
+//   5. Logged / Never logged filter chip — orthogonal axis to muscle
+//      tabs. Mirrors the Batch 16l pattern from /exercises.
+//   6. Sort default in the All tab when no query: usage-desc then alpha,
+//      so high-history entries surface first while browsing. Recent +
+//      muscle tabs preserve their natural source order. With a query,
+//      tier order wins (substring → token-subset → trigram).
+//
 // Props:
 //   addedExercises[]  — already in the current section (shown as "Added")
 //   recentInSplit[]   — library entries used in sibling workouts (Step 10)
@@ -23,13 +40,21 @@ import CreateExerciseModal from './CreateExerciseModal'
 //
 // z-index 275 (above WorkoutEditSheet's 270).
 
+const USAGE_FILTERS = [
+  { id: 'all',    label: 'All' },
+  { id: 'logged', label: 'Logged' },
+  { id: 'never',  label: 'Never logged' },
+]
+
 export default function ExercisePicker({ addedExercises = [], recentInSplit = [], onAdd, onClose, theme }) {
   const storeLibrary = useStore(s => s.exerciseLibrary)
+  const sessions = useStore(s => s.sessions)
   const addExerciseToLibrary = useStore(s => s.addExerciseToLibrary)
 
   const [search, setSearch]           = useState('')
   const [tab, setTab]                 = useState(recentInSplit.length > 0 ? 'Recent' : 'All')
   const [searchAllMuscles, setSearchAllMuscles] = useState(true)
+  const [usageFilter, setUsageFilter] = useState('all')
   const [customInput, setCustomInput] = useState('')
   const [createOpen, setCreateOpen]   = useState(false)
   const [pendingName, setPendingName] = useState('')
@@ -47,11 +72,42 @@ export default function ExercisePicker({ addedExercises = [], recentInSplit = []
     return [...base, ...MUSCLE_GROUPS]
   }, [recentInSplit.length])
 
-  // Build the working list per the active tab + search-scope toggle.
-  const results = useMemo(() => {
-    const q = search.trim().toLowerCase()
+  // Distinct-session count per library entry. One scan; per-exercise
+  // increment per occurrence in a session (drops are nested in parent
+  // set, not double-counted at this level). Lookup keys on exerciseId
+  // first, name fallback for pre-Batch-15 / alias matches.
+  const useCountByKey = useMemo(() => {
+    const map = {}
+    for (const session of sessions) {
+      if (session.mode !== 'bb') continue
+      for (const ex of (session.data?.exercises || [])) {
+        const key = ex.exerciseId || ex.name
+        if (!key) continue
+        map[key] = (map[key] || 0) + 1
+      }
+    }
+    return map
+  }, [sessions])
 
-    // Which entries can this tab pull from?
+  const countFor = (ex) =>
+    useCountByKey[ex.id] ?? useCountByKey[ex.name] ?? 0
+
+  // Build the working list. Three layers:
+  //   1. Source pool: Recent / All / muscle-filtered library.
+  //   2. Tiered match when query is present:
+  //        Tier 1: substring matches (familiar behavior).
+  //        Tier 2: token-subset (catches "db lateral" → "Lateral DB
+  //                Raises" — query's tokens all present in candidate
+  //                in any order). Skipped for single-word queries.
+  //        Tier 3: trigram jaccard >= 0.5 via findSimilarExercises
+  //                (catches typos like "Pec deck" → "Pec Dec").
+  //   3. Usage filter + sort default.
+  // Returns { list, fuzzyOnlySet } so the renderer can mark fuzzy-only
+  // rows with a ≈ glyph.
+  const searchView = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const fuzzyOnly = new Set()
+
     let source
     if (tab === 'Recent') {
       source = recentInSplit
@@ -61,13 +117,77 @@ export default function ExercisePicker({ addedExercises = [], recentInSplit = []
       source = library.filter(ex => ex.muscleGroup === tab)
     }
 
-    // If search is on and user wants it scoped to "All muscles", search the
-    // full library instead of the tab's filtered list.
     const searchPool = q && searchAllMuscles && tab !== 'Recent' ? library : source
 
-    if (!q) return source
-    return searchPool.filter(ex => ex.name.toLowerCase().includes(q))
-  }, [library, recentInSplit, tab, search, searchAllMuscles])
+    let working
+    if (!q) {
+      working = source.slice()
+    } else {
+      const seen = new Set()
+      const matches = []
+
+      // Tier 1: substring matches first (familiar, strong-intent).
+      for (const ex of searchPool) {
+        if (ex.name.toLowerCase().includes(q)) {
+          matches.push(ex)
+          seen.add(ex.id || ex.name)
+        }
+      }
+
+      // Tier 2: token-subset (multi-word queries only). Catches
+      // "db lateral" → "Lateral DB Raises" where the query's tokens
+      // are all present in the candidate in any order. Light stem
+      // (drop trailing 's') so singular/plural variants compare
+      // equal — "curl" matches "curls", "raise" matches "raises".
+      const stem = t => t.replace(/s$/, '')
+      const qTokens = q.split(/\s+/).filter(Boolean)
+      if (qTokens.length >= 2) {
+        const qStems = qTokens.map(stem)
+        for (const ex of searchPool) {
+          const key = ex.id || ex.name
+          if (seen.has(key)) continue
+          const exStems = ex.name.toLowerCase().split(/\s+/).filter(Boolean).map(stem)
+          if (qStems.every(t => exStems.includes(t))) {
+            matches.push(ex)
+            seen.add(key)
+            fuzzyOnly.add(key)
+          }
+        }
+      }
+
+      // Tier 3: trigram jaccard fuzzy (catches typos / partial overlaps).
+      const trigramHits = findSimilarExercises(q, searchPool, { suggestThreshold: 0.5, max: 10 })
+      for (const m of trigramHits) {
+        const key = m.exercise.id || m.exercise.name
+        if (seen.has(key)) continue
+        matches.push(m.exercise)
+        seen.add(key)
+        fuzzyOnly.add(key)
+      }
+
+      working = matches
+    }
+
+    if (usageFilter === 'logged') {
+      working = working.filter(ex => (useCountByKey[ex.id] ?? useCountByKey[ex.name] ?? 0) > 0)
+    } else if (usageFilter === 'never') {
+      working = working.filter(ex => (useCountByKey[ex.id] ?? useCountByKey[ex.name] ?? 0) === 0)
+    }
+
+    // Browse mode (no query) on the All tab: surface high-history first.
+    // Recent + muscle tabs keep their natural source order.
+    // With a query: keep tier order (substring → token-subset → trigram).
+    if (!q && tab === 'All') {
+      working.sort((a, b) => {
+        const ca = useCountByKey[a.id] ?? useCountByKey[a.name] ?? 0
+        const cb = useCountByKey[b.id] ?? useCountByKey[b.name] ?? 0
+        if (cb !== ca) return cb - ca
+        return a.name.localeCompare(b.name)
+      })
+    }
+
+    return { list: working, fuzzyOnlySet: fuzzyOnly }
+  }, [library, recentInSplit, tab, search, searchAllMuscles, usageFilter, useCountByKey])
 
   const addedNames = useMemo(
     () => new Set(addedExercises.map(ex => typeof ex === 'string' ? ex : ex.name)),
@@ -120,6 +240,16 @@ export default function ExercisePicker({ addedExercises = [], recentInSplit = []
     }
   }
 
+  const emptyMessage = searchView.list.length === 0
+    ? tab === 'Recent'
+      ? 'No exercises from other workouts in this split yet.'
+      : usageFilter === 'logged'
+        ? 'No logged exercises here yet.'
+        : usageFilter === 'never'
+          ? 'Every exercise here has been logged.'
+          : 'No exercises match.'
+    : null
+
   return createPortal(
     <div
       className="fixed inset-0 flex flex-col bg-base max-w-lg mx-auto"
@@ -161,6 +291,23 @@ export default function ExercisePicker({ addedExercises = [], recentInSplit = []
         </label>
       </div>
 
+      {/* Batch 53 — usage-filter chip row (orthogonal to muscle tabs) */}
+      <div className="flex gap-1.5 px-4 pb-2 shrink-0">
+        {USAGE_FILTERS.map(opt => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setUsageFilter(opt.id)}
+            className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              usageFilter === opt.id ? theme.bg : 'bg-item text-c-secondary'
+            }`}
+            style={usageFilter === opt.id ? { color: theme.contrastText } : undefined}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex gap-2 px-4 pb-3 overflow-x-auto shrink-0" style={{ scrollbarWidth: 'none' }}>
         {tabs.map(t => (
           <button
@@ -178,27 +325,46 @@ export default function ExercisePicker({ addedExercises = [], recentInSplit = []
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1.5">
-        {results.length === 0 && tab === 'Recent' && (
-          <p className="text-center text-c-muted text-sm pt-8">
-            No exercises from other workouts in this split yet.
-          </p>
+        {emptyMessage && (
+          <p className="text-center text-c-muted text-sm pt-8">{emptyMessage}</p>
         )}
-        {results.length === 0 && tab !== 'Recent' && (
-          <p className="text-center text-c-muted text-sm pt-8">No exercises match.</p>
-        )}
-        {results.map(ex => {
+        {searchView.list.map(ex => {
           const added = addedNames.has(ex.name)
+          const key = ex.id || ex.name
+          const count = countFor(ex)
+          const fuzzyOnly = searchView.fuzzyOnlySet.has(key)
+          const usageText = count >= 2
+            ? `Logged ${count} times`
+            : count === 1
+              ? 'Logged once'
+              : 'Never logged'
           return (
             <button
-              key={ex.id || ex.name}
+              key={key}
               type="button"
               onClick={() => !added && onAdd(ex.name)}
               disabled={added}
-              className={`w-full text-left bg-card rounded-xl px-3 py-2.5 flex items-center gap-2 ${
+              className={`w-full text-left bg-card rounded-xl px-3 py-2 flex items-center gap-2 ${
                 added ? 'opacity-50' : 'hover:bg-item'
               }`}
             >
-              <span className="flex-1 text-sm">{ex.name}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm flex items-center gap-1.5">
+                  {fuzzyOnly && (
+                    <span
+                      className="text-c-muted shrink-0"
+                      aria-label="Similar match"
+                      title="Similar match"
+                    >
+                      ≈
+                    </span>
+                  )}
+                  <span className="truncate">{ex.name}</span>
+                </div>
+                <div className={`text-[11px] tabular-nums leading-tight ${count > 0 ? 'text-c-muted' : 'text-c-faint'}`}>
+                  {usageText}
+                </div>
+              </div>
               {added && <span className="text-xs text-c-muted shrink-0">Added</span>}
             </button>
           )

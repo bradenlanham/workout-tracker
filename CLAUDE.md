@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 27, 2026 (Batch 52 — SplitManager polish: provenance fades on inactive cards + Built-in pill on built-in cards)
+> Last updated: April 27, 2026 (Batch 53 — ExercisePicker hybrid search + per-row usage counts + Logged/Never filter)
 
 ## Rules for Claude
 
@@ -2356,6 +2356,34 @@ First post-stability-pass batch. Small confidence-rebuilder per `HANDOFF-B60.md`
 626. **"Built-in" pill on built-in cards** (`SplitManager.jsx:288-296`). New `<span>` in the existing top-row flex layout between title and `⋯` overflow button, gated on `split.isBuiltIn === true`. 9px / uppercase / `tracking-[0.08em]` / `font-bold` / `text-c-faint` / transparent bg — matches the mockup's `.split-builtin-pill` CSS spec but nested into the flex row instead of absolute-positioned, so it can't overlap the `⋯` button. `shrink-0 self-start mt-1.5` aligns the pill's baseline with the title row text. Theme-neutral (uses `text-c-faint`, not `theme.hex`), so no daylight + light-accent risk. Distinguishes built-in starting templates from user-created and user-imported splits at a glance.
 
 627. **Verification.** Lint exit 0, build clean (895.87 KB bundle / 241.68 KB gzipped — no measurable change). Three state combinations walked in preview at 375x812: BamBam active + built-in (pill + provenance both render), BamBam inactive + built-in via toggling HYROX active (pill renders, provenance hidden), HYROX active + custom (no pill, provenance renders, Active pill renders). `⋯` menus correct on both card types — built-in shows Edit/Duplicate/Export, custom shows Set Active/Edit/Duplicate/Export/Delete. Daylight + white accent passes — pill correctly uses daylight `--text-faint` (`#aaaaaa`). Computed pill styles match mockup spec exactly (9px / 700 / 0.72px = 0.08em / `text-c-faint` / uppercase / transparent bg / 6px top margin). Console clean of new errors and new warnings.
+
+### Batch 53 (April 27, 2026) — ExercisePicker hybrid search + per-row usage counts + Logged/Never filter
+
+User feedback after a Lanhammer split-builder session: "search for an exercise that didn't appear, and then I would re-add it. I'm wondering if I'm creating a duplicate." Investigation found the picker's main search at [ExercisePicker.jsx](src/components/ExercisePicker.jsx) used pure substring (`name.toLowerCase().includes(q)`) — fuzzy `findSimilarExercises` was wired only to the `+ Or add your own` create path, after the user had already seen "no match" and decided to re-add. So `"DB Lateral"` failed to surface `"Lateral DB Raises"` (token-order variant), `"Pec deck"` (typo) failed to surface `"Pec Dec"`, etc. Plus no usage signal anywhere — users with multiple similar entries couldn't tell which had session history without leaving the picker. Spec: `.claude/plans/exercise-picker-search-and-usage.md`. One-file change.
+
+628. **Hybrid three-tier search** (`ExercisePicker.jsx` `searchView` useMemo). When a query is typed, results are layered:
+    - **Tier 1 — substring** (`name.toLowerCase().includes(q)`): familiar, strong-intent matches first.
+    - **Tier 2 — token-subset** (multi-word queries only) with light s-stemming: query's tokens all present in candidate in any order. `"db lateral"` → `"Lateral DB Raises"`. `"curl hammer"` → `"DB Hammer Curls"` (curl ≈ curls via the stemmer that drops trailing `s`).
+    - **Tier 3 — trigram jaccard ≥ 0.5** via existing `findSimilarExercises`: typos and partial-overlap matches. `"pec deck"` → `"Pec Dec"`. `"leg presss"` → `"Leg Press"`.
+    The seen-set short-circuits dedup across tiers so the same row never appears twice. Tiers 2 + 3 entries get a `≈` glyph prefix (subtle muted color, `aria-label="Similar match"`) so users understand why a non-substring match is showing. The original 0.85-threshold create-path dedup at `handleAddCustom` is unchanged.
+
+629. **Per-row distinct-session usage count.** New `useCountByKey` useMemo subscribes to `useStore(s => s.sessions)` and walks all bb-mode sessions once, incrementing `map[exerciseId || name]` per occurrence. Drops are nested in their parent set, not double-counted at the exercise level. Lookup per row: `useCountByKey[ex.id] ?? useCountByKey[ex.name] ?? 0`. Display in a secondary line beneath the exercise name: `Logged 8 times` / `Logged once` / `Never logged` (the never case rendered in `text-c-faint` to de-emphasize). The user can now visually distinguish "the variant with 5 sessions" from "the never-logged duplicate" without leaving the picker.
+
+630. **Logged / Never logged filter chip.** New chip row above the muscle tabs (`All / Logged / Never logged`) — orthogonal to the muscle axis, composes with it. Default `All`. Mirrors the Batch 16l pattern from `/exercises`. Empty-state copy adapts: `"No logged exercises here yet."` when filter is Logged + 0 hits; `"Every exercise here has been logged."` when filter is Never + 0 hits.
+
+631. **Sort default in the All tab when browsing.** When no query AND active tab is `All`, sort by usage-desc then alphabetical. Lands the user on their high-history entries first — answers "what have I been training?" at a glance. Recent + muscle tabs preserve their natural source order (alphabetical from EXERCISE_LIBRARY) so the user's mental model of where things live in those slices doesn't shift. With a query, tier order wins (substring → token-subset → trigram).
+
+632. **`picker-search-sanity.mjs` at worktree root.** 14/14 pass. Mirrors the picker's three-tier logic against a 12-entry synthetic library. Validates: token-order via Tier 2 (lateral db ↔ DB Lateral Raises both ways), s-stemming (curl hammer → DB Hammer Curls), trigram typos (pec deck → Pec Dec, leg presss → Leg Press), substring same-order, case-insensitive substring, token-subset for word-spread queries (overhead extension → Overhead DB Extension), and false-positive ceiling (banana / qwerty zxcvb → 0 matches). Plus a noisy short-query check confirming `press`/`row`/`curl` don't pull noise — they hit only their substring matches.
+
+633. **Verification.** `npm run lint` exit 0. `npx vite build` → 897.76 KB bundle / 242.43 KB gzipped (+1.89 KB / +0.75 KB vs Batch 52, accounted for by the three useMemo blocks + tier-search loops + chip row + per-row metadata line). Live preview walk at 375×812 in dev preview (port 5173) with synthetic sessions seeded (Pec Dec ×5, Flat Bench Press ×3, Leg Press ×1):
+    - Picker opens from SplitCanvas → Push — Chest → expand Primary section → `+ Add exercise`.
+    - **Sort default verified**: All tab, no query → top rows render in usage-desc order (Pec Dec `Logged 5 times` → Flat Bench Press `Logged 3 times` → Leg Press `Logged once` → never-logged entries alphabetically).
+    - **Token-subset verified**: query `"lateral db"` → `Lateral DB Raises` (substring, no marker), `≈ DB Lateral Raises` (Tier 2, ≈ marker), `≈ DB Lateral Raise` (Tier 2). Exactly the case the user reported as broken.
+    - **Trigram typo verified**: query `"pec deck"` → `≈ Pec Dec Logged 5 times Added` (Tier 3, ≈ marker, with usage count visible).
+    - **Logged-only filter verified**: chip `Logged` → only the 3 logged rows show; chip `All` restores the full list.
+    - Console clean of new errors. The remaining errors (CreateExerciseModal Rules of Hooks via ExerciseLibraryManager, BbLogger ExerciseItem key-spread) all predate this batch and are documented known caveats.
+
+634. **Future merge UI follow-up — deferred.** With usage counts now visible in the picker, users can see which variant has history (`DB Lateral Raises` Logged 5 vs `Lateral DB Raises` Never logged) and naturally consolidate by deletion or by always picking the high-history variant going forward. An explicit "Merge with…" action via the existing `mergeExercises(keepId, mergeIds)` store action (Batch 15) could ship as its own batch if needed — surfacing it would extend `ExerciseEditSheet` overflow with a "Merge with…" item that lists ≥0.7 fuzzy matches and rewrites session `exerciseId`s. Not needed today.
 
 ---
 
