@@ -1085,25 +1085,27 @@ export default function Dashboard() {
                 Today
                 {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>
-                  {getWorkoutEmoji(recommendedWorkout)}
-                </span>
-                <p style={{
-                  fontSize: 22,
-                  fontWeight: 700,
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1.15,
-                  color: 'var(--text-primary)',
-                  margin: 0,
-                  flexShrink: 0,
-                  maxWidth: '40%',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {getWorkoutName(recommendedWorkout)}
-                </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                {/* Emoji + workout name as a tight inline group, so the
+                    flex gap doesn't push them apart. */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, maxWidth: '50%' }}>
+                  <span style={{ fontSize: 22, lineHeight: 1 }}>
+                    {getWorkoutEmoji(recommendedWorkout)}
+                  </span>
+                  <p style={{
+                    fontSize: 22,
+                    fontWeight: 700,
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.15,
+                    color: 'var(--text-primary)',
+                    margin: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {getWorkoutName(recommendedWorkout)}
+                  </p>
+                </div>
                 {/* Sparkline grows to fill the remaining space between
                     the workout title and the right-side stat stack. */}
                 <div style={{ flex: 1, minWidth: 30, display: 'flex', alignItems: 'center' }}>
