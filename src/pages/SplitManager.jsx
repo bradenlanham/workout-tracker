@@ -284,6 +284,14 @@ function SplitCard({
                 {meta}
               </div>
             </div>
+            {split.isBuiltIn && (
+              <span
+                aria-label="Built-in template"
+                className="shrink-0 self-start mt-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-c-faint"
+              >
+                Built-in
+              </span>
+            )}
             <button
               ref={overflowBtnRef}
               type="button"
@@ -322,7 +330,7 @@ function SplitCard({
             )
           }
         </div>
-        {provenance && (
+        {provenance && isActive && (
           <div className="text-[11px] text-c-muted tabular-nums leading-[1.2] mt-px">
             {provenance}
           </div>

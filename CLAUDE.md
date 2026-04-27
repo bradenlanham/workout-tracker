@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 27, 2026 (post-B51 stability pass — Dashboard rest-day crash fix, CreateExerciseModal hooks fix, top-level ErrorBoundary, ESLint with rules-of-hooks + no-undef as errors)
+> Last updated: April 27, 2026 (Batch 52 — SplitManager polish: provenance fades on inactive cards + Built-in pill on built-in cards)
 
 ## Rules for Claude
 
@@ -2346,6 +2346,16 @@ The day after Dashboard v2 merged, two render crashes surfaced (one for the user
     - **`useStore.js` `addSession` audit** — clean; the silent-failure path is in Zustand's default localStorage adapter, not in user code. Documented in HANDOFF-BLACK-SCREEN-DEBUG.md.
     - **CI for lint** — `npm run lint` on push via GitHub Actions. Not shipped today; user can add when ready.
     - **B60 SplitManager polish** — queued as the next redesign batch (small, low-risk warm-up after this incident). See `HANDOFF-B60.md`.
+
+### Batch 52 (April 27, 2026) — SplitManager polish (provenance fade + Built-in pill)
+
+First post-stability-pass batch. Small confidence-rebuilder per `HANDOFF-B60.md` — feel the new `ErrorBoundary` + ESLint safeguards work end-to-end on a low-stakes surface before tackling Progress or Logger v2. Two surgical edits to `SplitCard` in `SplitManager.jsx`. No store changes, no schema changes, no route changes. Spec: `Gains-Design-Critique.md` §4 + `Gains-Design-Mockups.html` lines 965–973 + 2032–2153.
+
+625. **Provenance line fades on inactive cards** (`SplitManager.jsx:325`). Added `&& isActive` to the `provenance && (...)` render condition. The `Started March 22, 2026` / `Created April 12, 2026` line is useful context on the active card but row noise on inactive cards. Users can see provenance dates via the edit screen if they care. One-line change.
+
+626. **"Built-in" pill on built-in cards** (`SplitManager.jsx:288-296`). New `<span>` in the existing top-row flex layout between title and `⋯` overflow button, gated on `split.isBuiltIn === true`. 9px / uppercase / `tracking-[0.08em]` / `font-bold` / `text-c-faint` / transparent bg — matches the mockup's `.split-builtin-pill` CSS spec but nested into the flex row instead of absolute-positioned, so it can't overlap the `⋯` button. `shrink-0 self-start mt-1.5` aligns the pill's baseline with the title row text. Theme-neutral (uses `text-c-faint`, not `theme.hex`), so no daylight + light-accent risk. Distinguishes built-in starting templates from user-created and user-imported splits at a glance.
+
+627. **Verification.** Lint exit 0, build clean (895.87 KB bundle / 241.68 KB gzipped — no measurable change). Three state combinations walked in preview at 375x812: BamBam active + built-in (pill + provenance both render), BamBam inactive + built-in via toggling HYROX active (pill renders, provenance hidden), HYROX active + custom (no pill, provenance renders, Active pill renders). `⋯` menus correct on both card types — built-in shows Edit/Duplicate/Export, custom shows Set Active/Edit/Duplicate/Export/Delete. Daylight + white accent passes — pill correctly uses daylight `--text-faint` (`#aaaaaa`). Computed pill styles match mockup spec exactly (9px / 700 / 0.72px = 0.08em / `text-c-faint` / uppercase / transparent bg / 6px top margin). Console clean of new errors and new warnings.
 
 ---
 
