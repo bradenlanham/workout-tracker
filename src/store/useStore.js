@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateSessionsToV9, migrateCardioSessionsToV9, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, defaultDimensionsForType, classifyRepRange, toLocalDateStr, collectLibraryAdditionsFromSplit } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateSessionsToV9, migrateCardioSessionsToV9, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, migrateSplitsToV10, defaultDimensionsForType, classifyRepRange, toLocalDateStr, collectLibraryAdditionsFromSplit } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -1042,7 +1042,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 9,
+      version: 10,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -1082,6 +1082,12 @@ const useStore = create(
       //   gain derived `distanceMiles` + `distanceMeters`. No HYROX rounds
       //   exist pre-v9 so no backfill there. Idempotent — sets that already
       //   carry weightKg are skipped.
+      //   V9→V10 (Batch 55): additive — every split gains rotationMode
+      //   ('cycle' default) so getRotationItemOnDate / getNextBbWorkout can
+      //   honor day-of-week mapping when rotationMode is 'week' (set on the
+      //   HYROX Hybrid template + on user splits saved while the WEEK toggle
+      //   is active in SplitCanvas). Pre-Batch-55 splits all become 'cycle'
+      //   so the legacy session-anchored behavior is preserved exactly.
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -1121,6 +1127,9 @@ const useStore = create(
           if (Array.isArray(persistedState.cardioSessions)) {
             persistedState.cardioSessions = migrateCardioSessionsToV9(persistedState.cardioSessions)
           }
+        }
+        if (version < 10 && Array.isArray(persistedState.splits)) {
+          persistedState.splits = migrateSplitsToV10(persistedState.splits)
         }
         return persistedState
       },

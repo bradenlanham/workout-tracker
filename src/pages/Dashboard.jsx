@@ -592,8 +592,13 @@ export default function Dashboard() {
     return `${days} day${days === 1 ? '' : 's'} to ${n.name}`
   })()
 
-  const nextBb           = getNextBbWorkout(sessions, rotation)
-  const nextRotationItem = getRotationItemOnDate(toDateStr(new Date()), sessions, rotation) ?? rotation[0]
+  // Batch 55 — thread rotationMode so week-mode splits (HYROX Hybrid +
+  // user splits saved with WEEK toggle) honor day-of-week mapping.
+  // Cycle-mode splits (BamBam's Blueprint + every legacy migration default)
+  // preserve the existing session-anchored behavior exactly.
+  const rotationMode     = activeSplit?.rotationMode || 'cycle'
+  const nextBb           = getNextBbWorkout(sessions, rotation, rotationMode)
+  const nextRotationItem = getRotationItemOnDate(toDateStr(new Date()), sessions, rotation, rotationMode) ?? rotation[0]
 
   const getWorkoutName = (wId) => {
     const w = activeSplit?.workouts?.find(w => w.id === wId)
@@ -757,7 +762,7 @@ export default function Dashboard() {
     if (daysAhead < 0) return null
     const d = new Date(today)
     d.setDate(today.getDate() + daysAhead)
-    return getRotationItemOnDate(toDateStr(d), sessions, rotation)
+    return getRotationItemOnDate(toDateStr(d), sessions, rotation, rotationMode)
   }
 
   function getDayInfo(date) {
@@ -789,7 +794,7 @@ export default function Dashboard() {
       return { type: 'future', planned, emoji: planned ? getWorkoutEmoji(planned) : null }
     }
     if (rotation?.length && sessions.length) {
-      const rotItem = getRotationItemOnDate(dStr, sessions, rotation)
+      const rotItem = getRotationItemOnDate(dStr, sessions, rotation, rotationMode)
       if (rotItem === 'rest') return { type: 'past-rest' }
     }
     return { type: 'empty' }

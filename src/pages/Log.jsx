@@ -100,7 +100,10 @@ export default function Log() {
   const activeSplit = splits?.find(s => s.id === activeSplitId) || splits?.[0] || null
   const rotation = activeSplit?.rotation || (workoutSequence && workoutSequence.length ? workoutSequence : BB_WORKOUT_SEQUENCE)
 
-  const nextBb = getNextBbWorkout(sessions, rotation)
+  // Batch 55 — thread rotationMode so Log picker honors week-mode (HYROX
+  // Hybrid + user week-mapped splits) for "next workout" detection.
+  const rotationMode = activeSplit?.rotationMode || 'cycle'
+  const nextBb = getNextBbWorkout(sessions, rotation, rotationMode)
 
   // Workout list: from active split's workouts, or fall back to rotation keys
   const workoutList = activeSplit?.workouts || rotation

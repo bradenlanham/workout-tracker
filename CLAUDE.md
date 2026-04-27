@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 27, 2026 (Batch 54 — User-initiated merge UI in ExerciseEditSheet)
+> Last updated: April 27, 2026 (Batch 55 — A few adjustments: focus mode + plate alignment + Incline Treadmill + week rotation + cross-type ghost rows)
 
 ## Rules for Claude
 
@@ -2412,6 +2412,52 @@ Investigation found the seed library at [exerciseLibrary.js:51-52](src/data/exer
     - Console clean of new errors. Pre-existing `BbLogger ExerciseItem` key-spread warnings remain (documented).
 
 641. **What's preserved vs. lost.** Sessions that pointed at the absorbed entry now point at the keep — volume / PR history all moves. The absorbed entry's library metadata (name aliases, sessionGymTags, hiddenAtGyms, defaultMachineByGym, repRangeUserSet, etc.) is **lost**. Keep wins all metadata. If the user merges the wrong direction (canonical absorbed into dupe), there's no undo — they'd need to manually re-tag. The confirm dialog spelling out source → target with names is the safety net.
+
+### Batch 55 (April 27, 2026) — A few adjustments: focus mode + plate alignment + Incline Treadmill + WEEK rotation + cross-type ghost rows
+
+Five live-feedback items from a HYROX session that morning. Three surgical UI tweaks (1, 2, 3); one small data-flow change (5); one meaningful semantic addition to the split rotation system (4) — addressing the user's reported "today is Monday but Dashboard shows Push" bug. Spec at `.claude/plans/a-few-adjustments-soft-flame.md`.
+
+642. **Item 1 — Hide HYROX section preview in focus mode** (`BbLogger.jsx:4128`). When the numpad is open during a hybrid workout (e.g. HYROX Hybrid → Tuesday with Lift section + HYROX section), the immersive yellow HYROX preview card stays visible and visually crowds the weight-set inputs. Now mirrors the existing `GroupLabel` hide predicate at line 4171 — when `numpadIsOpen`, the HYROX render branch returns null. One-line gate alongside the existing `isHyroxSection && !group.isActiveSuperset` check.
+
+643. **Item 2 — Plate row left-padding alignment** (`PlateSetRow` at `BbLogger.jsx:580`). The 100/45/35/25/10/+ plate buttons sat directly underneath the yellow "Work" Set Type chip — visually cramped against the accent. User: "I would like the 100 lb increment and all subsequent increments to begin on the right of that vertical line." Fixed by wrapping the existing `PlatePicker` call in a `<div className="pl-16">` (4rem = 64px = `w-14` SetTypeBtn + `gap-2`). Plate buttons now align with the start of the Total column. Verified live: Set Type "Warm" left=32 right=88, plate "100" starts at left=96 (8px gap matching the top row's gap-2). PlatePicker itself is unchanged — just the wrapping div.
+
+644. **Item 3 — Add Incline Treadmill cardio type** (`CardioLogger.jsx:10` + `:22`). Prepended `'Incline Treadmill'` to `BUILTIN_TYPES` so it renders FIRST in the type grid. Updated `getDistanceUnit` to return `'miles'` for Incline Treadmill (same as regular Treadmill). No Dashboard / History updates needed — both read the type string verbatim. Incline % / elevation gain dimension deliberately not added; user's notes field is sufficient for v1.
+
+645. **Item 4a — `rotationMode` field + persist v9→v10 migration** (`useStore.js`, `helpers.js`, `splitTemplates.js`). New optional field on `Split`: `rotationMode: 'cycle' | 'week'`. Defaults to `'cycle'` everywhere it's missing — preserves the legacy session-anchored behavior for BamBam's Blueprint and every pre-Batch-55 user split. New `migrateSplitsToV10(splits)` helper in `helpers.js` walks each split and stamps `rotationMode: 'cycle'` if absent (idempotent, returns same reference when nothing changed). Persist version bumped `9 → 10` with the additive migration block. HYROX Hybrid template (`splitTemplates.js:264`) gains `rotationMode: 'week'` since its 7-day rotation maps Sun=rest, Mon-Sat=workouts by design. `loadTemplateForDraft` extended to preserve `rotationMode` through draft serialization.
+
+646. **Item 4b — `getRotationItemOnDate` + `getNextBbWorkout` honor `rotationMode`** (`helpers.js:217` + `:414`). New optional `rotationMode` arg (default `'cycle'`). When `rotationMode === 'week'` AND `rotation.length === 7`:
+    - `getRotationItemOnDate(dateStr, ...)` parses `dateStr + 'T00:00:00'` as local midnight, returns `rotation[date.getDay()]` directly. Bypasses session-anchor logic entirely so today always gets today's slot.
+    - `getNextBbWorkout(sessions, ...)` walks forward from today's day-of-week up to 7 days, returns the first non-rest slot.
+    Defensive: rotationMode='week' with non-7-length rotation falls through to cycle behavior so a malformed split doesn't crash. Cycle mode preserves the legacy behavior exactly.
+
+647. **Item 4c — SplitCanvas saves/loads `rotationMode`** (`SplitCanvas.jsx:82` + `:131` + `:283`). `rotationView` useState now initializes from `existingSplit?.rotationMode || 'cycle'` so reopening a week-mode split shows the WEEK toggle. Mount-time draft pre-load restores rotationMode from the draft if present. `handleSave` includes `rotationMode: rotationView` in `splitData`, with a defensive guard that forces `'cycle'` when `rotationView === 'week'` but `rotation.length !== 7`. Auto-save useEffect now writes `rotationMode` into the draft so toggle changes persist through reload.
+
+648. **Item 4d — Dashboard + Log thread `rotationMode`** (`Dashboard.jsx:600-601` + `:765` + `:797`, `Log.jsx:103-105`). All four call sites of `getRotationItemOnDate` + `getNextBbWorkout` now pass `activeSplit?.rotationMode || 'cycle'`. Dashboard reads it once via `const rotationMode = activeSplit?.rotationMode || 'cycle'` and threads to all rotation-aware helpers (today's CTA card, weekly calendar's `getFullRotationItem`, monthly's past-rest detection). Log.jsx threads it to the picker's "next workout" detection. Every consumer is now rotation-mode-aware.
+
+649. **Item 4e — `batch-55-rotation-sanity.mjs`** at worktree root. 30/30 pass. Covers (1) week-mode `getRotationItemOnDate` across 14 calendar days mapping Sun→Sat correctly + the user's bug repro (Monday in week mode returns Quads, not rotation[0]=Push fallback); (2) defensive cases — week mode with non-7-length rotation falls to cycle, empty rotation returns null; (3) cycle mode preservation — same-day-as-anchor returns anchor's slot, 1-day-after returns next slot, default mode (omitted arg) behaves as cycle; (4) week-mode `getNextBbWorkout` — all-rest 7-day returns undefined, 5-day rotation in 'week' mode falls back to cycle returning sequence[0]; (5) `migrateSplitsToV10` adds default to missing entries, preserves existing 'week', returns same reference when idempotent, defensive against null/undefined/empty.
+
+650. **Item 5 — `lastExDataByName` cross-workout-type fallback** (`BbLogger.jsx:2999`). The pre-Batch-55 build only scanned `allPastSessions` (filtered to `s.type === type`), so a fresh split with new workout-type IDs got an empty `lastExDataByName` even though the user had logged Squat under a different type. Asymmetric with the recommender's `recHistory` (cross-workout-type via `getExerciseHistory`) — the user saw Coach's Tip but no Last Time ghost rows. Fix: third pass after the existing same-type/same-gym → same-type/any-gym chain. Walks ALL bb-mode sessions newest-first and fills in any still-missing exercise names. Same-type passes still win — no behavior change for active splits with their own history. Fields preserved exactly (sets, plates, barWeight, unilateral, equipmentInstance) so all downstream consumers (ghost row sets, plate-mode init, Uni toggle init, equipment instance seed) keep working.
+
+651. **Live preview verification** (port 5185, mobile 375×812). All 5 items pass:
+    - **Item 1**: HYROX Hybrid → Tuesday → Cable Lateral Raise expanded → focus weight input → numpad opens → Start HYROX button no longer in DOM (rendered=false, rect=null), HYROX preview wrapper gone. Confirms render-time gate.
+    - **Item 2**: BamBam → Push → Flat Bench Press → Plates ON → plate row "100" at left=96 = 32 + 64 (Set Type chip ends at 88). pl-16 wrapper applied correctly.
+    - **Item 3**: `/cardio` page renders 7 type chips with `Incline Treadmill` first.
+    - **Item 4**: `/splits/new/start` → tap HYROX Hybrid template → splitDraft seeds `rotationMode: 'week'` → SplitCanvas WEEK toggle pre-selected → Save → split persists with `rotationMode: 'week'` → Activate → Dashboard renders `🍑 Glutes & Light Run` (rotation[1]) for Monday. BamBam stays in cycle mode unchanged.
+    - **Item 5**: Seed prior session under workout-type 'push' with Squat (135×5 warmup, 225×8 working) → navigate to BamBam's Pull (different workout type, no Squat history under 'pull') → Add Exercise → Squat → expand → Last Time ghost rows render `Warm 135×5` and `Work 225×8`. Cross-workout-type fallback works.
+    - Console clean of new errors. Pre-existing `<ExerciseItem>` key-via-spread warnings at `BbLogger.jsx:3837` are documented caveats predating B41.
+
+652. **Files modified.**
+    - `src/pages/log/BbLogger.jsx` — Items 1, 2, 5 (HYROX hide gate + PlatePicker pl-16 wrapper + lastExDataByName third pass).
+    - `src/pages/CardioLogger.jsx` — Item 3 (BUILTIN_TYPES + getDistanceUnit).
+    - `src/utils/helpers.js` — Item 4 (`migrateSplitsToV10` + week-mode branches in `getRotationItemOnDate` + `getNextBbWorkout`).
+    - `src/store/useStore.js` — Item 4a (persist v10 migration + import).
+    - `src/data/splitTemplates.js` — Item 4a (HYROX Hybrid `rotationMode: 'week'` + loadTemplateForDraft preservation).
+    - `src/pages/SplitCanvas.jsx` — Item 4c (rotationView init from existingSplit + draft pre-load + handleSave commit).
+    - `src/pages/Dashboard.jsx` — Item 4d (3 call sites threading rotationMode).
+    - `src/pages/Log.jsx` — Item 4d (1 call site threading rotationMode).
+    - `batch-55-rotation-sanity.mjs` (new) — Item 4e (30 assertions).
+
+653. **Build.** `npx vite build --outDir /tmp/test-build` → 902.61 KB bundle / 243.67 KB gzipped (+5.24 KB / +1.59 KB vs Batch 54, accounted for by the rotation-mode helper branches + migrateSplitsToV10 + Dashboard/Log threading + SplitCanvas mode wiring + the lastExDataByName third pass).
 
 ---
 

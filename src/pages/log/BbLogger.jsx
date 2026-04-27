@@ -577,7 +577,12 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
           </button>
         )}
       </div>
-      <PlatePicker plates={plates} addPlate={addPlate} removePlate={removePlate} theme={theme} />
+      {/* Batch 55 — left-pad the plate row so 100/45/35/25/10/+ buttons
+          align with the start of the Total column (right of the Set Type
+          chip). pl-16 = 64px = w-14 SetTypeBtn (56px) + gap-2 (8px). */}
+      <div className="pl-16">
+        <PlatePicker plates={plates} addPlate={addPlate} removePlate={removePlate} theme={theme} />
+      </div>
     </div>
   )
 }
@@ -2992,6 +2997,24 @@ export default function BbLogger() {
       if (!lastExDataByName[ex.name]) lastExDataByName[ex.name] = ex
     }
   }
+  // Batch 55 — third pass, cross-workout-type fallback. When a user creates
+  // a NEW split with fresh workout-type IDs, allPastSessions is empty for
+  // that type, so exercises like Squat (last logged under a DIFFERENT type)
+  // would show no Last Time ghost rows. The recommender's recHistory was
+  // already cross-workout-type via getExerciseHistory, so the asymmetry was
+  // visible: Coach's Tip rendered but Last Time was silent. This third
+  // pass fills in any still-missing names from ALL bb-mode sessions
+  // newest-first, regardless of workout type. Same-type sessions still win
+  // (passes 1+2 above ran first), so no behavior change for active splits
+  // with their own history.
+  const allBbSessions = sessions
+    .filter(s => s.mode === 'bb' && s.data?.exercises?.length)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+  for (const sess of allBbSessions) {
+    for (const ex of sess.data.exercises) {
+      if (!lastExDataByName[ex.name]) lastExDataByName[ex.name] = ex
+    }
+  }
 
   // Batch 28: build a name→library entry map so we can apply the per-gym
   // hide filter against library records (hiddenAtGyms lives there).
@@ -4130,6 +4153,13 @@ export default function BbLogger() {
             !group.isCompleted &&
             typeof group.label === 'string' &&
             group.label.trim().toLowerCase() === 'hyrox'
+          // Batch 55 — hide HYROX preview card during focus mode (numpad
+          // open) so weight-set logging on a hybrid workout isn't visually
+          // crowded by the immersive yellow card. Mirrors the GroupLabel
+          // hide predicate below.
+          if (isHyroxSection && numpadIsOpen) {
+            return null
+          }
           if (isHyroxSection) {
             return (
               <div key={group.label}>

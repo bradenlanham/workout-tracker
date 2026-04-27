@@ -79,7 +79,11 @@ export default function SplitCanvas() {
   )
 
   // UI-local state
-  const [rotationView, setRotationView]   = useState('cycle')
+  // Batch 55 — pre-fill rotationView from the split's saved rotationMode
+  // (default 'cycle') so reopening a week-mode split shows the WEEK toggle.
+  // The rotationView state IS the saved rotationMode going forward — when
+  // the user hits Save, splitData.rotationMode = rotationView.
+  const [rotationView, setRotationView]   = useState(() => existingSplit?.rotationMode || 'cycle')
   const [workoutsExpanded, setWorkoutsExpanded] = useState(true)
   const [rotationExpanded, setRotationExpanded] = useState(true)
   const [editingWorkoutId, setEditingWorkoutId] = useState(null)
@@ -113,6 +117,9 @@ export default function SplitCanvas() {
     if (d.emoji    !== undefined) setEmoji(d.emoji || '🏋️')
     if (d.workouts !== undefined) setWorkouts(normalizeWorkouts(d.workouts))
     if (d.rotation !== undefined) setRotation(Array.isArray(d.rotation) ? [...d.rotation] : [])
+    // Batch 55 — preserve rotation mode through drafts. Templates that seed
+    // 'week' (HYROX Hybrid) keep their mode through the resume flow.
+    if (d.rotationMode !== undefined) setRotationView(d.rotationMode === 'week' ? 'week' : 'cycle')
     // Batch 45 followup #2 — suppress banner for template-seeded drafts.
     // loadTemplate sets silent:true so the user doesn't see "Unsaved draft
     // restored" on first tap of a template (there's nothing to recover —
@@ -129,11 +136,11 @@ export default function SplitCanvas() {
     const t = setTimeout(() => {
       setSplitDraft({
         originalId: isEditing ? id : null,
-        draft: { name, emoji, workouts, rotation },
+        draft: { name, emoji, workouts, rotation, rotationMode: rotationView },
       })
     }, 500)
     return () => clearTimeout(t)
-  }, [name, emoji, workouts, rotation, isDirty, isEditing, id, setSplitDraft])
+  }, [name, emoji, workouts, rotation, rotationView, isDirty, isEditing, id, setSplitDraft])
 
   const markDirty = () => setIsDirty(true)
 
@@ -271,11 +278,18 @@ export default function SplitCanvas() {
 
   const handleSave = () => {
     if (!canSave) return
+    // Batch 55 — week mode requires exactly 7 entries (Sun=0..Sat=6 mapping).
+    // If the user is in WEEK view but rotation isn't 7 long, force cycle so
+    // a malformed week-mode split doesn't crash getRotationItemOnDate. The
+    // RotationWeekGrid validation hint already nudges them to fix it before
+    // saving; this is the defensive backstop.
+    const safeRotationMode = rotationView === 'week' && rotation.length === 7 ? 'week' : 'cycle'
     const splitData = {
       name: name.trim(),
       emoji,
       workouts,
       rotation,
+      rotationMode: safeRotationMode,
       isBuiltIn: isEditing ? (existingSplit?.isBuiltIn ?? false) : false,
     }
     if (isEditing && existingSplit) {

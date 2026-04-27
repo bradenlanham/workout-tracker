@@ -7,7 +7,7 @@ import { toLocalDateStr } from '../utils/helpers'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BUILTIN_TYPES = ['Treadmill', 'Stairmaster', 'Running', 'Walking', 'Assault Bike', 'Other']
+const BUILTIN_TYPES = ['Incline Treadmill', 'Treadmill', 'Stairmaster', 'Running', 'Walking', 'Assault Bike', 'Other']
 
 const INTENSITIES = [
   { id: 'easy',     label: 'Easy' },
@@ -19,7 +19,7 @@ const INTENSITIES = [
 const INTENSITY_LABELS = { easy: 'Easy', moderate: 'Moderate', hard: 'Hard', allout: 'All Out' }
 
 function getDistanceUnit(type) {
-  if (['Running', 'Walking', 'Treadmill'].includes(type)) return 'miles'
+  if (['Running', 'Walking', 'Treadmill', 'Incline Treadmill'].includes(type)) return 'miles'
   if (type === 'Stairmaster') return 'floors'
   return null
 }

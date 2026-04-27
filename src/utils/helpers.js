@@ -214,9 +214,28 @@ export function normalizeExerciseEntry(ex) {
 
 // ── BB helpers ───────────────────────────────────────────────────────────────
 
-export function getNextBbWorkout(sessions, customSequence) {
+// Batch 55 — `rotationMode` (3rd arg, default 'cycle') optionally pins the
+// rotation to specific days of the week. When rotationMode === 'week' AND
+// rotation.length === 7 (Sun=0..Sat=6 mapping), returns the workout
+// scheduled for today's day-of-week (or the next non-rest day forward if
+// today is rest). Cycle mode preserves the legacy session-anchored behavior.
+// Defensive: rotationMode='week' with a non-7-length rotation falls through
+// to cycle behavior so a malformed split doesn't crash.
+export function getNextBbWorkout(sessions, customSequence, rotationMode = 'cycle') {
   const full = (customSequence && customSequence.length) ? customSequence : BB_WORKOUT_SEQUENCE
   const sequence = full.filter(t => t !== 'rest') // skip rest days — they're rotation markers only
+  if (!sequence.length) return undefined
+  if (rotationMode === 'week' && full.length === 7) {
+    const today = new Date()
+    const todayDow = today.getDay()
+    // Walk forward from today (inclusive) up to 7 days to find the next
+    // non-rest slot. If every slot is 'rest', fall back to sequence[0].
+    for (let offset = 0; offset < 7; offset++) {
+      const slot = full[(todayDow + offset) % 7]
+      if (slot && slot !== 'rest') return slot
+    }
+    return sequence[0]
+  }
   const bbSessions = sessions.filter(s => s.mode === 'bb' && s.type !== 'custom' && !s.type?.startsWith('tpl_'))
   if (!bbSessions.length) return sequence[0]
   const sorted = [...bbSessions].sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -385,8 +404,22 @@ export function playBeep() {
 // A streak is an unbroken run of active days. Rotation rest slots do NOT
 // count — if nothing was logged, the day is a gap and breaks the streak.
 
-export function getRotationItemOnDate(dateStr, sessions, rotation) {
+// Batch 55 — `rotationMode` (4th arg, default 'cycle') optionally pins
+// rotation slots to specific days of the week. When rotationMode === 'week'
+// AND rotation.length === 7 (Sun=0..Sat=6 mapping), bypasses the
+// session-anchor logic and returns rotation[dateDow] directly — so today
+// always gets today's slot regardless of what was last logged. Cycle mode
+// preserves the legacy session-anchored behavior exactly. Defensive:
+// rotationMode='week' with a non-7-length rotation falls through to cycle.
+export function getRotationItemOnDate(dateStr, sessions, rotation, rotationMode = 'cycle') {
   if (!rotation || !rotation.length) return null
+  if (rotationMode === 'week' && rotation.length === 7 && typeof dateStr === 'string') {
+    // Parse as local midnight so getDay() matches the user's calendar.
+    const d = new Date(`${dateStr}T00:00:00`)
+    if (!isNaN(d.getTime())) {
+      return rotation[d.getDay()]
+    }
+  }
   const nonRest = rotation.filter(t => t !== 'rest')
   if (!nonRest.length) return 'rest'
   const anchors = sessions
@@ -1426,6 +1459,24 @@ export function migrateCardioSessionsToV9(cardioSessions) {
     return c
   })
   return changed > 0 ? out : cardioSessions
+}
+
+// Batch 55 v9 → v10 split migration. Additive: every existing split that
+// doesn't carry a `rotationMode` field gets `rotationMode: 'cycle'` so the
+// pre-Batch-55 cycle-anchored behavior is preserved exactly. Splits already
+// carrying a rotationMode (e.g. HYROX Hybrid template seeded as 'week') keep
+// their value. Idempotent — same array reference returned when nothing
+// changed.
+export function migrateSplitsToV10(splits) {
+  if (!Array.isArray(splits)) return splits
+  let changed = 0
+  const out = splits.map(s => {
+    if (!s || typeof s !== 'object') return s
+    if (typeof s.rotationMode === 'string') return s
+    changed++
+    return { ...s, rotationMode: 'cycle' }
+  })
+  return changed > 0 ? out : splits
 }
 
 // Per-session top set for an exercise — the working set with the highest

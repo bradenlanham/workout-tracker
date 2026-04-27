@@ -257,6 +257,10 @@ export const SPLIT_TEMPLATES = [
     previewEmojis: ['rest', '🍑', '🏋️‍♀️', '🦵', '🚶‍♀️', '🔥', '💎'],
     workouts: HYROX_HYBRID_WORKOUTS,
     rotation: ['rest', 'hyx_monday', 'hyx_tuesday', 'hyx_wednesday', 'hyx_thursday', 'hyx_friday', 'hyx_saturday'],
+    // Batch 55 — HYROX Hybrid maps to specific days of the week (Sun=rest,
+    // Mon-Sat=workouts) by design. WEEK mode pins each rotation slot to its
+    // day-of-week, so logging Tuesday's HYROX session doesn't shift Wed/Thu/Fri.
+    rotationMode: 'week',
   },
   {
     id: 'tmpl_bam',
@@ -457,5 +461,9 @@ export function loadTemplateForDraft(templateId) {
       })),
     })),
     rotation: [...t.rotation],
+    // Batch 55 — preserve rotationMode through draft so a template seeded
+    // as 'week' (HYROX Hybrid) stays week-mapped on save. Templates that
+    // omit rotationMode default to 'cycle' downstream.
+    ...(t.rotationMode ? { rotationMode: t.rotationMode } : {}),
   }
 }
