@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workout Tracker — Data Recovery</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background: #111827;
+      color: #F9FAFB;
+      padding: 20px 16px 60px;
+      max-width: 640px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+    h1 { font-size: 24px; margin: 12px 0 8px; }
+    .lede { color: #9CA3AF; font-size: 14px; margin-bottom: 24px; }
+    .card {
+      background: #1F2937;
+      border: 1px solid #374151;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .ok { color: #34D399; }
+    .warn { color: #FBBF24; }
+    .err { color: #F87171; }
+    .muted { color: #9CA3AF; font-size: 13px; }
+    button {
+      width: 100%;
+      padding: 14px 18px;
+      background: #8B5CF6;
+      color: white;
+      border: 0;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 10px;
+      -webkit-appearance: none;
+    }
+    button.secondary {
+      background: #374151;
+      color: #F9FAFB;
+    }
+    button:active { transform: scale(0.98); }
+    textarea {
+      width: 100%;
+      height: 240px;
+      background: #0F172A;
+      color: #F9FAFB;
+      border: 1px solid #374151;
+      border-radius: 10px;
+      padding: 12px;
+      font-family: ui-monospace, SF Mono, monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    code { background: #0F172A; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .stats { display: flex; gap: 16px; margin: 8px 0; }
+    .stat-num { font-size: 28px; font-weight: 800; }
+    .stat-lbl { font-size: 10px; letter-spacing: 0.1em; color: #9CA3AF; text-transform: uppercase; }
+    ol li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>📦 Data Recovery</h1>
+  <p class="lede">
+    This page reads your training data directly out of your browser's storage,
+    without running the app code. Use it if the main app shows a black screen
+    or won't load.
+  </p>
+
+  <div class="card">
+    <div id="status">Reading…</div>
+    <div id="stats" class="stats" style="display:none;"></div>
+  </div>
+
+  <div class="card">
+    <button id="download">⬇ Download backup file</button>
+    <button id="copy" class="secondary">📋 Copy JSON to clipboard</button>
+    <button id="show" class="secondary">👁 Show JSON below</button>
+    <textarea id="dump" placeholder="Tap 'Show JSON below' to view raw data here." readonly style="display:none;"></textarea>
+  </div>
+
+  <div class="card">
+    <strong>Next steps after you have your backup file:</strong>
+    <ol>
+      <li>Save the downloaded file somewhere safe (email it to yourself, AirDrop to a laptop, etc).</li>
+      <li>Once the app is fixed, open it normally and go to <code>≡ Menu → Manage Data → Import</code> to load your backup back in.</li>
+    </ol>
+  </div>
+
+  <script>
+    var raw = null;
+    try { raw = localStorage.getItem('workout-tracker-v1'); } catch (e) {}
+    var statusEl = document.getElementById('status');
+    var statsEl = document.getElementById('stats');
+    var parsed = null;
+    var sessionCount = 0, splitCount = 0, libraryCount = 0, cardioCount = 0;
+
+    if (!raw) {
+      statusEl.innerHTML = '<span class="warn">⚠ No saved data found in this browser.</span><br/>' +
+        '<span class="muted">Make sure you opened this page on the same domain you use for the app: <code>bambam-bbblueprint.vercel.app/recovery.html</code></span>';
+    } else {
+      try {
+        parsed = JSON.parse(raw);
+        var s = parsed && parsed.state ? parsed.state : parsed;
+        sessionCount = (s && s.sessions && s.sessions.length) || 0;
+        splitCount = (s && s.splits && s.splits.length) || 0;
+        libraryCount = (s && s.exerciseLibrary && s.exerciseLibrary.length) || 0;
+        cardioCount = (s && s.cardioSessions && s.cardioSessions.length) || 0;
+        statusEl.innerHTML = '<span class="ok">✓ Data found and readable.</span>';
+        statsEl.style.display = 'flex';
+        statsEl.innerHTML =
+          '<div><div class="stat-num">' + sessionCount + '</div><div class="stat-lbl">Sessions</div></div>' +
+          '<div><div class="stat-num">' + splitCount + '</div><div class="stat-lbl">Splits</div></div>' +
+          '<div><div class="stat-num">' + cardioCount + '</div><div class="stat-lbl">Cardio</div></div>' +
+          '<div><div class="stat-num">' + libraryCount + '</div><div class="stat-lbl">Library</div></div>';
+      } catch (e) {
+        statusEl.innerHTML = '<span class="err">✗ Data exists but couldn\'t parse:</span> <code>' + (e.message || e) + '</code>';
+      }
+    }
+
+    document.getElementById('show').onclick = function () {
+      var ta = document.getElementById('dump');
+      ta.style.display = 'block';
+      ta.value = raw || '(no data)';
+      ta.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    document.getElementById('copy').onclick = function () {
+      var btn = this;
+      if (!raw) { alert('No data to copy.'); return; }
+      // Build the export shape the in-app importer expects
+      var s = parsed && parsed.state ? parsed.state : parsed;
+      var exportData = Object.assign({}, s, { exportedAt: new Date().toISOString() });
+      var json = JSON.stringify(exportData, null, 2);
+      // Modern clipboard API first; fallback to execCommand
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json).then(function () {
+          btn.textContent = '✓ Copied — paste into a notes app';
+          setTimeout(function () { btn.textContent = '📋 Copy JSON to clipboard'; }, 3000);
+        }, function () { fallbackCopy(json, btn); });
+      } else {
+        fallbackCopy(json, btn);
+      }
+    };
+
+    function fallbackCopy(text, btn) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); btn.textContent = '✓ Copied'; }
+      catch (e) { btn.textContent = '✗ Copy failed — use Show JSON instead'; }
+      document.body.removeChild(ta);
+      setTimeout(function () { btn.textContent = '📋 Copy JSON to clipboard'; }, 3000);
+    }
+
+    document.getElementById('download').onclick = function () {
+      if (!parsed) { alert('No data to download.'); return; }
+      var s = parsed && parsed.state ? parsed.state : parsed;
+      var exportData = Object.assign({}, s, { exportedAt: new Date().toISOString() });
+      var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      var ts = new Date().toISOString().slice(0, 10);
+      var filename = 'workout-backup-recovery-' + ts + '.json';
+
+      // iOS Safari handles <a download> inconsistently. Try Web Share API first
+      // (works in standalone Safari with files support) then fall back to <a>.
+      if (navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: 'application/json' })] })) {
+        var file = new File([blob], filename, { type: 'application/json' });
+        navigator.share({ files: [file], title: 'Workout Backup' }).catch(function () {
+          downloadViaAnchor(blob, filename);
+        });
+      } else {
+        downloadViaAnchor(blob, filename);
+      }
+    };
+
+    function downloadViaAnchor(blob, filename) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+  </script>
+</body>
+</html>
