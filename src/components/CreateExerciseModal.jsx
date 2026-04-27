@@ -137,6 +137,28 @@ export default function CreateExerciseModal({ open, initialName = '', onSave, on
     return () => clearTimeout(t)
   }, [name, open, type, primaryMuscles.length, equipment])
 
+  // Save eligibility per type. MUST run before the `if (!open) return null`
+  // early return below — every hook has to be called in the same order on
+  // every render or React errors with "Rendered more hooks than during the
+  // previous render."
+  const canSave = useMemo(() => {
+    if (!name.trim()) return false
+    if (type === 'weight-training') {
+      return primaryMuscles.length > 0 && !!equipment
+    }
+    if (type === 'running') {
+      return !!runEquipment
+    }
+    if (type === 'hyrox-round') {
+      const stationOk = roundMode === 'single'
+        ? !!roundStationId
+        : roundPool.length > 0
+      return stationOk && runDistanceM > 0 && roundCount > 0 && restSec >= 0
+    }
+    if (type === 'hyrox-station') return false  // catalog only
+    return false
+  }, [name, type, primaryMuscles, equipment, runEquipment, roundMode, roundStationId, roundPool, runDistanceM, roundCount, restSec])
+
   if (!open) return null
 
   const pickType = (t) => {
@@ -161,25 +183,6 @@ export default function CreateExerciseModal({ open, initialName = '', onSave, on
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     )
   }
-
-  // Save eligibility per type
-  const canSave = useMemo(() => {
-    if (!name.trim()) return false
-    if (type === 'weight-training') {
-      return primaryMuscles.length > 0 && !!equipment
-    }
-    if (type === 'running') {
-      return !!runEquipment
-    }
-    if (type === 'hyrox-round') {
-      const stationOk = roundMode === 'single'
-        ? !!roundStationId
-        : roundPool.length > 0
-      return stationOk && runDistanceM > 0 && roundCount > 0 && restSec >= 0
-    }
-    if (type === 'hyrox-station') return false  // catalog only
-    return false
-  }, [name, type, primaryMuscles, equipment, runEquipment, roundMode, roundStationId, roundPool, runDistanceM, roundCount, restSec])
 
   const canSkip = type === 'weight-training' && name.trim().length > 0
 
