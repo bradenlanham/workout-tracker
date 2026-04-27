@@ -97,6 +97,9 @@ function StreakBadge({ streak, themeHex }) {
 }
 
 // ── Compact 3-metric tile used in the header (Total / Split / Streak) ───────
+// Number + label stack, right-aligned. Streak variant supports an inline
+// flame (baseline-aligned with the digits) and an animated gradient ring
+// for Legendary / Mythic tiers.
 function MetricStat({ number, label, numberColor, labelColor, suffix, animatedTier }) {
   const numStyle = {
     fontSize: 22,
@@ -106,8 +109,8 @@ function MetricStat({ number, label, numberColor, labelColor, suffix, animatedTi
     color: numberColor || 'var(--text-primary)',
     fontVariantNumeric: 'tabular-nums',
     display: 'inline-flex',
-    alignItems: 'baseline',
-    gap: 3,
+    alignItems: 'center',
+    gap: 4,
   }
   const labStyle = {
     fontSize: 9,
@@ -118,7 +121,16 @@ function MetricStat({ number, label, numberColor, labelColor, suffix, animatedTi
     marginTop: 4,
     lineHeight: 1,
   }
-  // Render an animated gradient ring for Legendary / Mythic streaks.
+  const inner = (
+    <span style={numStyle}>
+      <span>{number}</span>
+      {suffix && (
+        <span style={{ fontSize: 18, lineHeight: 1, display: 'inline-block', transform: 'translateY(-1px)' }}>
+          {suffix}
+        </span>
+      )}
+    </span>
+  )
   const numberNode = animatedTier ? (
     <span style={{
       display: 'inline-block',
@@ -129,19 +141,13 @@ function MetricStat({ number, label, numberColor, labelColor, suffix, animatedTi
       animation: `${animatedTier.animName} 3s linear infinite`,
       filter: animatedTier.glow || undefined,
     }}>
-      <span style={{ ...numStyle, padding: '2px 6px', borderRadius: 6, backgroundColor: 'rgba(10,10,14,0.85)' }}>
-        {number}
-        {suffix && <span style={{ fontSize: 14 }}>{suffix}</span>}
+      <span style={{ display: 'inline-block', padding: '2px 6px', borderRadius: 6, backgroundColor: 'rgba(10,10,14,0.85)' }}>
+        {inner}
       </span>
     </span>
-  ) : (
-    <span style={numStyle}>
-      {number}
-      {suffix && <span style={{ fontSize: 14 }}>{suffix}</span>}
-    </span>
-  )
+  ) : inner
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}>
       {numberNode}
       <span style={labStyle}>{label}</span>
     </div>
@@ -959,19 +965,27 @@ export default function Dashboard() {
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 14,
+                gap: 0,
               }}
             >
-              <MetricStat number={totalSessions} label="Total" />
-              <MetricStat number={splitSessionCount} label="Split" />
-              <MetricStat
-                number={streak}
-                label={currentTier.name}
-                numberColor={currentTier.color}
-                labelColor={currentTier.color}
-                suffix={streak > 0 ? '🔥' : null}
-                animatedTier={currentTier.isAnimated ? currentTier : null}
-              />
+              <div style={{ padding: '0 12px' }}>
+                <MetricStat number={totalSessions} label="Total" />
+              </div>
+              <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.18)' }} />
+              <div style={{ padding: '0 12px' }}>
+                <MetricStat number={splitSessionCount} label="Split" />
+              </div>
+              <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.18)' }} />
+              <div style={{ padding: '0 12px 0 14px' }}>
+                <MetricStat
+                  number={streak}
+                  label="Streak"
+                  numberColor={currentTier.color}
+                  labelColor={currentTier.color}
+                  suffix={streak > 0 ? '🔥' : null}
+                  animatedTier={currentTier.isAnimated ? currentTier : null}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1064,57 +1078,53 @@ export default function Dashboard() {
                 Today
                 {heroDayOfCycle ? ` · Day ${heroDayOfCycle.day} of ${heroDayOfCycle.total}` : ''}
               </p>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                 <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>
                   {getWorkoutEmoji(recommendedWorkout)}
                 </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{
-                    fontSize: 24,
-                    fontWeight: 700,
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.15,
-                    color: 'var(--text-primary)',
-                    margin: 0,
+                <p style={{
+                  fontSize: 24,
+                  fontWeight: 700,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.15,
+                  color: 'var(--text-primary)',
+                  margin: 0,
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {getWorkoutName(recommendedWorkout)}
+                </p>
+                {/* Compact stat stack on the right — concrete facts only.
+                    Two right-aligned rows: typical duration + recency.
+                    Hidden until we have at least one prior session. */}
+                {(heroAvgDuration || heroLastSeen) && (
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+                    gap: 4, flexShrink: 0, minWidth: 0,
                   }}>
-                    {getWorkoutName(recommendedWorkout)}
-                  </p>
-                  {/* Smart meta — temporal info first when we have history,
-                      scope info as the cold-start fallback. */}
-                  {heroVolumeHistory.length >= 2 ? (
-                    <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
-                      {heroAvgDuration ? `~${heroAvgDuration} min typical` : ''}
-                      {heroAvgDuration && heroLastSeen ? ' · ' : ''}
-                      {heroLastSeen ? `last done ${heroLastSeen}` : ''}
-                    </p>
-                  ) : (
-                    <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>
-                      ~{heroExerciseCount} exercise{heroExerciseCount === 1 ? '' : 's'}
-                      {heroSectionCount > 1 ? ` · ${heroSectionCount} sections` : ''}
-                      {heroLastSeen ? ` · last done ${heroLastSeen}` : ''}
-                    </p>
-                  )}
-                </div>
-                {/* Tiny corner sparkline + delta — top-right of the hero,
-                    only when we have ≥2 prior sessions of this workout. */}
-                {heroVolumeHistory.length >= 2 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
-                    <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={84} height={32} />
-                    {(() => {
-                      const d = volumeDelta(heroVolumeHistory)
-                      if (!d) return null
-                      return (
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          letterSpacing: '0.06em',
-                          textTransform: 'uppercase',
-                          color: d.color,
-                        }}>
-                          {d.text} vol
+                    {heroAvgDuration && (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+                          ~{heroAvgDuration}m
                         </span>
-                      )
-                    })()}
+                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                          typical
+                        </span>
+                      </div>
+                    )}
+                    {heroLastSeen && (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+                          {heroLastSeen}
+                        </span>
+                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                          last
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
