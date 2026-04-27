@@ -1178,14 +1178,34 @@ export default function Dashboard() {
                     <VolumeSparkline history={heroVolumeHistory} accent={theme.hex} width={120} height={26} />
                   </div>
                 )}
-                {/* Right stat column — VOLUME on top labels the chart in
-                    the middle (with a directional arrow), then AVERAGE
-                    duration and LAST recency. */}
+                {/* Right stat column — order top→bottom: LAST recency,
+                    AVERAGE duration, then VOLUME (arrow + label) at the
+                    bottom labeling the sparkline in the middle. */}
                 {(heroAvgDuration || heroLastSeen || heroVolumeHistory.length >= 2) && (
                   <div style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
                     gap: 4, flexShrink: 0, minWidth: 0,
                   }}>
+                    {heroLastSeen && (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+                          {heroLastSeen}
+                        </span>
+                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                          Last
+                        </span>
+                      </div>
+                    )}
+                    {heroAvgDuration && (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+                          ~{heroAvgDuration}m
+                        </span>
+                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                          Average
+                        </span>
+                      </div>
+                    )}
                     {heroVolumeHistory.length >= 2 && (() => {
                       const trend = volumeTrend(heroVolumeHistory)
                       if (!trend) return null
@@ -1206,26 +1226,6 @@ export default function Dashboard() {
                         </div>
                       )
                     })()}
-                    {heroAvgDuration && (
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
-                          ~{heroAvgDuration}m
-                        </span>
-                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                          Average
-                        </span>
-                      </div>
-                    )}
-                    {heroLastSeen && (
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
-                          {heroLastSeen}
-                        </span>
-                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                          Last
-                        </span>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
