@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 27, 2026 (Batch 53 — ExercisePicker hybrid search + per-row usage counts + Logged/Never filter)
+> Last updated: April 27, 2026 (Batch 54 — User-initiated merge UI in ExerciseEditSheet)
 
 ## Rules for Claude
 
@@ -2383,7 +2383,35 @@ User feedback after a Lanhammer split-builder session: "search for an exercise t
     - **Logged-only filter verified**: chip `Logged` → only the 3 logged rows show; chip `All` restores the full list.
     - Console clean of new errors. The remaining errors (CreateExerciseModal Rules of Hooks via ExerciseLibraryManager, BbLogger ExerciseItem key-spread) all predate this batch and are documented known caveats.
 
-634. **Future merge UI follow-up — deferred.** With usage counts now visible in the picker, users can see which variant has history (`DB Lateral Raises` Logged 5 vs `Lateral DB Raises` Never logged) and naturally consolidate by deletion or by always picking the high-history variant going forward. An explicit "Merge with…" action via the existing `mergeExercises(keepId, mergeIds)` store action (Batch 15) could ship as its own batch if needed — surfacing it would extend `ExerciseEditSheet` overflow with a "Merge with…" item that lists ≥0.7 fuzzy matches and rewrites session `exerciseId`s. Not needed today.
+634. **Future merge UI follow-up — shipped in B54** (was previously deferred). With B53's usage counts visible in the picker the user could spot duplicates, but acting on them required deletion (which loses history). User asked for explicit merge so history stays. See B54.
+
+### Batch 54 (April 27, 2026) — User-initiated merge UI in ExerciseEditSheet
+
+Surfaces the existing `mergeExercises(keepId, mergeIds)` store action (alive since Batch 15 but only ever called by the v3 migration's auto-dedup) through `ExerciseEditSheet`. Closes the loop on B53's usage-counts: now that you can SEE which duplicate has history, you can fold the never-logged sibling into the canonical entry without losing anything.
+
+Investigation found the seed library at [exerciseLibrary.js:51-52](src/data/exerciseLibrary.js) literally seeds two variants `DB Lateral Raises` + `Lateral DB Raises` as separate `isBuiltIn` rows — the case the user reported is real and pre-existing in the data file. Plus user-flow duplicates can land via the v3 migration creating `needsTagging` entries from unresolved session names. Either way: the merge UI handles both.
+
+635. **`mergeCandidates` useMemo in `ExerciseEditSheet.jsx`.** Calls existing `findSimilarExercises(exercise.name, others, { suggestThreshold: 0.7, max: 8 })` against all library entries except the current one AND filtered to entries of the same `type`. Cross-type merges (e.g. weight-training entry into running entry) are blocked because their schemas differ — `dimensions` / `roundConfig` / muscle tags don't survive a cross-type fold.
+
+636. **`useCountByKey` useMemo.** Same shape as B53's ExercisePicker counter — walks bb-mode sessions once, increments per `exerciseId || name`. Drives the candidate list's usage labels + the confirm dialog's pre/post counts.
+
+637. **"Merge into another exercise…" button** rendered above the existing Delete/Save action row. Visibility gated on `mergeCandidates.length > 0 && !confirmingDelete` — hidden when no similar entries exist OR when the user is mid-delete-confirm (don't pile destructive actions). **Built-ins are not gated** — the seed bug at line 51-52 means even built-in entries need merge ability. Button label: `Merge into another exercise… (N similar)` so the user sees the candidate count before committing the next tap.
+
+638. **Two-phase merge view** (replaces the form when active):
+    - **Phase 1 — Picker**: `Merge "{currentName}" into…` heading + subtitle showing how many sessions will move ("2 sessions on this entry will be reattributed. This entry will be deleted." OR "This entry has no logged sessions. It will be deleted." for the zero case). Each candidate row shows name + `Logged N times` / `Logged once` / `Never logged` + match percentage (e.g. `95% match` for token-sort variants like the Lateral DB pair). Single-select — tap a candidate → Phase 2.
+    - **Phase 2 — Confirm dialog**: `Merge?` header + bullet showing source → target with both session counts, plus a clear consequence line. Two buttons: Back (returns to Phase 1) + Merge (commits via the store action). The merge action call is `mergeExercisesAction(target.id, [exercise.id])` — target wins as `keepId`, current entry's id is absorbed. Toast fires with "Merged X into Y — N sessions reattributed", then `onCancel()` closes the sheet (the current entry no longer exists).
+
+639. **Why current-into-target direction.** The mental model: user opens the duplicate they want gone, picks the canonical entry as the target. This matches "this is a dupe, send it home." If the user opens the canonical first and wants to absorb a dupe, they'd have to switch to the dupe's sheet first. Documented in the picker's heading text: `Merge "Lateral DB Raises" into…`. Single-select per merge action — for the rare case where multiple dupes exist, the user merges them one at a time. Multi-select is a future improvement if it surfaces as a real friction.
+
+640. **Verification.** `npm run lint` exit 0. `npx vite build` clean (~898 KB). Live preview walk at 375×812 with synthetic seed (2 sessions on `Lateral DB Raises`, 4 on `DB Lateral Raises`):
+    - Open `/exercises` → tap `Lateral DB Raises`. Sheet opens with normal edit form.
+    - Merge button visible: `Merge into another exercise… (1 similar)`.
+    - Tap → Picker renders with `Merge "Lateral DB Raises" into…` heading + `2 sessions on this entry will be reattributed.` subtitle. Candidate row: `DB Lateral Raises · Logged 4 times · 95% match`. Back button works.
+    - Tap candidate → Confirm dialog: `"Lateral DB Raises" (2 sessions) → "DB Lateral Raises" (4 sessions)` with consequence `2 sessions will be reattributed to "DB Lateral Raises". "Lateral DB Raises" will be deleted.`. Back/Merge buttons.
+    - Tap Merge → library count 128 → 127 (`Lateral DB Raises` removed); all 6 sessions now point to `ex_db_lateral_raises` (4 + 2 reattributed); sheet auto-closes; toast shows confirmation message.
+    - Console clean of new errors. Pre-existing `BbLogger ExerciseItem` key-spread warnings remain (documented).
+
+641. **What's preserved vs. lost.** Sessions that pointed at the absorbed entry now point at the keep — volume / PR history all moves. The absorbed entry's library metadata (name aliases, sessionGymTags, hiddenAtGyms, defaultMachineByGym, repRangeUserSet, etc.) is **lost**. Keep wins all metadata. If the user merges the wrong direction (canonical absorbed into dupe), there's no undo — they'd need to manually re-tag. The confirm dialog spelling out source → target with names is the safety net.
 
 ---
 

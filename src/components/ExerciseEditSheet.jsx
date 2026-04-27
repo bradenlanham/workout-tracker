@@ -12,12 +12,13 @@
 //   onCancel: () => void
 //   theme:    getTheme(...)
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import useStore from '../store/useStore'
 import { MUSCLE_GROUPS, EQUIPMENT_TYPES } from '../data/exerciseLibrary'
 import { HYROX_STATIONS } from '../data/hyroxStations'
-import { getTypeColor, getTypeLabel, isMachineEquipment } from '../utils/helpers'
+import { getTypeColor, getTypeLabel, isMachineEquipment, findSimilarExercises } from '../utils/helpers'
+import { showToast } from './Toast'
 
 function Pill({ selected, onClick, children, theme }) {
   return (
@@ -79,6 +80,19 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
   const addSkipGymTagPromptAction   = useStore(s => s.addSkipGymTagPrompt)
   const setDefaultMachineByGymAction = useStore(s => s.setDefaultMachineByGym)
 
+  // Batch 54 — merge UI subscriptions. mergeExercises rewrites session
+  // exerciseIds and removes the absorbed entries; sessions + library
+  // power the candidate-list usage counts and similarity scoring.
+  const allLibrary       = useStore(s => s.exerciseLibrary)
+  const sessions         = useStore(s => s.sessions)
+  const mergeExercisesAction = useStore(s => s.mergeExercises)
+
+  // Batch 54 — merge view state. mergeView controls whether the picker
+  // replaces the form (single-select; user picks the target which becomes
+  // the keep). confirmMergeId carries the target through the confirm step.
+  const [mergeView, setMergeView]           = useState(false)
+  const [confirmMergeId, setConfirmMergeId] = useState(null)
+
   // Refresh form state whenever the sheet opens with a new entry.
   useEffect(() => {
     if (open && exercise) {
@@ -128,8 +142,38 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
           ? { ...exercise.defaultMachineByGym }
           : {}
       )
+      // Reset merge view on open so a prior user's left-it-in-merge-view
+      // session doesn't carry over into a new entry.
+      setMergeView(false)
+      setConfirmMergeId(null)
     }
   }, [open, exercise])
+
+  // Batch 54 — distinct-session count per library id. Same shape as
+  // ExercisePicker's useCountByKey. Drives the candidate list's usage
+  // labels + the confirm dialog's pre/post counts.
+  const useCountByKey = useMemo(() => {
+    const map = {}
+    for (const session of sessions) {
+      if (session.mode !== 'bb') continue
+      for (const ex of (session.data?.exercises || [])) {
+        const key = ex.exerciseId || ex.name
+        if (!key) continue
+        map[key] = (map[key] || 0) + 1
+      }
+    }
+    return map
+  }, [sessions])
+
+  // Batch 54 — merge candidates: similar entries (≥0.7 fuzzy match)
+  // excluding the current entry itself + entries of a different type
+  // (a weight-training entry can't merge into a running one or
+  // vice-versa — the underlying schemas differ).
+  const mergeCandidates = useMemo(() => {
+    if (!exercise) return []
+    const others = allLibrary.filter(e => e.id !== exercise.id && (e.type || 'weight-training') === (exercise.type || 'weight-training'))
+    return findSimilarExercises(exercise.name || '', others, { suggestThreshold: 0.7, max: 8 })
+  }, [exercise, allLibrary])
 
   // Per-gym status setter — moves a gym between 'untagged' / 'available' /
   // 'hidden'. Status is mutually exclusive across gymTags + gymHidden, so
@@ -286,6 +330,24 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
     }
   }
 
+  // Batch 54 — merge confirm. Calls the existing mergeExercises store
+  // action: target becomes keep, current entry's id is absorbed (sessions
+  // get rewritten, library row deleted). Toast confirms; onCancel closes
+  // the sheet since the current exercise no longer exists.
+  const handleMergeConfirm = () => {
+    if (!confirmMergeId || !exercise) return
+    const target = allLibrary.find(e => e.id === confirmMergeId)
+    if (!target) return
+    const fromCount = useCountByKey[exercise.id] ?? useCountByKey[exercise.name] ?? 0
+    mergeExercisesAction(target.id, [exercise.id])
+    showToast({
+      message: fromCount > 0
+        ? `Merged "${exercise.name}" into "${target.name}" — ${fromCount} session${fromCount === 1 ? '' : 's'} reattributed`
+        : `Merged "${exercise.name}" into "${target.name}"`,
+    })
+    onCancel()
+  }
+
   const handleSave = () => {
     if (!canSave) return
     // Always commit gym edits first — a Save here means "persist everything",
@@ -380,6 +442,8 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
           </button>
         </div>
 
+        {!mergeView && (
+        <>
         <p className="text-xs text-c-dim font-medium mb-1">Name</p>
         <input
           type="text"
@@ -717,6 +781,21 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
           </>
         )}
 
+        {/* Batch 54 — merge action. Hidden when there are no candidates ≥0.7
+            similarity or when delete confirm is active (don't pile
+            destructive actions on top of each other). Built-ins are NOT
+            gated — the seed library has real duplicates (e.g. "DB Lateral
+            Raises" + "Lateral DB Raises" at exerciseLibrary.js:51-52) and
+            users need to be able to clean them up regardless of source. */}
+        {mergeCandidates.length > 0 && !confirmingDelete && (
+          <button
+            type="button"
+            onClick={() => setMergeView(true)}
+            className="w-full mb-3 py-2.5 rounded-xl border border-subtle bg-item text-c-secondary text-xs font-semibold active:text-c-primary"
+          >
+            Merge into another exercise… ({mergeCandidates.length} similar)
+          </button>
+        )}
         <div className="flex gap-2">
           {!exercise.isBuiltIn && (
             confirmingDelete ? (
@@ -778,6 +857,95 @@ export default function ExerciseEditSheet({ open, exercise, onSave, onDelete, on
             {(isRunning || isHyroxStation) && 'Add a name to save.'}
           </p>
         )}
+        </>
+        )}
+
+        {/* Batch 54 — merge view. Replaces the form when active. Two phases:
+            picker (single-select target from similar candidates) and confirm
+            (final dialog showing what gets reattributed). The header above
+            stays visible so the user always knows which entry is being
+            merged FROM. */}
+        {mergeView && !confirmMergeId && (
+          <>
+            <p className="text-xs text-c-dim font-medium mb-1">Merge "{exercise.name}" into…</p>
+            <p className="text-[10px] text-c-muted mb-3">
+              {(() => {
+                const c = useCountByKey[exercise.id] ?? useCountByKey[exercise.name] ?? 0
+                if (c === 0) return 'This entry has no logged sessions. It will be deleted.'
+                return `${c} session${c === 1 ? '' : 's'} on this entry will be reattributed. This entry will be deleted.`
+              })()}
+            </p>
+            <div className="space-y-1.5 mb-4 max-h-[50vh] overflow-y-auto">
+              {mergeCandidates.map(({ exercise: cand, score }) => {
+                const count = useCountByKey[cand.id] ?? useCountByKey[cand.name] ?? 0
+                const usageText = count >= 2 ? `Logged ${count} times` : count === 1 ? 'Logged once' : 'Never logged'
+                return (
+                  <button
+                    key={cand.id}
+                    type="button"
+                    onClick={() => setConfirmMergeId(cand.id)}
+                    className="w-full text-left bg-item rounded-xl px-3 py-2.5 hover:bg-card transition-colors"
+                  >
+                    <div className="text-sm text-c-primary truncate">{cand.name}</div>
+                    <div className={`text-[11px] tabular-nums ${count > 0 ? 'text-c-muted' : 'text-c-faint'}`}>
+                      {usageText} · {Math.round(score * 100)}% match
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMergeView(false)}
+              className="w-full py-3 rounded-xl bg-item text-c-secondary text-sm font-semibold"
+            >
+              Back
+            </button>
+          </>
+        )}
+
+        {mergeView && confirmMergeId && (() => {
+          const target = allLibrary.find(e => e.id === confirmMergeId)
+          if (!target) return null
+          const fromCount = useCountByKey[exercise.id] ?? useCountByKey[exercise.name] ?? 0
+          const toCount   = useCountByKey[target.id]   ?? useCountByKey[target.name]   ?? 0
+          return (
+            <>
+              <p className="text-base font-bold text-c-primary mb-2">Merge?</p>
+              <div className="bg-item rounded-xl p-3 mb-3 text-xs leading-relaxed text-c-secondary">
+                <p className="mb-2">
+                  <span className="font-semibold text-c-primary">"{exercise.name}"</span>{' '}
+                  ({fromCount} session{fromCount === 1 ? '' : 's'}){' '}
+                  → <span className="font-semibold text-c-primary">"{target.name}"</span>{' '}
+                  ({toCount} session{toCount === 1 ? '' : 's'})
+                </p>
+                <p className="text-c-muted">
+                  {fromCount === 0
+                    ? `"${exercise.name}" will be deleted. No history to move.`
+                    : `${fromCount} session${fromCount === 1 ? '' : 's'} will be reattributed to "${target.name}". "${exercise.name}" will be deleted.`
+                  }
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmMergeId(null)}
+                  className="flex-1 py-3 rounded-xl bg-item text-c-secondary text-sm font-semibold"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMergeConfirm}
+                  className={`flex-1 py-3 rounded-xl font-bold text-sm ${theme.bg}`}
+                  style={{ color: theme.contrastText }}
+                >
+                  Merge
+                </button>
+              </div>
+            </>
+          )
+        })()}
       </div>
     </div>,
     document.body
