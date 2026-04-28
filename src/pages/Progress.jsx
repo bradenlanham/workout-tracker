@@ -92,6 +92,33 @@ function hexToRgb(hex) {
   return { r, g, b }
 }
 
+// Mirrors Dashboard.jsx hexToRgba for hero card gradient wash. The Dashboard
+// uses this for its accent-tinted hero card; Progress's StatCard now matches
+// the same visual language per user feedback "ideally, the cards could be
+// rendered to match the same look and feel as the today home screen".
+function hexToRgba(hex, alpha) {
+  const h = (hex || '#000000').replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+// Resolve the surface color for accent-tinted gradients on cards. In daylight
+// + light-accent (white / pale yellow / etc.) the user's accent disappears
+// against the white card; fall back to a near-black tint so the card still
+// has visible depth. Mirrors Dashboard's safeAccent / heroSurfaceColor pattern.
+function resolveHeroSurface(theme, settings) {
+  const isDark = settings?.backgroundTheme !== 'daylight'
+  const hex = (theme?.hex || '#000000').replace('#', '')
+  const r = parseInt(hex.slice(0, 2), 16)
+  const g = parseInt(hex.slice(2, 4), 16)
+  const b = parseInt(hex.slice(4, 6), 16)
+  const accentIsLight = (0.299 * r + 0.587 * g + 0.114 * b) > 160
+  const lightBgWithLightAccent = !isDark && accentIsLight
+  return lightBgWithLightAccent ? '#1A1A1A' : (theme?.hex || '#3B82F6')
+}
+
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
 function SectionLabel({ text }) {
@@ -104,9 +131,26 @@ function SectionLabel({ text }) {
   )
 }
 
-function StatCard({ children }) {
+// Batch 58 v2 follow-up — StatCard now mirrors Dashboard's hero card style
+// (accent gradient wash + accent-tinted border + soft accent glow + inset
+// highlight) per user feedback "ideally, the cards could be rendered to
+// match the same look and feel as the today home screen".
+//
+// Daylight + light-accent fallback: gradients use `safeAccent` (#1A1A1A)
+// so the card still reads as a layered surface when the user's accent is
+// near-white. Same logic Dashboard.jsx uses (`heroSurfaceColor`).
+function StatCard({ children, theme, settings }) {
+  const heroAccent = resolveHeroSurface(theme, settings)
   return (
-    <div style={{ background: 'var(--bg-card)', borderRadius: 16, padding: '14px 14px 12px' }}>
+    <div style={{
+      borderRadius: 24,
+      padding: '20px 18px 18px',
+      background: `linear-gradient(135deg, ${hexToRgba(heroAccent, 0.10)} 0%, ${hexToRgba(heroAccent, 0.02)} 70%), var(--bg-card)`,
+      border: `1px solid ${hexToRgba(heroAccent, 0.18)}`,
+      boxShadow: `0 4px 30px ${hexToRgba(heroAccent, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
       {children}
     </div>
   )
@@ -1122,7 +1166,7 @@ export default function Progress() {
         <TabRow active={activeTab} onChange={setActiveTab} theme={theme} />
 
         {activeTab === 'volume' && (
-          <StatCard>
+          <StatCard theme={theme} settings={settings}>
             <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
               Total weight moved · {rangeLabelFor(range).toLowerCase()}
             </p>
@@ -1136,7 +1180,7 @@ export default function Progress() {
         )}
 
         {activeTab === 'strength' && (
-          <StatCard>
+          <StatCard theme={theme} settings={settings}>
             <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>
               Per-exercise e1RM trend — tap a row for full history
             </p>
@@ -1150,7 +1194,7 @@ export default function Progress() {
         )}
 
         {activeTab === 'consistency' && (
-          <StatCard>
+          <StatCard theme={theme} settings={settings}>
             <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
               Sessions per month + 13-week heatmap
             </p>
@@ -1159,7 +1203,7 @@ export default function Progress() {
         )}
 
         {activeTab === 'achievements' && (
-          <StatCard>
+          <StatCard theme={theme} settings={settings}>
             <AchievementsCard data={achievementsData} />
           </StatCard>
         )}

@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 28, 2026 (Batch 58 v2 — Progress page tabbed layout + Coach card fixes + Consistency polish)
+> Last updated: April 28, 2026 (Batch 58 v3 — Progress card aesthetic mirrors Dashboard hero)
 
 ## Rules for Claude
 
@@ -2595,8 +2595,36 @@ Live-feedback iteration on B58 v1. User tested the populated state and reported 
 695. **Build.** `npx vite build --outDir /tmp/test-build` → 940.38 KB bundle / 253.13 KB gzipped (+4.29 KB / +1.30 KB vs B58 v1, accounted for by `TabRow` component + collapsible coach state + `windowDays` derivation logic + extended monthly-stats row in ConsistencyHeatmap).
 
 696. **Deferred from B58 v2** (still queued):
-    - Dashboard look-and-feel parity polish on Progress cards (mentioned by user, scope is open — defer to a separate small batch once tabbed layout settles).
+    - ~~Dashboard look-and-feel parity polish on Progress cards~~ → shipped as B58 v3 (#697 below).
     - Picker-resize for Consistency heatmap (locked to 13-week regardless of picker — user's earlier decision; could revisit if surfaced as friction).
+
+### Batch 58 v3 (April 28, 2026) — Progress card aesthetic mirrors Dashboard hero
+
+User feedback after v2 ship: "I want the card design to mirror the design and feel of the home page cards." Closes the look-and-feel gap deferred from v2.
+
+697. **`StatCard` mirrors Dashboard's hero card style** (`Progress.jsx`). Pre-fix style: `bg-card / borderRadius:16 / padding:14/14/12` — flat neutral surface. New style copies Dashboard.jsx's `heroAccentCardStyle` (lines 1040–1049) verbatim:
+    - `borderRadius: 24` (was 16)
+    - `padding: '20px 18px 18px'` (was 14/14/12)
+    - `background: linear-gradient(135deg, ${hexToRgba(heroSurface, 0.10)} 0%, ${hexToRgba(heroSurface, 0.02)} 70%), var(--bg-card)` — accent-tinted gradient wash on the card surface.
+    - `border: 1px solid ${hexToRgba(heroSurface, 0.18)}` — subtle accent-tinted edge.
+    - `boxShadow: 0 4px 30px ${hexToRgba(heroSurface, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)` — soft accent glow + inset highlight.
+    `position: 'relative'` + `overflow: 'hidden'` for visual containment. Now StatCard accepts `theme` + `settings` props; all 4 callsites updated (Volume / Strength / Consistency / Achievements).
+
+698. **`hexToRgba(hex, alpha)` + `resolveHeroSurface(theme, settings)` helpers** (`Progress.jsx`). Mirror Dashboard's local helpers (`hexToRgba` at line 237, daylight + light-accent fallback at line 576). The fallback derivation: when `settings.backgroundTheme === 'daylight'` AND the user's accent is light (luminance > 160 via the standard 0.299/0.587/0.114 formula), the hero surface color flips from `theme.hex` to `#1A1A1A` so the gradient is visible against a white card. Pure-obsidian users + dark-accent users continue to see the actual accent color in the wash.
+
+699. **Coach card and TabRow stay distinct.** The yellow Coach card keeps its HYROX-fixed brand gradient (per design doc §12.4 "Don't theme yellow with the user's accent — it's a fixed brand color"). The TabRow is a chrome navigation element (border-bottom underline) and doesn't take a card treatment. Only the Volume / Strength / Consistency / Achievements content cards get the new hero-style aesthetic.
+
+700. **Verified live in preview** (port 5185 worktree dev server, mobile 375×812).
+    - Obsidian + violet: Volume / Strength / Consistency tile each render with violet gradient wash (10%/2% on var(--bg-card)) + violet 18% border + violet 10% glow shadow + 24px rounded corners + 20/18/18 padding. Visual parity with Dashboard's hero workout card confirmed.
+    - Daylight + white accent: gradient flips to dark-tinted (`rgba(26,26,26,0.10/0.02)`) so the card retains visible structure on white background. Border + shadow follow the same fallback. Verified via computed-style inspection: `border: 1px solid rgba(26,26,26,0.18)`, `box-shadow: rgba(26,26,26,0.1) 0px 4px 30px ...`.
+    - Coach card unchanged (yellow brand wash); TabRow unchanged (border-bottom underline).
+    - Console clean of new errors. Pre-existing BbLogger key-spread warnings persist (documented).
+
+701. **Files modified.**
+    - `src/pages/Progress.jsx` — added `hexToRgba` + `resolveHeroSurface` helpers; rewrote `StatCard` to accept `theme` + `settings` and apply the Dashboard hero gradient pattern; threaded both props into all 4 StatCard callsites.
+    - `CLAUDE.md` — last-updated header + this v3 entry.
+
+702. **Build.** `npx vite build --outDir /tmp/test-build` → 940.55 KB bundle / 253.21 KB gzipped (+0.17 KB / +0.08 KB vs v2 — pure helper additions; the gradient strings are runtime-computed style objects, not bundle-cost).
 
 ---
 
