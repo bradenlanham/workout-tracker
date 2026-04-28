@@ -713,12 +713,30 @@ export default function History() {
   return (
     <div className="pb-10 min-h-screen">
 
+      {/* Drop-in keyframe — mirrors Dashboard.jsx's dashFadeInV2 (opacity 0→1
+          + translateY 8px→0 over 0.4s ease). Per user feedback: "the dashboard
+          screen has a drop-in effect where the screen components sort of fall
+          into place. Apply the same drop-in pattern on the logging session
+          and history pages." */}
+      <style>{`
+        @keyframes historyFadeInV2 {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       {/* Sticky header */}
       <div className="sticky top-0 bg-base z-30 px-4 pb-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)' }}>
         <h1 className="text-2xl font-bold">History</h1>
       </div>
 
-      <div className="px-4">
+      <div
+        className="px-4"
+        style={{
+          animation: 'historyFadeInV2 0.4s ease forwards',
+          opacity: 0,
+        }}
+      >
 
         {/* Session list — flat, date inline in each row */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

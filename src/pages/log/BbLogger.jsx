@@ -4065,8 +4065,26 @@ export default function BbLogger() {
         </div>
       </div>
 
+      {/* Drop-in keyframe — mirrors Dashboard.jsx's dashFadeInV2 (opacity 0→1
+          + translateY 8px→0 over 0.4s ease). Per user feedback: "the dashboard
+          screen has a drop-in effect where the screen components sort of fall
+          into place. Apply the same drop-in pattern on the logging session
+          and history pages." */}
+      <style>{`
+        @keyframes bbLoggerFadeInV2 {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       {/* ── Exercise groups ──────────────────────────────────────────────── */}
-      <div className="px-4 pt-3 space-y-2">
+      <div
+        className="px-4 pt-3 space-y-2"
+        style={{
+          animation: 'bbLoggerFadeInV2 0.4s ease forwards',
+          opacity: 0,
+        }}
+      >
         {renderGroups.map(group => {
           const groupExes = group.exercises
           // Two cases produce cluster wrappers (single bordered container

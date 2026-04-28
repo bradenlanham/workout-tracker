@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 28, 2026 (Batch 58 v3 — Progress card aesthetic mirrors Dashboard hero)
+> Last updated: April 28, 2026 (Batch 58 v3.1 — drop-in fade animation on Progress, BbLogger, History)
 
 ## Rules for Claude
 
@@ -2625,6 +2625,36 @@ User feedback after v2 ship: "I want the card design to mirror the design and fe
     - `CLAUDE.md` — last-updated header + this v3 entry.
 
 702. **Build.** `npx vite build --outDir /tmp/test-build` → 940.55 KB bundle / 253.21 KB gzipped (+0.17 KB / +0.08 KB vs v2 — pure helper additions; the gradient strings are runtime-computed style objects, not bundle-cost).
+
+### Batch 58 v3.1 (April 28, 2026) — Drop-in fade animation across Progress, BbLogger, History
+
+User feedback: "the dashboard screen has a drop-in effect where the screen components sort of fall into place. I would like to add that effect to the progress screen. Also can you apply the same drop-in pattern on the logging session and history pages?" Mirrors Dashboard.jsx's `dashFadeInV2` keyframe + fadeIn(delay) helper across three new pages.
+
+703. **Progress staggered fade** (`Progress.jsx`). Three-stage cascade:
+    - Coach card (delay 0ms)
+    - TabRow (delay 60ms)
+    - Active tab content (delay 120ms, keyed on `activeTab` so React unmounts + remounts on tab switch — fade re-runs each time the user taps a different tab, feels intentional)
+    Keyframe `progFadeInV2` injected via inline `<style>` block at the top of the page return. `fadeIn(delay)` helper produces `{ animation: 'progFadeInV2 0.4s ease forwards', animationDelay: '${delay}ms', opacity: 0 }`. Verified mid-animation: opacity 0 → 1 + translateY 8px → 0 over 400ms ease.
+
+704. **BbLogger single-stage fade** (`BbLogger.jsx`). The exercise groups + Add Exercise + Session Notes container all fade in together as one unit (delay 0ms). Sticky header doesn't animate — it's already visible chrome. Sticky Finish footer (createPortal target) doesn't animate either — persistent UI element. Keyframe `bbLoggerFadeInV2` injected via inline `<style>`. Stagger isn't needed here because there's only one main content section to fade in.
+
+705. **History single-stage fade** (`History.jsx`). The session list container fades in (delay 0ms). Sticky header chrome stays static. Keyframe `historyFadeInV2` injected via inline `<style>`. Same shape as BbLogger — single content area gets the drop-in treatment.
+
+706. **Why distinct keyframe names per page** (`progFadeInV2` / `bbLoggerFadeInV2` / `historyFadeInV2`). All three have identical from/to declarations but live in their own page's inline `<style>` block. Distinct names avoid scope coupling — if Dashboard ever changes its keyframe behavior, the other pages don't break.
+
+707. **Verified live in preview** (port 5185 worktree, mobile 375×812):
+    - **Progress**: 3 wrappers detected with staggered delays (0ms / 60ms / 120ms). Tab switch re-runs the animation (verified mid-flight: opacity:0 + delay:120ms after tap). Visual cascade matches Dashboard's "components fall into place" feel.
+    - **BbLogger** (active session, BamBam Push): 1 wrapper detected with `animation: 0.4s ease 0s 1 normal forwards running bbLoggerFadeInV2; opacity: 0;` confirmed via inline-style inspection. Keyframe block injected into DOM.
+    - **History**: 1 wrapper detected with `animation: 0.4s ease 0s 1 normal forwards running historyFadeInV2; opacity: 0;` confirmed.
+    - All three pages verified end-to-end. No console errors introduced.
+
+708. **Files modified.**
+    - `src/pages/Progress.jsx` — `progFadeInV2` keyframe + `fadeIn(delay)` helper + 3 staggered wrappers (Coach card / TabRow / `<div key={activeTab}>` for tab content).
+    - `src/pages/log/BbLogger.jsx` — `bbLoggerFadeInV2` keyframe + inline animation on the `.px-4 pt-3 space-y-2` content container.
+    - `src/pages/History.jsx` — `historyFadeInV2` keyframe + inline animation on the `.px-4` session list container.
+    - `CLAUDE.md` — last-updated header + this v3.1 entry.
+
+709. **Build.** `npx vite build --outDir /tmp/test-build` → 940.95 KB bundle / 253.30 KB gzipped (+0.40 KB / +0.09 KB vs v3 — three keyframe blocks + inline animation styles).
 
 ---
 

@@ -1109,6 +1109,19 @@ export default function Progress() {
   // expanded; user choice persists for the visit only.
   const [coachCollapsed, setCoachCollapsed] = useState(false)
 
+  // Batch 58 v3 follow-up — staggered drop-in animation per user feedback
+  // "the dashboard screen has a drop-in effect where the screen components
+  // sort of fall into place. I would like to add that effect to the
+  // progress screen." Mirrors Dashboard.jsx's `dashFadeInV2` keyframe + its
+  // fadeIn(delay) helper. opacity 0→1 + translateY 8px→0 over 0.4s ease.
+  // Switching tabs unmounts + remounts the active section so the new tab's
+  // content re-runs the fade — feels intentional, not janky.
+  const fadeIn = (delay) => ({
+    animation: 'progFadeInV2 0.4s ease forwards',
+    animationDelay: `${delay}ms`,
+    opacity: 0,
+  })
+
   // windowStartTs is null for 'all' (no filter).
   const windowStartTs     = useMemo(() => rangeStartTs(range), [range])
   const prevWindowStartTs = useMemo(() => prevRangeStartTs(range), [range])
@@ -1142,6 +1155,16 @@ export default function Progress() {
 
   return (
     <div style={{ paddingBottom: 100, minHeight: '100vh' }}>
+      {/* Drop-in keyframe — mirrors Dashboard.jsx's dashFadeInV2 verbatim
+          (opacity 0→1 + translateY 8px→0 over 0.4s ease). Different name to
+          avoid scope coupling with the Dashboard's keyframe. */}
+      <style>{`
+        @keyframes progFadeInV2 {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       <div className="sticky top-0 bg-base z-30 px-4 pb-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)' }}>
         <h1 className="text-2xl font-bold">Progress</h1>
         <RangePicker range={range} onChange={setRange} theme={theme} />
@@ -1149,64 +1172,74 @@ export default function Progress() {
       <div className="px-4" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
 
         {/* Coach card pinned at top — applies to all tabs, picker-aware,
-            collapsible per user feedback. */}
-        <MonthlyCoachingCard
-          sessions={sessions}
-          cardioSessions={cardioSessions}
-          restDaySessions={restDaySessions}
-          splits={splits}
-          activeSplitId={activeSplitId}
-          range={range}
-          collapsed={coachCollapsed}
-          onToggleCollapse={() => setCoachCollapsed(c => !c)}
-        />
+            collapsible per user feedback. Drop-in delay: 0ms. */}
+        <div style={fadeIn(0)}>
+          <MonthlyCoachingCard
+            sessions={sessions}
+            cardioSessions={cardioSessions}
+            restDaySessions={restDaySessions}
+            splits={splits}
+            activeSplitId={activeSplitId}
+            range={range}
+            collapsed={coachCollapsed}
+            onToggleCollapse={() => setCoachCollapsed(c => !c)}
+          />
+        </div>
 
         {/* Tab row — only one section visible at a time per user feedback
-            "rather than everything being in one long horizontal view". */}
-        <TabRow active={activeTab} onChange={setActiveTab} theme={theme} />
+            "rather than everything being in one long horizontal view".
+            Drop-in delay: 60ms. */}
+        <div style={fadeIn(60)}>
+          <TabRow active={activeTab} onChange={setActiveTab} theme={theme} />
+        </div>
 
-        {activeTab === 'volume' && (
-          <StatCard theme={theme} settings={settings}>
-            <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
-              Total weight moved · {rangeLabelFor(range).toLowerCase()}
-            </p>
-            <VolumeTile
-              data={volumeData}
-              range={range}
-              accentHex={accentHex}
-              onOpenDrill={() => setVolumeOpen(true)}
-            />
-          </StatCard>
-        )}
+        {/* Active tab content — keyed on activeTab so React unmounts + remounts
+            on tab switch, re-running the fade-in. Drop-in delay: 120ms on
+            initial mount; restarts whenever the user taps a different tab. */}
+        <div key={activeTab} style={fadeIn(120)}>
+          {activeTab === 'volume' && (
+            <StatCard theme={theme} settings={settings}>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
+                Total weight moved · {rangeLabelFor(range).toLowerCase()}
+              </p>
+              <VolumeTile
+                data={volumeData}
+                range={range}
+                accentHex={accentHex}
+                onOpenDrill={() => setVolumeOpen(true)}
+              />
+            </StatCard>
+          )}
 
-        {activeTab === 'strength' && (
-          <StatCard theme={theme} settings={settings}>
-            <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>
-              Per-exercise e1RM trend — tap a row for full history
-            </p>
-            <StrengthTile
-              sessions={filteredSessions}
-              exerciseLibrary={exerciseLibrary}
-              accentHex={accentHex}
-              onOpenExercise={setOpenExercise}
-            />
-          </StatCard>
-        )}
+          {activeTab === 'strength' && (
+            <StatCard theme={theme} settings={settings}>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>
+                Per-exercise e1RM trend — tap a row for full history
+              </p>
+              <StrengthTile
+                sessions={filteredSessions}
+                exerciseLibrary={exerciseLibrary}
+                accentHex={accentHex}
+                onOpenExercise={setOpenExercise}
+              />
+            </StatCard>
+          )}
 
-        {activeTab === 'consistency' && (
-          <StatCard theme={theme} settings={settings}>
-            <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
-              Sessions per month + 13-week heatmap
-            </p>
-            <ConsistencyHeatmap sessions={sessions} streak={streak} bestStreak={bestStreak} accentHex={accentHex} />
-          </StatCard>
-        )}
+          {activeTab === 'consistency' && (
+            <StatCard theme={theme} settings={settings}>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
+                Sessions per month + 13-week heatmap
+              </p>
+              <ConsistencyHeatmap sessions={sessions} streak={streak} bestStreak={bestStreak} accentHex={accentHex} />
+            </StatCard>
+          )}
 
-        {activeTab === 'achievements' && (
-          <StatCard theme={theme} settings={settings}>
-            <AchievementsCard data={achievementsData} />
-          </StatCard>
-        )}
+          {activeTab === 'achievements' && (
+            <StatCard theme={theme} settings={settings}>
+              <AchievementsCard data={achievementsData} />
+            </StatCard>
+          )}
+        </div>
 
       </div>
 
