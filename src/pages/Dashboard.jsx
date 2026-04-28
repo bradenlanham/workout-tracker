@@ -1300,24 +1300,37 @@ export default function Dashboard() {
                       }}>
                         {getWorkoutName(todaySession?.type)}
                       </p>
-                      {/* Green checked box — visual confirmation that today's workout is logged. */}
-                      <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 20 20"
-                        style={{ flexShrink: 0, display: 'block' }}
+                      {/* Styled green check tile — UI control, not the iOS ✅ emoji.
+                          Tighter corners (rx=3), slightly muted emerald, inner
+                          highlight stroke for a subtle "designed" feel.
+                          Sized smaller than the title text so it reads as a
+                          status pill, not a peer element. */}
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 18,
+                          height: 18,
+                          borderRadius: 4,
+                          background: 'linear-gradient(180deg, #10B981 0%, #059669 100%)',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.30)',
+                        }}
                         aria-label="Done"
+                        role="img"
                       >
-                        <rect x="0" y="0" width="20" height="20" rx="5" fill="#22C55E" />
-                        <path
-                          d="M5 10.5 L8.5 14 L15 7"
-                          fill="none"
-                          stroke="#fff"
-                          strokeWidth="2.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                        <svg width="11" height="11" viewBox="0 0 12 12" style={{ display: 'block' }}>
+                          <path
+                            d="M2.5 6 L5 8.5 L9.5 3.5"
+                            fill="none"
+                            stroke="#fff"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
                     </div>
                   </div>
                 </div>
