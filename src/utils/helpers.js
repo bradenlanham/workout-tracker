@@ -3700,8 +3700,10 @@ const DRIFT_MIN_PRIOR_SESSIONS  = 3       // need at least 3 prior sessions to f
 /**
  * buildMonthlyCoachingSummary
  *
- * Composes an opinionated coaching observation over the last `WINDOW_DAYS`
- * (rolling 30 days) for the Progress page hero card.
+ * Composes an opinionated coaching observation over the last `windowDays`
+ * (default 30) for the Progress page hero card. Window length is configurable
+ * so the card can recompute when the user changes the page's time-range
+ * picker (1mo / 3mo / 6mo / All).
  *
  * Returns { eyebrow, headline, bullets[], suggestion | null, meta } when
  * the user has logged ≥ 3 bb-mode sessions in window, else null.
@@ -3714,6 +3716,8 @@ const DRIFT_MIN_PRIOR_SESSIONS  = 3       // need at least 3 prior sessions to f
  *   splits            — for workout-name resolution.
  *   activeSplitId     — optional; when present, drift is computed against
  *                       the active split's workouts only.
+ *   windowDays        — defaults to 30. When null, treats the entire
+ *                       sessions array as the window with no prior period.
  *   now               — defaults to Date.now() for testability.
  */
 export function buildMonthlyCoachingSummary({
@@ -3722,13 +3726,36 @@ export function buildMonthlyCoachingSummary({
   restDaySessions = [],
   splits = [],
   activeSplitId = null,
+  windowDays = 30,
   now = Date.now(),
 } = {}) {
   if (!Array.isArray(sessions)) return null
 
   const nowMs       = typeof now === 'number' ? now : Date.now()
-  const windowStart = nowMs - WINDOW_DAYS * MS_PER_DAY
-  const priorStart  = nowMs - 2 * WINDOW_DAYS * MS_PER_DAY
+  const isAllTime   = windowDays == null
+  const wDays       = isAllTime ? null : Math.max(1, Number(windowDays) || WINDOW_DAYS)
+  const windowStart = isAllTime ? -Infinity : nowMs - wDays * MS_PER_DAY
+  const priorStart  = isAllTime ? null : nowMs - 2 * wDays * MS_PER_DAY
+
+  // Picker-aware copy: short-form labels for headline / bullet / eyebrow.
+  // "this month" / "this 3 months" / "this 6 months" / "all time" — the
+  // labels travel through every string the card composes so a 6mo view
+  // doesn't read "this month" anywhere.
+  const windowShort = isAllTime ? 'all time'
+                    : wDays <= 31 ? 'this month'
+                    : wDays <= 95 ? 'this 3 months'
+                    : wDays <= 200 ? 'this 6 months'
+                    : `last ${wDays} days`
+  const priorShort  = isAllTime ? null
+                    : wDays <= 31 ? 'last month'
+                    : wDays <= 95 ? 'prior 3 months'
+                    : wDays <= 200 ? 'prior 6 months'
+                    : `prior ${wDays} days`
+  const eyebrowSuffix = isAllTime ? 'ALL TIME'
+                    : wDays <= 31 ? 'LAST 30 DAYS'
+                    : wDays <= 95 ? 'LAST 3 MONTHS'
+                    : wDays <= 200 ? 'LAST 6 MONTHS'
+                    : `LAST ${wDays} DAYS`
 
   const inWindow      = s => {
     const t = new Date(s?.date).getTime()
@@ -3845,46 +3872,69 @@ export function buildMonthlyCoachingSummary({
 
   // ── Headline picker ──────────────────────────────────────────────────
   // Priority: PR-led > Streak milestone > HYROX-led > Volume-led/regress > Default.
+  //
+  // PR-led headline math fix (post-B58 user feedback):
+  // The pre-fix line `${prCount} ${noun} on ${topPrEntry.name}` rendered
+  // the GLOBAL pr-count next to the TOP exercise's name — read as
+  // "97 PRs on Pec Dec" when really 97 was across 30+ exercises and Pec
+  // Dec only had 5. We now scope the count to the top exercise only:
+  // "5 PRs on Pec Dec." A trailing bullet still surfaces the cross-
+  // library total when relevant. Self-explanatory numbers are the
+  // invariant — see feedback memory `feedback_data_clarity_over_completeness`.
   let headline
   let headlineKind
-  if (prCount >= 3 && topPrEntry) {
+  // Trigger PR-led headline only when the TOP exercise itself has ≥3 PRs in
+  // window (was: total >= 3). A user with one PR each on 5 exercises is no
+  // longer pushed into a misleading "Strong push month" framing.
+  const topPrCount = topPrEntry?.prs || 0
+  if (topPrCount >= 3 && topPrEntry) {
     const cat = categoryForExerciseName(topPrEntry.name)
-    const lead = cat === 'push' ? 'Strong push month'
-                 : cat === 'pull' ? 'Strong pull month'
-                 : cat === 'legs' ? 'Strong legs month'
-                 : 'Strong PR month'
-    const noun = prCount === 1 ? 'PR' : 'PRs'
-    headline = `${lead}. ${prCount} ${noun} on ${topPrEntry.name}.`
+    const monthSuffix = isAllTime ? '' : ' month'
+    const lead = cat === 'push' ? `Strong push${monthSuffix}`
+                 : cat === 'pull' ? `Strong pull${monthSuffix}`
+                 : cat === 'legs' ? `Strong legs${monthSuffix}`
+                 : `Strong PR${monthSuffix}`
+    const noun = topPrCount === 1 ? 'PR' : 'PRs'
+    headline = `${lead}. ${topPrCount} ${noun} on ${topPrEntry.name}.`
     headlineKind = 'pr'
   } else if (currentStreak >= 7 && currentStreak === bestStreak) {
     headline = `${currentStreak}-day streak. Your best run yet.`
     headlineKind = 'streak'
   } else if (hyrox && hyrox.sessionCount >= 3) {
     const fastestStr = hyrox.fastestSec ? formatDuration(hyrox.fastestSec) : null
+    const lead = isAllTime ? 'Strong HYROX work' : 'Strong HYROX month'
     headline = fastestStr
-      ? `Strong HYROX month. ${hyrox.sessionCount} sessions, fastest ${fastestStr}.`
-      : `Strong HYROX month. ${hyrox.sessionCount} sessions.`
+      ? `${lead}. ${hyrox.sessionCount} sessions, fastest ${fastestStr}.`
+      : `${lead}. ${hyrox.sessionCount} sessions.`
     headlineKind = 'hyrox'
-  } else if (volumeDeltaPct >= 15) {
-    headline = `Up ${volumeDeltaPct}% volume. Your strongest 4 weeks.`
+  } else if (volumeDeltaPct >= 15 && !isAllTime) {
+    // Volume-led headline reframed: lead with sessions+volume facts rather
+    // than an opaque % delta. "Up 283% volume" was alarming when the prior
+    // window was sparse; "12 sessions, +X% per session" is what the user
+    // can actually evaluate.
+    const sessionsWord = sessionCount === 1 ? 'session' : 'sessions'
+    headline = `${sessionCount} ${sessionsWord} ${windowShort}. Volume up ${volumeDeltaPct}% vs ${priorShort}.`
     headlineKind = 'volume-up'
-  } else if (volumeDeltaPct <= -15) {
-    headline = `Volume down ${Math.abs(volumeDeltaPct)}%. Your reset month.`
+  } else if (volumeDeltaPct <= -15 && !isAllTime) {
+    const sessionsWord = sessionCount === 1 ? 'session' : 'sessions'
+    headline = `${sessionCount} ${sessionsWord} ${windowShort}. Volume down ${Math.abs(volumeDeltaPct)}% vs ${priorShort}.`
     headlineKind = 'volume-down'
   } else {
     // Default — session count + volume narrative, mirrors Dashboard v2.
     const sessionsWord = sessionCount === 1 ? 'session' : 'sessions'
     let frame
-    if (prevSessionCount === 0) {
-      frame = `${sessionCount} ${sessionsWord} this month, building momentum.`
+    if (isAllTime) {
+      frame = `${sessionCount} ${sessionsWord} all-time.`
+    } else if (prevSessionCount === 0) {
+      frame = `${sessionCount} ${sessionsWord} ${windowShort}, building momentum.`
     } else if (sessionCount > prevSessionCount) {
       const diff = sessionCount - prevSessionCount
-      frame = `${sessionCount} ${sessionsWord} this month, ${diff} ahead of last.`
+      frame = `${sessionCount} ${sessionsWord} ${windowShort}, ${diff} ahead of last.`
     } else if (sessionCount < prevSessionCount) {
       const diff = prevSessionCount - sessionCount
-      frame = `${sessionCount} ${sessionsWord} this month, ${diff} behind last.`
+      frame = `${sessionCount} ${sessionsWord} ${windowShort}, ${diff} behind last.`
     } else {
-      frame = `${sessionCount} ${sessionsWord} this month, on pace with last.`
+      frame = `${sessionCount} ${sessionsWord} ${windowShort}, on pace with last.`
     }
     headline = frame
     headlineKind = 'default'
@@ -3892,14 +3942,27 @@ export function buildMonthlyCoachingSummary({
 
   // ── Bullet composer ──────────────────────────────────────────────────
   const bullets = []
-  // Volume delta — skip if already in headline, skip if too small to call out.
-  const volumeInHeadline = headlineKind === 'volume-up' || headlineKind === 'volume-down'
-  if (!volumeInHeadline && Math.abs(volumeDeltaPct) >= 5 && prevVolume > 0) {
-    if (volumeDeltaPct > 0) {
-      bullets.push(`Volume up ${volumeDeltaPct}% vs last 30 days.`)
-    } else {
-      bullets.push(`Volume down ${Math.abs(volumeDeltaPct)}% vs last 30 days.`)
+  // Cross-library PR breakdown — only when the headline picked a single
+  // exercise (PR-led path). Surfaces the broader story behind the headline:
+  // "Plus 92 PRs across 31 other exercises" — clear that the headline number
+  // belongs to the named exercise, not the total. Skip when the gap is small.
+  if (headlineKind === 'pr' && topPrEntry) {
+    const otherPrs = prCount - topPrCount
+    const otherEx  = prByEx.size - 1
+    if (otherPrs >= 3 && otherEx >= 1) {
+      const noun = otherPrs === 1 ? 'PR' : 'PRs'
+      const exNoun = otherEx === 1 ? 'exercise' : 'exercises'
+      bullets.push(`Plus ${otherPrs} ${noun} across ${otherEx} other ${exNoun}.`)
     }
+  }
+  // Volume delta — skip if already in headline, skip if too small to call out.
+  // Reframed to lead with session-count context so a sparse prior window
+  // doesn't surface as a misleading huge %. "+283%" gives way to
+  // "12 sessions, X% volume vs last month".
+  const volumeInHeadline = headlineKind === 'volume-up' || headlineKind === 'volume-down'
+  if (!isAllTime && !volumeInHeadline && Math.abs(volumeDeltaPct) >= 5 && prevVolume > 0) {
+    const sign = volumeDeltaPct >= 0 ? 'up' : 'down'
+    bullets.push(`Volume ${sign} ${Math.abs(volumeDeltaPct)}% vs ${priorShort}.`)
   }
   // Top progressor — different exercise from the headline PR target.
   if (topProgressor && (!topPrEntry || topPrEntry.name !== topProgressor.name)) {
@@ -3926,7 +3989,7 @@ export function buildMonthlyCoachingSummary({
   // PR breakdown bullet — only on non-PR headlines that still had PRs.
   if (bullets.length < 3 && headlineKind !== 'pr' && prCount > 0) {
     const noun = prCount === 1 ? 'PR' : 'PRs'
-    bullets.push(`${prCount} ${noun} this month.`)
+    bullets.push(`${prCount} ${noun} ${windowShort}.`)
   }
 
   // ── Suggestion line (render only when triggered) ─────────────────────
@@ -3952,11 +4015,11 @@ export function buildMonthlyCoachingSummary({
   // If drift was promoted to suggestion, keep bullets intact. If drift wasn't
   // surfaced and we have room, add it as an observation.
   if (drift && !driftConsumedBySuggestion && bullets.length < 3) {
-    bullets.push(`${drift.name} volume down ${drift.dropPct}% vs last 30 days.`)
+    bullets.push(`${drift.name} volume down ${drift.dropPct}% vs ${priorShort || 'prior period'}.`)
   }
 
   return {
-    eyebrow:  '✨ COACH · LAST 30 DAYS',
+    eyebrow:  `✨ COACH · ${eyebrowSuffix}`,
     headline,
     bullets:  bullets.slice(0, 3),
     suggestion,
@@ -3968,6 +4031,7 @@ export function buildMonthlyCoachingSummary({
       volumeDeltaPct,
       prCount,
       topPrName:        topPrEntry?.name || null,
+      topPrCount,
       topProgressor:    topProgressor ? { name: topProgressor.name, rate: topProgressor.rate, n: topProgressor.n } : null,
       anomaly:          anomaly ? { kind: anomaly.kind, name: anomaly.name, n: anomaly.n } : null,
       drift,
@@ -3975,6 +4039,8 @@ export function buildMonthlyCoachingSummary({
       bestStreak,
       hyrox,
       headlineKind,
+      windowDays: wDays,
+      isAllTime,
     },
   }
 }

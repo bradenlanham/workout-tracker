@@ -1,6 +1,8 @@
-// Batch 58 sanity — buildVolumeTileData + buildAchievementsData across
-// cold-start, picker-window math, prior-period delta, weekly series, per-
-// workout-type breakdown, achievements scoping, and defensive inputs.
+// Batch 58 sanity — buildVolumeTileData + buildAchievementsData +
+// buildMonthlyCoachingSummary v2 (post-user-feedback). Covers picker-window
+// math, headline-bug fix (PR-count must scope to top exercise, not total),
+// windowDays parameterization, weekly series, per-workout-type breakdown,
+// achievements scoping, and defensive inputs.
 // Real-data spot check from workout-backup-2026-04-26.json when available.
 //
 // Mirrors the existing b57 / b53 sanity patterns.
@@ -9,6 +11,7 @@
 import {
   buildVolumeTileData,
   buildAchievementsData,
+  buildMonthlyCoachingSummary,
 } from './src/utils/helpers.js'
 import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
@@ -258,6 +261,95 @@ if (found) {
 } else {
   console.log('  (skipped — no backup file found)')
 }
+
+// ── 11. Coach v2 — headline bug fix ──────────────────────────────────────
+console.log('\n[11] Coach v2 — PR-led headline scopes count to top exercise (not total)')
+const prHeadlineSessions = []
+// Top exercise: 5 PRs in window
+for (let i = 0; i < 5; i++) {
+  prHeadlineSessions.push(bbSession(2 + i * 2, 'push', [
+    ex('Bench Press', [set(135 + i * 5, 8, { isNewPR: true })]),
+  ]))
+}
+// 30 other exercises with 3 PRs each in window — so global prCount = 5 + 90 = 95
+for (let i = 0; i < 30; i++) {
+  prHeadlineSessions.push(bbSession(15 + i * 0.5, 'push', [
+    ex(`Other Ex ${i}`, [
+      set(100, 8, { isNewPR: true }),
+      set(105, 8, { isNewPR: true }),
+      set(110, 8, { isNewPR: true }),
+    ], { id: `ex_other_${i}` }),
+  ]))
+}
+const prSummary = buildMonthlyCoachingSummary({
+  sessions: prHeadlineSessions, windowDays: 30, now: NOW,
+})
+ok('PR-led headline fires (top has ≥3 PRs)',  prSummary?.meta.headlineKind === 'pr')
+ok('Headline says "5 PRs" not "95 PRs"',
+   prSummary?.headline.includes('5 PRs') && !prSummary?.headline.includes('95 PRs'),
+   prSummary?.headline)
+ok('Headline names Bench Press',                prSummary?.headline.includes('Bench Press'))
+ok('meta.topPrCount = 5',                       prSummary?.meta.topPrCount === 5)
+ok('meta.prCount > meta.topPrCount',            prSummary?.meta.prCount > prSummary?.meta.topPrCount)
+ok('Cross-library bullet surfaces extras',
+   (prSummary?.bullets || []).some(b => /Plus \d+ PRs across \d+ other exercise/.test(b)),
+   prSummary?.bullets)
+
+// ── 12. Coach v2 — windowDays parameterization ───────────────────────────
+console.log('\n[12] Coach v2 — windowDays scoping')
+const windowSessions = []
+for (let i = 0; i < 12; i++) {
+  windowSessions.push(bbSession(i * 7, 'push', [ex('Bench', [set(135, 8)])]))
+}
+const w30  = buildMonthlyCoachingSummary({ sessions: windowSessions, windowDays: 30, now: NOW })
+const w90  = buildMonthlyCoachingSummary({ sessions: windowSessions, windowDays: 90, now: NOW })
+const w180 = buildMonthlyCoachingSummary({ sessions: windowSessions, windowDays: 180, now: NOW })
+const wAll = buildMonthlyCoachingSummary({ sessions: windowSessions, windowDays: null, now: NOW })
+
+ok('30-day window: meta.windowDays=30',  w30?.meta.windowDays === 30)
+ok('90-day window: meta.windowDays=90',  w90?.meta.windowDays === 90)
+ok('180-day window: meta.windowDays=180', w180?.meta.windowDays === 180)
+ok('All-time: meta.windowDays=null',     wAll?.meta.windowDays === null)
+ok('All-time: meta.isAllTime=true',      wAll?.meta.isAllTime === true)
+ok('30-day eyebrow includes "30 DAYS"',  w30?.eyebrow.includes('30 DAYS'))
+ok('90-day eyebrow includes "3 MONTHS"', w90?.eyebrow.includes('3 MONTHS'))
+ok('180-day eyebrow includes "6 MONTHS"', w180?.eyebrow.includes('6 MONTHS'))
+ok('All-time eyebrow includes "ALL TIME"', wAll?.eyebrow.includes('ALL TIME'))
+
+// 30-day window has fewer sessions than 90-day
+ok('30-day sessionCount <= 90-day sessionCount',
+   (w30?.meta.sessionCount || 0) <= (w90?.meta.sessionCount || 0))
+ok('All-time sessionCount = total bb',
+   (wAll?.meta.sessionCount || 0) === windowSessions.filter(s => s.mode === 'bb').length)
+
+// ── 13. Coach v2 — volume bullet uses windowed framing ──────────────────
+console.log('\n[13] Coach v2 — volume bullet uses windowed prior-period label')
+const volSessions = []
+// Recent 30 days: 4 sessions of 1500 vol each = 6000
+for (let i = 0; i < 4; i++) {
+  volSessions.push(bbSession(2 + i * 6, 'push', [ex('Bench', [set(150, 10)])]))
+}
+// Prior 30 days: 2 sessions of 750 vol each = 1500
+for (let i = 0; i < 2; i++) {
+  volSessions.push(bbSession(40 + i * 10, 'push', [ex('Bench', [set(75, 10)])]))
+}
+const volSum = buildMonthlyCoachingSummary({ sessions: volSessions, windowDays: 30, now: NOW })
+ok('Volume bullet uses "vs last month" framing',
+   (volSum?.bullets || []).some(b => /vs last month/.test(b)) || volSum?.headline?.includes('vs last month'),
+   volSum)
+
+// 90-day prior framing
+const volSessions90 = []
+for (let i = 0; i < 8; i++) {
+  volSessions90.push(bbSession(5 + i * 10, 'push', [ex('Bench', [set(150, 10)])]))
+}
+for (let i = 0; i < 3; i++) {
+  volSessions90.push(bbSession(120 + i * 15, 'push', [ex('Bench', [set(75, 10)])]))
+}
+const vol90 = buildMonthlyCoachingSummary({ sessions: volSessions90, windowDays: 90, now: NOW })
+ok('90-day volume copy uses "prior 3 months"',
+   (vol90?.bullets || []).some(b => /prior 3 months/.test(b)) || vol90?.headline?.includes('prior 3 months'),
+   { headline: vol90?.headline, bullets: vol90?.bullets })
 
 // ── Summary ──────────────────────────────────────────────────────────────
 console.log(`\n${pass} pass / ${fail} fail`)

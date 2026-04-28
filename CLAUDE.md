@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 28, 2026 (Batch 58 — Progress redesign closure: time-range picker + 3-tile reframing + Achievements)
+> Last updated: April 28, 2026 (Batch 58 v2 — Progress page tabbed layout + Coach card fixes + Consistency polish)
 
 ## Rules for Claude
 
@@ -2557,6 +2557,46 @@ Third and final Progress page redesign batch per `Gains-Design-Critique.md` §2 
     - `CLAUDE.md` — last-updated header + this Batch 58 entry.
 
 685. **Build.** `npx vite build --outDir /tmp/test-build` → 936.09 KB bundle / 251.83 KB gzipped (+10.88 KB / +2.32 KB vs Batch 57, accounted for by `buildVolumeTileData` + `buildAchievementsData` aggregators (~3 KB), `VolumeDrillSheet` component (~3 KB), the inline `RangePicker` + `VolumeSparkline` + `VolumeTile` + `AchievementsCard` components in Progress.jsx (~5 KB).
+
+### Batch 58 v2 (April 28, 2026) — Tabbed layout + Coach card fixes + Consistency polish
+
+Live-feedback iteration on B58 v1. User tested the populated state and reported four issues: (1) "92 PRs on a single-arm lat pulldown is bonkers" — the Coach card headline was rendering the GLOBAL pr-count next to a single exercise's name (e.g. `97 PRs on Pec Dec` when really 97 was across 30+ exercises and Pec Dec had 5); (2) Coach card should scope to the picker AND be collapsible; (3) page should be tabbed (Volume / Strength / Consistency / Achievements) instead of one long vertical scroll; (4) Consistency: every day labeled (currently only M/W/F), clarify "13 weeks" caption, add monthly session counts. Iterated on the same `claude/b58-progress-redesign-closure` branch (B58 v1 was never merged to main per the user's preview-gate workflow).
+
+686. **`buildMonthlyCoachingSummary` PR-headline bug fix** (`helpers.js`). Pre-fix line `${prCount} ${noun} on ${topPrEntry.name}` rendered the cross-library total next to one exercise's name, producing strings like `97 PRs on Pec Dec` when Pec Dec only had 5. Fixed by scoping the count to `topPrCount` (top exercise's count specifically). Trigger threshold also tightened: was `prCount >= 3` (any total), now `topPrCount >= 3` (the named exercise must itself have ≥3 PRs). New cross-library bullet surfaces the broader context: `Plus 92 PRs across 41 other exercises.` — clear that the headline number belongs to the named exercise. New invariant captured in feedback memory `feedback_data_clarity_over_completeness.md`: never combine an aggregate total with a single entity's name in the same sentence; users catch bad stats fast and lose trust in the whole card.
+
+687. **Volume bullet framing reworked** (`helpers.js`). User: "Volume up 283% doesn't make sense — is that related to all of my training or what?" Math was correct but framing was alarming because the prior 30-day window was sparse. Headline-led volume case (`volumeDeltaPct >= 15`) now reads `12 sessions this month. Volume up 283% vs last month.` (lead with sessions, then % delta). Bullet-form preserves the % but uses windowed prior label: `Volume up 12% vs prior 3 months.` (was: `vs last 30 days`).
+
+688. **`buildMonthlyCoachingSummary` accepts `windowDays` parameter** (`helpers.js`). Was hardcoded to 30 days; now configurable so the card recomputes when the picker changes. Picker maps: 1mo → 30, 3mo → 90, 6mo → 180, All → null. New `windowShort` / `priorShort` / `eyebrowSuffix` derivations produce picker-aware copy: eyebrow flips `LAST 30 DAYS` → `LAST 3 MONTHS` → `LAST 6 MONTHS` → `ALL TIME`; headline + bullet copy uses `this month` / `this 3 months` / `this 6 months` / `all-time`; volume comparisons use `vs last month` / `vs prior 3 months` / etc. All-time mode skips volume-led headline branches (no prior period to compare against). Meta payload extended: `windowDays`, `isAllTime`, `topPrCount`.
+
+689. **MonthlyCoachingCard collapsible** (`Progress.jsx`). Per user request "be collapsible". State `coachCollapsed` lives in the Progress component. Collapsed renders just the headline truncated with a subtle chevron `▾`; expanded shows full eyebrow + headline + bullets + suggestion. Default expanded; user toggle persists for the visit only (not localStorage-persistent). The eyebrow + chevron live on a single button row so the entire top of the card is the toggle target.
+
+690. **Tabbed Progress page** (`Progress.jsx`). Per user request "rather than everything being in one long horizontal view, you just see the thing you want to see." New `TabRow` inline component sits between the Coach card and tab content, with 4 tabs: `Volume / Strength / Consistency / Achievements`. Selected tab uses `theme.hex` 2px bottom border + bold primary-text color; unselected muted-text + transparent border. State (`activeTab`, default `'volume'`) lives in Progress. Coach card stays pinned above the tabs (it's the headline, applies to all tabs); time-range picker stays in the sticky header.
+
+691. **ConsistencyHeatmap polish** (`Progress.jsx`).
+    - **All 7 day labels** (`['S', 'M', 'T', 'W', 'T', 'F', 'S']`) per user "you should have every day of the week labeled". Was sparse `[null, 'M', null, 'W', null, 'F', null]`.
+    - **Monthly session counts row** above the heatmap. Two stat tiles side-by-side: `This month: 19 sessions · April` / `Last month: 10 sessions · March +9` (delta in green/amber). Counts unique active calendar days from bb-mode sessions in the current vs prior calendar month. Answers user's "I would like to just quickly see how many sessions did I log last month? This month?" without making them count cells.
+    - **"13 wks" caption clarified** to `active days in last 13 weeks` (was `(13 wks)` parenthetical, user asked "What does 13 weeks mean?").
+    - **`Last 13 weeks` section eyebrow** above the heatmap explicitly labels its scope.
+
+692. **`b58-progress-redesign-sanity.mjs` extended.** 61 assertions (was 42). New tests covering: PR-led headline scopes count to top exercise (no `97 PRs on Pec Dec` bug); cross-library bullet surfaces extras when applicable; `windowDays` parameterization (30/90/180/null) produces correct meta + eyebrow strings; volume bullets use windowed prior-period framing; `meta.topPrCount` distinct from `meta.prCount`. Real-data spot check (workout-backup-2026-04-26) verifies headline now reads `Strong push month. 5 PRs on Pec Dec.` (was `97 PRs on Pec Dec`) with bullet `Plus 92 PRs across 41 other exercises.`. Existing 77 b53 sanity assertions still pass under the new algorithm. Total: 138/138 across both sanity scripts.
+
+693. **Verified live in preview** (port 5185 worktree dev server, mobile 375×812).
+    - **Coach card** at 3mo (default): `LAST 3 MONTHS · Strong push month. 8 PRs on Pec Dec. · Plus 133 PRs across 49 other exercises. · Single Arm Lat Pulldown trending +17.2%/wk across 6 sessions. ⚠ Leg Curls has dipped 6 sessions. Consider a recovery week.` Picker → 1mo: eyebrow flips `LAST 30 DAYS`, headline `Strong pull month. 4 PRs on Single Arm Lat Pulldown.` + `Plus 88 PRs across 40 other exercises.` + `Volume up 226% vs last month.` (different top-exercise wins because window is smaller, all per-exercise counts are bounded). Collapse/expand toggle works: collapsed renders just the headline, expanded restores bullets + suggestion.
+    - **Tabs** swap content correctly: Volume → 641k lb · 30 sessions tile + drill-sheet still works; Strength → top 4 by progression rate per B57; Consistency → 19 sessions · April + 10 sessions · March + +9 delta + all 7 day labels in heatmap (S/M/T/W/T/F/S) + `29 active days in last 13 weeks` caption; Achievements → 140 PRs / 30 total / 12 best streak + badge grid.
+    - Tab persistence: resets to Volume on each visit (intentional — Progress is a destination).
+    - Console clean of new errors. Pre-existing `<ExerciseItem>` key-spread warnings from BbLogger.jsx persist (predate B41, documented).
+
+694. **Files modified.**
+    - `src/utils/helpers.js` — `buildMonthlyCoachingSummary` algorithm fix + `windowDays` parameterization + `windowShort`/`priorShort`/`eyebrowSuffix` derivation + new meta fields.
+    - `src/pages/Progress.jsx` — `TabRow` component + tab state; MonthlyCoachingCard collapsible + accepts `range`/`collapsed`/`onToggleCollapse` props; ConsistencyHeatmap dayLabels + monthly stats row + caption clarification; main return rewritten to tabbed layout.
+    - `b58-progress-redesign-sanity.mjs` — +19 new assertions covering Coach v2 changes (61 total).
+    - `CLAUDE.md` — last-updated header + this Batch 58 v2 entry.
+
+695. **Build.** `npx vite build --outDir /tmp/test-build` → 940.38 KB bundle / 253.13 KB gzipped (+4.29 KB / +1.30 KB vs B58 v1, accounted for by `TabRow` component + collapsible coach state + `windowDays` derivation logic + extended monthly-stats row in ConsistencyHeatmap).
+
+696. **Deferred from B58 v2** (still queued):
+    - Dashboard look-and-feel parity polish on Progress cards (mentioned by user, scope is open — defer to a separate small batch once tabbed layout settles).
+    - Picker-resize for Consistency heatmap (locked to 13-week regardless of picker — user's earlier decision; could revisit if surfaced as friction).
 
 ---
 

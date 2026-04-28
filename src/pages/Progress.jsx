@@ -147,6 +147,63 @@ function rangeLabelFor(rangeId) {
   return 'All sessions'
 }
 
+// Batch 58 v2 — Section tabs (Volume / Strength / Consistency / Achievements).
+// Sits between the Coach card and the active tab's content. Selected tab uses
+// a colored bottom-border underline; unselected uses muted text.
+const PROGRESS_TABS = [
+  { id: 'volume',       label: 'Volume' },
+  { id: 'strength',     label: 'Strength' },
+  { id: 'consistency',  label: 'Consistency' },
+  { id: 'achievements', label: 'Achievements' },
+]
+
+function TabRow({ active, onChange, theme }) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Progress sections"
+      style={{
+        display: 'flex',
+        gap: 4,
+        borderBottom: '1px solid var(--border-subtle)',
+        marginTop: 4,
+        marginBottom: 8,
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
+      }}
+    >
+      {PROGRESS_TABS.map(tab => {
+        const selected = tab.id === active
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(tab.id)}
+            style={{
+              flex: 1,
+              padding: '10px 8px',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: selected ? `2px solid ${theme.hex}` : '2px solid transparent',
+              color: selected ? 'var(--text-primary)' : 'var(--text-muted)',
+              fontSize: 13,
+              fontWeight: selected ? 700 : 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'color 0.15s, border-color 0.15s',
+              marginBottom: -1, // overlap with parent's border-bottom for clean underline
+            }}
+          >
+            {tab.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function RangePicker({ range, onChange, theme }) {
   return (
     <div className="flex items-center gap-1.5 mt-2" role="tablist" aria-label="Time range">
@@ -356,12 +413,23 @@ const COACH_YELLOW   = '#EAB308'
 const COACH_SUGGEST_BG     = 'rgba(0,0,0,0.35)'
 const COACH_SUGGEST_BORDER = '1px solid rgba(234,179,8,0.25)'
 
-function MonthlyCoachingCard({ sessions, cardioSessions, restDaySessions, splits, activeSplitId }) {
+// rangeId → windowDays for buildMonthlyCoachingSummary. Mirrors the picker
+// chip mapping; null windowDays means "all time".
+function rangeToWindowDays(rangeId) {
+  const opt = RANGE_OPTIONS.find(r => r.id === rangeId)
+  return opt && opt.days != null ? opt.days : null
+}
+
+function MonthlyCoachingCard({ sessions, cardioSessions, restDaySessions, splits, activeSplitId, range, collapsed, onToggleCollapse }) {
+  // Picker-aware: window scopes to the user's active range (post-B58 user
+  // feedback). Coach card recomputes when picker changes — was hardcoded
+  // 30-day in B56, the mismatch with multi-window page felt disconnected.
+  const windowDays = rangeToWindowDays(range)
   const summary = useMemo(
     () => buildMonthlyCoachingSummary({
-      sessions, cardioSessions, restDaySessions, splits, activeSplitId,
+      sessions, cardioSessions, restDaySessions, splits, activeSplitId, windowDays,
     }),
-    [sessions, cardioSessions, restDaySessions, splits, activeSplitId]
+    [sessions, cardioSessions, restDaySessions, splits, activeSplitId, windowDays]
   )
 
   if (!summary) return null
@@ -369,76 +437,116 @@ function MonthlyCoachingCard({ sessions, cardioSessions, restDaySessions, splits
   return (
     <div
       role="region"
-      aria-label="This month's coaching summary"
+      aria-label="Coaching summary"
       style={{
         marginTop: 4,
         marginBottom: 10,
         borderRadius: 22,
-        padding: 18,
+        padding: collapsed ? '14px 18px' : 18,
         background: COACH_BG,
         border: COACH_BORDER,
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      <div style={{
-        color: COACH_YELLOW,
-        fontSize: 11,
-        fontWeight: 700,
-        textTransform: 'uppercase',
-        letterSpacing: '0.1em',
-        marginBottom: 10,
-      }}>{summary.eyebrow}</div>
-
-      <div style={{
-        fontSize: 19,
-        fontWeight: 700,
-        letterSpacing: '-0.02em',
-        lineHeight: 1.25,
-        marginBottom: summary.bullets.length > 0 ? 12 : 0,
-        color: 'var(--text-primary)',
-      }}>{summary.headline}</div>
-
-      {summary.bullets.length > 0 && (
-        <div>
-          {summary.bullets.map((b, i) => (
-            <div
-              key={i}
-              style={{
-                color: 'var(--text-secondary)',
-                fontSize: 13,
-                lineHeight: 1.5,
-                marginBottom: 6,
-                paddingLeft: 16,
-                position: 'relative',
-              }}
-            >
-              <span style={{
-                position: 'absolute',
-                left: 6,
-                top: 0,
-                color: COACH_YELLOW,
-                fontWeight: 700,
-              }}>·</span>
-              {b}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {summary.suggestion && (
+      {/* Toggle row — eyebrow on the left, chevron button on the right */}
+      <button
+        type="button"
+        onClick={onToggleCollapse}
+        aria-label={collapsed ? 'Expand coaching summary' : 'Collapse coaching summary'}
+        aria-expanded={!collapsed}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          background: 'transparent',
+          padding: 0,
+          marginBottom: collapsed ? 0 : 10,
+          cursor: 'pointer',
+        }}
+      >
         <div style={{
-          marginTop: 12,
-          padding: '10px 12px',
-          background: COACH_SUGGEST_BG,
-          borderRadius: 12,
-          border: COACH_SUGGEST_BORDER,
+          color: COACH_YELLOW,
+          fontSize: 11,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+        }}>{summary.eyebrow}</div>
+        <span style={{
+          color: COACH_YELLOW,
+          fontSize: 14,
+          lineHeight: 1,
+          opacity: 0.85,
+        }} aria-hidden="true">{collapsed ? '▾' : '▴'}</span>
+      </button>
+
+      {collapsed ? (
+        // Collapsed state — show the headline alone, truncated. Tap the row
+        // (or chevron) to expand. Lets users keep the coach voice within
+        // reach without burning fold space on bullets + suggestion.
+        <div style={{
           fontSize: 13,
-          color: 'var(--text-primary)',
+          color: 'var(--text-secondary)',
           lineHeight: 1.4,
-        }}>
-          {summary.suggestion.kind === 'warning' ? '⚠ ' : '💡 '}{summary.suggestion.text}
-        </div>
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          marginTop: 4,
+        }}>{summary.headline}</div>
+      ) : (
+        <>
+          <div style={{
+            fontSize: 19,
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.25,
+            marginBottom: summary.bullets.length > 0 ? 12 : 0,
+            color: 'var(--text-primary)',
+          }}>{summary.headline}</div>
+
+          {summary.bullets.length > 0 && (
+            <div>
+              {summary.bullets.map((b, i) => (
+                <div
+                  key={i}
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    marginBottom: 6,
+                    paddingLeft: 16,
+                    position: 'relative',
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute',
+                    left: 6,
+                    top: 0,
+                    color: COACH_YELLOW,
+                    fontWeight: 700,
+                  }}>·</span>
+                  {b}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {summary.suggestion && (
+            <div style={{
+              marginTop: 12,
+              padding: '10px 12px',
+              background: COACH_SUGGEST_BG,
+              borderRadius: 12,
+              border: COACH_SUGGEST_BORDER,
+              fontSize: 13,
+              color: 'var(--text-primary)',
+              lineHeight: 1.4,
+            }}>
+              {summary.suggestion.kind === 'warning' ? '⚠ ' : '💡 '}{summary.suggestion.text}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -782,7 +890,9 @@ function ConsistencyHeatmap({ sessions, streak, bestStreak, accentHex }) {
   const W = PL + weeks * step + 8
   const H = PT + 7 * step + 6
 
-  const dayLabels = [null, 'M', null, 'W', null, 'F', null]
+  // Batch 58 v2 — every day labeled per user feedback. Was M/W/F sparse;
+  // user reported the missing labels made the grid hard to read.
+  const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
   const monthLabels = []
   for (let w = 0; w < weeks; w++) {
     const d = new Date(start)
@@ -795,8 +905,95 @@ function ConsistencyHeatmap({ sessions, streak, bestStreak, accentHex }) {
   const { r, g, b } = hexToRgb(accentHex)
   const activeDays = cells.filter(c => !c.future && c.sets > 0).length
 
+  // Batch 58 v2 — monthly session counts row per user feedback "I would
+  // like to just quickly see how many sessions did I log last month? This
+  // month?". Counts unique active calendar days in the current month and
+  // the prior calendar month from the bb-mode session list.
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = now.getMonth()
+  const thisMonthStart = new Date(yyyy, mm, 1).getTime()
+  const lastMonthStart = new Date(yyyy, mm - 1, 1).getTime()
+  const lastMonthEnd   = thisMonthStart - 1
+  const thisMonthDays  = new Set()
+  const lastMonthDays  = new Set()
+  for (const s of sessions) {
+    if (s?.mode !== 'bb') continue
+    const t = new Date(s.date).getTime()
+    if (!Number.isFinite(t)) continue
+    const ds = toDateStr(s.date)
+    if (t >= thisMonthStart) thisMonthDays.add(ds)
+    else if (t >= lastMonthStart && t <= lastMonthEnd) lastMonthDays.add(ds)
+  }
+  const thisMonthCount = thisMonthDays.size
+  const lastMonthCount = lastMonthDays.size
+  const monthDelta     = thisMonthCount - lastMonthCount
+  const thisMonthLabel = now.toLocaleDateString('en-US', { month: 'long' })
+  const lastMonthLabel = new Date(yyyy, mm - 1, 1).toLocaleDateString('en-US', { month: 'long' })
+
   return (
     <div>
+      {/* Monthly session counts — answers "how many sessions did I log
+          this month vs last month?" without making the user count cells. */}
+      <div style={{
+        display: 'flex',
+        gap: 8,
+        marginBottom: 12,
+      }}>
+        <div style={{
+          flex: 1,
+          minWidth: 0,
+          background: 'var(--bg-item)',
+          borderRadius: 12,
+          padding: '10px 12px',
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            This month
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+              {thisMonthCount}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+              session{thisMonthCount === 1 ? '' : 's'} · {thisMonthLabel}
+            </span>
+          </div>
+        </div>
+        <div style={{
+          flex: 1,
+          minWidth: 0,
+          background: 'var(--bg-item)',
+          borderRadius: 12,
+          padding: '10px 12px',
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            Last month
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+              {lastMonthCount}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+              session{lastMonthCount === 1 ? '' : 's'} · {lastMonthLabel}
+            </span>
+            {lastMonthCount > 0 && monthDelta !== 0 && (
+              <span style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: monthDelta > 0 ? '#10b981' : '#f59e0b',
+                fontVariantNumeric: 'tabular-nums',
+                marginLeft: 'auto',
+              }}>
+                {monthDelta > 0 ? '+' : ''}{monthDelta}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+        Last 13 weeks
+      </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}>
         {dayLabels.map((lbl, i) => lbl && (
           <text key={i} x={PL - 4} y={PT + i * step + cellSz - 2} textAnchor="end" fontSize={7.5} fill="var(--text-faint)">
@@ -824,7 +1021,7 @@ function ConsistencyHeatmap({ sessions, streak, bestStreak, accentHex }) {
       <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
         <span>🔥 {streak}-day streak</span>
         <span style={{ color: 'var(--text-faint)' }}>Best: {bestStreak} days</span>
-        <span style={{ color: 'var(--text-faint)' }}>{activeDays} active days (13 wks)</span>
+        <span style={{ color: 'var(--text-faint)' }}>{activeDays} active days in last 13 weeks</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8 }}>
         <span style={{ fontSize: 10, color: 'var(--text-faint)', marginRight: 2 }}>Less</span>
@@ -858,6 +1055,15 @@ export default function Progress() {
   // Batch 58 — picker + Volume drill state.
   const [range, setRange]               = useState(DEFAULT_RANGE)
   const [volumeOpen, setVolumeOpen]     = useState(false)
+  // Batch 58 v2 — tab navigation per user feedback ("rather than everything
+  // in one long horizontal view, you just see the thing you want to see").
+  // Default to Volume — the broadest summary tile. Resets on each visit
+  // (not localStorage-persistent — Progress is a destination, not a sticky
+  // state).
+  const [activeTab, setActiveTab] = useState('volume')
+  // Coach card is collapsible per user feedback ("be collapsible"). Default
+  // expanded; user choice persists for the visit only.
+  const [coachCollapsed, setCoachCollapsed] = useState(false)
 
   // windowStartTs is null for 'all' (no filter).
   const windowStartTs     = useMemo(() => rangeStartTs(range), [range])
@@ -898,52 +1104,65 @@ export default function Progress() {
       </div>
       <div className="px-4" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
 
+        {/* Coach card pinned at top — applies to all tabs, picker-aware,
+            collapsible per user feedback. */}
         <MonthlyCoachingCard
           sessions={sessions}
           cardioSessions={cardioSessions}
           restDaySessions={restDaySessions}
           splits={splits}
           activeSplitId={activeSplitId}
+          range={range}
+          collapsed={coachCollapsed}
+          onToggleCollapse={() => setCoachCollapsed(c => !c)}
         />
 
-        <SectionLabel text="Volume" />
-        <StatCard>
-          <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
-            Total weight moved · {rangeLabelFor(range).toLowerCase()}
-          </p>
-          <VolumeTile
-            data={volumeData}
-            range={range}
-            accentHex={accentHex}
-            onOpenDrill={() => setVolumeOpen(true)}
-          />
-        </StatCard>
+        {/* Tab row — only one section visible at a time per user feedback
+            "rather than everything being in one long horizontal view". */}
+        <TabRow active={activeTab} onChange={setActiveTab} theme={theme} />
 
-        <SectionLabel text="Strength" />
-        <StatCard>
-          <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>
-            Per-exercise e1RM trend — tap a row for full history
-          </p>
-          <StrengthTile
-            sessions={filteredSessions}
-            exerciseLibrary={exerciseLibrary}
-            accentHex={accentHex}
-            onOpenExercise={setOpenExercise}
-          />
-        </StatCard>
+        {activeTab === 'volume' && (
+          <StatCard>
+            <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
+              Total weight moved · {rangeLabelFor(range).toLowerCase()}
+            </p>
+            <VolumeTile
+              data={volumeData}
+              range={range}
+              accentHex={accentHex}
+              onOpenDrill={() => setVolumeOpen(true)}
+            />
+          </StatCard>
+        )}
 
-        <SectionLabel text="Consistency" />
-        <StatCard>
-          <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
-            13-week training calendar — intensity reflects sets logged
-          </p>
-          <ConsistencyHeatmap sessions={sessions} streak={streak} bestStreak={bestStreak} accentHex={accentHex} />
-        </StatCard>
+        {activeTab === 'strength' && (
+          <StatCard>
+            <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>
+              Per-exercise e1RM trend — tap a row for full history
+            </p>
+            <StrengthTile
+              sessions={filteredSessions}
+              exerciseLibrary={exerciseLibrary}
+              accentHex={accentHex}
+              onOpenExercise={setOpenExercise}
+            />
+          </StatCard>
+        )}
 
-        <SectionLabel text="Achievements" />
-        <StatCard>
-          <AchievementsCard data={achievementsData} />
-        </StatCard>
+        {activeTab === 'consistency' && (
+          <StatCard>
+            <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
+              Sessions per month + 13-week heatmap
+            </p>
+            <ConsistencyHeatmap sessions={sessions} streak={streak} bestStreak={bestStreak} accentHex={accentHex} />
+          </StatCard>
+        )}
+
+        {activeTab === 'achievements' && (
+          <StatCard>
+            <AchievementsCard data={achievementsData} />
+          </StatCard>
+        )}
 
       </div>
 
