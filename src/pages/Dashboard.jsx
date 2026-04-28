@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak, getSplitSessionCount, formatTimeAgo } from '../utils/helpers'
+import { getNextBbWorkout, getRotationItemOnDate, getWorkoutStreak, getSplitSessionCount, formatTimeAgo, calcSessionVolume } from '../utils/helpers'
 import { BB_WORKOUT_NAMES, BB_WORKOUT_EMOJI, BB_WORKOUT_SEQUENCE, BB_EXERCISE_GROUPS } from '../data/exercises'
 
 // ── Streak tier ───────────────────────────────────────────────────────────────
@@ -872,6 +872,40 @@ export default function Dashboard() {
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 3)
 
+  // ── Today-completed hero ──────────────────────────────────────────────────
+  // When the user has logged a bb session today AND no in-progress session is
+  // mid-flow AND today isn't a rest day, swap the standard hero for a
+  // completion-celebration variant: ✓ DONE TODAY eyebrow + today's actual
+  // session stats (volume / time / sets) + "View session" CTA + tomorrow
+  // preview row. todayLogged is already computed above (any bb session today).
+  const todaySession = sessionByDate[todayStr]
+  const todayCompleted = todayLogged && !activeSession?.sessionStarted && !isRestDay && !!todaySession
+  const todayDayOfCycle = todayCompleted ? getDayOfCycle(todaySession?.type) : null
+  const todayVolume = todayCompleted ? calcSessionVolume(todaySession?.data?.exercises || []) : 0
+  const todayDuration = todayCompleted ? (todaySession?.duration || 0) : 0
+  const todayWorkingSetCount = todayCompleted
+    ? (todaySession?.data?.exercises || []).reduce((sum, ex) =>
+        sum + (ex.sets || []).filter(s => s.type === 'working' && (s.reps || s.weight)).length, 0)
+    : 0
+  // Tomorrow's slot — direct computation that bypasses the timezone-fragile
+  // anchor-based path in getRotationItemOnDate (which compares UTC date
+  // strings vs local date strings, drifting in evening sessions in negative
+  // UTC offsets). Cycle mode: advance from today's session's slot index.
+  // Week mode: rotation[(todayDow + 1) % 7]. Returns 'rest' for rest slots.
+  const tomorrowSlot = (() => {
+    if (!todayCompleted) return null
+    if (rotationMode === 'week' && rotation.length === 7) {
+      return rotation[(today.getDay() + 1) % 7] || null
+    }
+    if (!rotation.length) return null
+    const todaySlotIdx = rotation.indexOf(todaySession.type)
+    if (todaySlotIdx === -1) return null
+    return rotation[(todaySlotIdx + 1) % rotation.length] || null
+  })()
+  const tomorrowIsRest = tomorrowSlot === 'rest' || tomorrowSlot == null
+  const tomorrowName = tomorrowIsRest ? 'Rest day' : getWorkoutName(tomorrowSlot)
+  const tomorrowEmoji = tomorrowIsRest ? '🌙' : getWorkoutEmoji(tomorrowSlot)
+
   // ── Eyebrow + meta lines for the hero card ───────────────────────────────
   const heroDayOfCycle = getDayOfCycle(recommendedWorkout)
   const heroExerciseCount = (!isRestDay && !activeSession?.sessionStarted && !todayLogged)
@@ -1133,8 +1167,139 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+          ) : todayCompleted ? (
+            // (b) Today's workout was already logged — completion celebration hero
+            <div style={heroAccentCardStyle}>
+              <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                  <p style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color: '#22C55E',
+                    margin: 0,
+                  }}>
+                    ✓ Done today
+                    {todayDayOfCycle ? ` · Day ${todayDayOfCycle.day} of ${todayDayOfCycle.total}` : ''}
+                  </p>
+                  <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, maxWidth: '100%' }}>
+                      <span style={{ fontSize: 22, lineHeight: 1 }}>
+                        {getWorkoutEmoji(todaySession?.type)}
+                      </span>
+                      <p style={{
+                        fontSize: 22,
+                        fontWeight: 700,
+                        letterSpacing: '-0.02em',
+                        lineHeight: 1.15,
+                        color: 'var(--text-primary)',
+                        margin: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {getWorkoutName(todaySession?.type)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {/* Right rail — today's session stats: VOLUME / TIME / SETS */}
+                <div style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+                  justifyContent: 'space-between',
+                  flexShrink: 0, minWidth: 0,
+                }}>
+                  {todayVolume > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+                        {formatVolume(todayVolume)}
+                      </span>
+                      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                        Volume
+                      </span>
+                    </div>
+                  ) : <span />}
+                  {todayDuration > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+                        {formatTime(todayDuration)}
+                      </span>
+                      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                        Time
+                      </span>
+                    </div>
+                  ) : <span />}
+                  {todayWorkingSetCount > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+                        {todayWorkingSetCount}
+                      </span>
+                      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                        {todayWorkingSetCount === 1 ? 'Set' : 'Sets'}
+                      </span>
+                    </div>
+                  ) : <span />}
+                </div>
+              </div>
+
+              <button
+                onClick={() => navigate('/history', { state: { focusSessionId: todaySession?.id } })}
+                style={{
+                  width: '100%',
+                  background: lightBgWithLightAccent ? safeAccent : theme.hex,
+                  color: lightBgWithLightAccent ? '#FFFFFF' : theme.contrastText,
+                  padding: '14px 18px',
+                  borderRadius: 14,
+                  fontWeight: 700,
+                  fontSize: 15,
+                  boxShadow: `0 4px 20px ${hexToRgba(lightBgWithLightAccent ? safeAccent : theme.hex, 0.35)}`,
+                  border: 'none',
+                  cursor: 'pointer',
+                  marginBottom: 6,
+                }}
+              >
+                View session →
+              </button>
+              {tomorrowSlot && (
+                <button
+                  onClick={() => {
+                    if (tomorrowIsRest) return
+                    setPreviewWorkoutId(tomorrowSlot)
+                    setShowPreview(true)
+                  }}
+                  disabled={tomorrowIsRest}
+                  style={{
+                    width: '100%',
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    padding: '8px 4px 0 4px',
+                    border: 'none',
+                    cursor: tomorrowIsRest ? 'default' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10, fontWeight: 700 }}>
+                    Tomorrow
+                  </span>
+                  <span style={{ fontSize: 14 }}>{tomorrowEmoji}</span>
+                  <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: 200,
+                  }}>{tomorrowName}</span>
+                  {!tomorrowIsRest && <span style={{ color: 'var(--text-muted)' }}>→</span>}
+                </button>
+              )}
+            </div>
           ) : (
-            // (b) Today is a workout day — accent gradient hero
+            // (c) Today is a workout day — accent gradient hero
             <div style={heroAccentCardStyle}>
               {/* Card-level flex: left side carries the eyebrow + title
                   row stacked, right side carries the 3-row stat column.

@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import { formatDate, formatTime, getWorkoutStreak, perSideLoad, toLocalDateStr } from '../utils/helpers'
@@ -665,6 +666,21 @@ export default function History() {
 
   const [selected, setSelected] = useState(null)
   const [selectedCardio, setSelectedCardio] = useState(null)
+
+  // Dashboard's "View session →" CTA on the today-completed hero passes a
+  // focusSessionId via location.state so the detail modal opens automatically.
+  // Clear state after consumption so a back-and-forward navigation doesn't
+  // re-open the same session.
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const id = location.state?.focusSessionId
+    if (id) {
+      setSelected(id)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const sortedStrength = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date))
 
