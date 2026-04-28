@@ -200,6 +200,7 @@ const HYROX_HYBRID_WORKOUTS = [
                 'sta_row',
                 'sta_sled_push',
                 'sta_sled_pull',
+                'sta_burpee_broad',
                 'sta_farmers',
                 'sta_sandbag_lunges',
                 'sta_wall_balls',

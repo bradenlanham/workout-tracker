@@ -67,7 +67,8 @@ console.log('\n[Test 3] HYROX-round entries carry valid roundConfig')
   const friRound = t.workouts.find(w => w.id === 'hyx_friday').sections[1].exercises[0]
   ok('Friday HYROX entry is hyrox-round type', friRound.type === 'hyrox-round')
   ok('Friday uses rotation pool (no stationId)', !friRound.roundConfig?.stationId && Array.isArray(friRound.roundConfig?.rotationPool))
-  ok('Friday rotationPool has 7 stations', friRound.roundConfig?.rotationPool?.length === 7)
+  ok('Friday rotationPool has 8 stations (full HYROX catalog)', friRound.roundConfig?.rotationPool?.length === 8)
+  ok('Friday rotationPool includes sta_burpee_broad', friRound.roundConfig?.rotationPool?.includes('sta_burpee_broad'))
   ok('Friday runDistance = 1000m', friRound.roundConfig?.runDimensions?.distance?.default === 1000)
 
   const satRound = t.workouts.find(w => w.id === 'hyx_saturday').sections[1].exercises[0]
@@ -137,8 +138,9 @@ console.log('\n[Test 6] Round configs preserved through deep clone')
   const tueRound = draft.workouts[1].sections[1].exercises[0]
   ok('Tuesday roundConfig.stationId in draft = sta_skierg', tueRound.roundConfig?.stationId === 'sta_skierg')
   const friRound = draft.workouts[4].sections[1].exercises[0]
-  ok('Friday roundConfig.rotationPool length = 7 in draft', friRound.roundConfig?.rotationPool?.length === 7)
+  ok('Friday roundConfig.rotationPool length = 8 in draft', friRound.roundConfig?.rotationPool?.length === 8)
   ok('Friday rotationPool includes sta_skierg', friRound.roundConfig?.rotationPool?.includes('sta_skierg'))
+  ok('Friday rotationPool includes sta_burpee_broad in draft', friRound.roundConfig?.rotationPool?.includes('sta_burpee_broad'))
   const satRound = draft.workouts[5].sections[1].exercises[0]
   ok('Saturday roundConfig.stationId in draft = sta_wall_balls', satRound.roundConfig?.stationId === 'sta_wall_balls')
 }

@@ -130,7 +130,7 @@
               {
                 "name": "HYROX Simulation Round",
                 "type": "hyrox-round",
-                "rec": { "sets": "4 → 8 rounds", "reps": "1000m run (~⅝ mi) + 1 station", "note": "Wks 1–3: 4 rounds. Wks 4–6: 5–6 rounds. By Aug: 6–8 rounds. Station rotates weekly: SkiErg / Row / Sled push / Sled pull / Farmers carry / Sandbag lunges / Wall balls." },
+                "rec": { "sets": "4 → 8 rounds", "reps": "1000m run (~⅝ mi) + 1 station", "note": "Wks 1–3: 4 rounds. Wks 4–6: 5–6 rounds. By Aug: 6–8 rounds. Station rotates weekly: SkiErg / Row / Sled push / Sled pull / Burpee broad jumps / Farmers carry / Sandbag lunges / Wall balls." },
                 "roundConfig": {
                   "runDimensions": { "distance": { "default": 1000, "unit": "m" } },
                   "rotationPool": [
@@ -138,6 +138,7 @@
                     "sta_row",
                     "sta_sled_push",
                     "sta_sled_pull",
+                    "sta_burpee_broad",
                     "sta_farmers",
                     "sta_sandbag_lunges",
                     "sta_wall_balls"

@@ -251,7 +251,8 @@ check('Tuesday round preserves defaultRestSeconds=120', tuesdayRound?.roundConfi
 
 const fridayRound = realCreate.find(e => e.name === 'HYROX Simulation Round')
 check('Friday round uses rotationPool (not stationId)', !fridayRound?.roundConfig?.stationId && Array.isArray(fridayRound?.roundConfig?.rotationPool))
-check('Friday round rotationPool has 7 stations', fridayRound?.roundConfig?.rotationPool?.length === 7)
+check('Friday round rotationPool has 8 stations (full HYROX catalog)', fridayRound?.roundConfig?.rotationPool?.length === 8)
+check('Friday round rotationPool includes sta_burpee_broad', fridayRound?.roundConfig?.rotationPool?.includes('sta_burpee_broad'))
 check('Friday round runDistance=1000', fridayRound?.roundConfig?.runDimensions?.distance?.default === 1000)
 
 const saturdayRound = realCreate.find(e => e.name === 'Wall Balls + 200m Run Round')
