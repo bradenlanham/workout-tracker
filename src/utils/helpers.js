@@ -4107,6 +4107,188 @@ export function buildStrengthTileData({
   return { exercises: rows, totalCount: rows.length }
 }
 
+// ── Volume tile aggregator (Batch 58) ──────────────────────────────────────
+//
+// Powers the Volume tile on /progress per Gains-Design-Critique.md §2. Walks
+// bb-mode sessions once, returns aggregate volume + weekly trend series +
+// prior-period delta + per-workout-type breakdown. Picker passes
+// `windowStartTs` (ms epoch); sessions before that are excluded.
+// `prevWindowStartTs` defines the prior-period window for the delta pill
+// (typically the same length as the current window, ending at windowStartTs).
+// When `windowStartTs` is null (All), prevTotalVolume is 0 and deltaPct null.
+//
+// Pure: no store coupling. Defensive against null / non-array / malformed
+// inputs at every layer.
+//
+// Returns:
+//   {
+//     totalVolume,         // Σ across filtered window (drops included)
+//     prevTotalVolume,     // Σ across the prior window, 0 when range=All
+//     deltaPct,            // (total - prev) / prev * 100, rounded; null when prev=0
+//     weeklySeries: [{ weekStart, volume }, ...],   // chronological asc
+//     byWorkoutType: [{ type, volume, count }, ...], // desc by volume
+//     sessionCount,        // count of bb sessions in window
+//   }
+export function buildVolumeTileData({
+  sessions = [],
+  windowStartTs = null,
+  prevWindowStartTs = null,
+  now = Date.now(),
+} = {}) {
+  const empty = {
+    totalVolume: 0,
+    prevTotalVolume: 0,
+    deltaPct: null,
+    weeklySeries: [],
+    byWorkoutType: [],
+    sessionCount: 0,
+  }
+  if (!Array.isArray(sessions)) return empty
+  const nowMs = typeof now === 'number' ? now : Date.now()
+  const winStart = typeof windowStartTs === 'number' ? windowStartTs : null
+  const prevStart = typeof prevWindowStartTs === 'number' ? prevWindowStartTs : null
+
+  const bbSessions = sessions.filter(s => {
+    if (!s || s.mode !== 'bb' || !s.data) return false
+    const t = new Date(s.date).getTime()
+    return Number.isFinite(t)
+  })
+
+  const inWindow = s => {
+    const t = new Date(s.date).getTime()
+    if (winStart != null && t < winStart) return false
+    return t <= nowMs
+  }
+  const inPrevWindow = s => {
+    if (prevStart == null || winStart == null) return false
+    const t = new Date(s.date).getTime()
+    return t >= prevStart && t < winStart
+  }
+
+  // Walk one session's exercises once and return its total volume (primary +
+  // nested drops). Mirrors the calcSessionVolume + Batch 22 decision 2 walker.
+  const sumOneSessionVolume = s => {
+    const exes = s?.data?.exercises || []
+    return exes.reduce((exAcc, ex) =>
+      exAcc + (ex.sets || []).reduce((sAcc, set) => {
+        const primary = (set.reps || 0) * (set.weight || 0)
+        const drops = Array.isArray(set.drops)
+          ? set.drops.reduce((d, dst) => d + (dst.reps || 0) * (dst.weight || 0), 0)
+          : 0
+        return sAcc + primary + drops
+      }, 0), 0)
+  }
+
+  const inWindowSessions = bbSessions.filter(inWindow)
+  const inPrevSessions   = bbSessions.filter(inPrevWindow)
+
+  const totalVolume     = inWindowSessions.reduce((acc, s) => acc + sumOneSessionVolume(s), 0)
+  const prevTotalVolume = winStart == null
+    ? 0
+    : inPrevSessions.reduce((acc, s) => acc + sumOneSessionVolume(s), 0)
+
+  let deltaPct = null
+  if (winStart != null && prevTotalVolume > 0) {
+    deltaPct = Math.round(((totalVolume - prevTotalVolume) / prevTotalVolume) * 100)
+  }
+
+  // Weekly series — buckets by Sunday-anchored week-start (local timezone).
+  const weekBuckets = new Map() // weekStart (ms) → volume
+  const sundayOf = ms => {
+    const d = new Date(ms)
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - d.getDay())
+    return d.getTime()
+  }
+  for (const s of inWindowSessions) {
+    const t = new Date(s.date).getTime()
+    const wk = sundayOf(t)
+    weekBuckets.set(wk, (weekBuckets.get(wk) || 0) + sumOneSessionVolume(s))
+  }
+  const weeklySeries = Array.from(weekBuckets.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([weekStart, volume]) => ({ weekStart, volume }))
+
+  // By workout type — descending by total volume.
+  const typeBuckets = new Map() // type → { volume, count }
+  for (const s of inWindowSessions) {
+    const type = s.type || 'unknown'
+    const cur = typeBuckets.get(type) || { volume: 0, count: 0 }
+    cur.volume += sumOneSessionVolume(s)
+    cur.count  += 1
+    typeBuckets.set(type, cur)
+  }
+  const byWorkoutType = Array.from(typeBuckets.entries())
+    .map(([type, { volume, count }]) => ({ type, volume, count }))
+    .sort((a, b) => b.volume - a.volume)
+
+  return {
+    totalVolume,
+    prevTotalVolume,
+    deltaPct,
+    weeklySeries,
+    byWorkoutType,
+    sessionCount: inWindowSessions.length,
+  }
+}
+
+// ── Achievements aggregator (Batch 58) ─────────────────────────────────────
+//
+// Powers the Achievements section at the bottom of /progress. Re-homes
+// stats Dashboard v2 (B51) dropped: PRs This Split / Total Sessions / Best
+// Streak. Plus the existing badge collection.
+//
+// Returns:
+//   {
+//     prsThisSplit,      // PR-flagged sets in active-split workouts
+//     totalSessions,     // bb-mode session count, all-time
+//     bestStreak,        // getBestStreak()
+//     currentStreak,     // getWorkoutStreak()
+//     badges,            // getAchievements() output
+//   }
+//
+// Defensive against null / non-array / malformed inputs.
+export function buildAchievementsData({
+  sessions = [],
+  cardioSessions = [],
+  restDaySessions = [],
+  splits = [],
+  activeSplitId = null,
+} = {}) {
+  if (!Array.isArray(sessions)) sessions = []
+  if (!Array.isArray(cardioSessions)) cardioSessions = []
+  if (!Array.isArray(restDaySessions)) restDaySessions = []
+  if (!Array.isArray(splits)) splits = []
+
+  const bbSessions = sessions.filter(s => s?.mode === 'bb')
+  const totalSessions = bbSessions.length
+
+  const activeSplit = activeSplitId
+    ? splits.find(sp => sp?.id === activeSplitId)
+    : null
+  const activeWorkoutIds = activeSplit && Array.isArray(activeSplit.workouts)
+    ? new Set(activeSplit.workouts.map(w => w?.id).filter(Boolean))
+    : null
+
+  let prsThisSplit = 0
+  for (const s of bbSessions) {
+    if (activeWorkoutIds && !activeWorkoutIds.has(s.type)) continue
+    const exes = s.data?.exercises || []
+    for (const ex of exes) {
+      const sets = ex?.sets || []
+      for (const st of sets) {
+        if (st?.isNewPR === true) prsThisSplit += 1
+      }
+    }
+  }
+
+  const currentStreak = getWorkoutStreak(sessions, cardioSessions, restDaySessions)
+  const bestStreak    = getBestStreak(sessions, cardioSessions, restDaySessions)
+  const badges        = getAchievements(sessions, cardioSessions, restDaySessions)
+
+  return { prsThisSplit, totalSessions, bestStreak, currentStreak, badges }
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {

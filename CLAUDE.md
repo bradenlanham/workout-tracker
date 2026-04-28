@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 28, 2026 (Batch 57 — Strength drill-down on /progress)
+> Last updated: April 28, 2026 (Batch 58 — Progress redesign closure: time-range picker + 3-tile reframing + Achievements)
 
 ## Rules for Claude
 
@@ -2518,6 +2518,45 @@ Second of three Progress page redesign batches per `Gains-Design-Critique.md` §
     - Daylight + light accent test: emerald/amber colors hold contrast on the lighter background; sparkline stroke uses theme.hex correctly.
 
 672. **Build.** `npx vite build --outDir /tmp/test-build` → 925.21 KB bundle / 249.51 KB gzipped (+7.23 KB / +1.67 KB vs Batch 56, accounted for by the new `buildStrengthTileData` aggregator + `ExerciseHistorySheet` component (~250 lines) + the `StrengthTile` + `CompactSparkline` inline components, offset partly by the deleted `PRTimeline`).
+
+### Batch 58 (April 28, 2026) — Progress redesign closure: time-range picker + 3-tile reframing + Achievements
+
+Third and final Progress page redesign batch per `Gains-Design-Critique.md` §2 lines 116–139. Closes out the "Progress v2 — Coaching Surface, Not Dashboard" vision: time-range picker chips at the top of `/progress`, 5 visible cards collapsing into 3 (Volume / Strength / Consistency), and a new Achievements section at the bottom that re-homes stats Dashboard v2 (B51) dropped. User-locked decisions: tap-tile-opens-sheet for Volume drill (mirrors B57); Time-in-the-Gym (DurationChart) dropped entirely; picker `1mo/3mo/6mo/All` defaults to `3mo` and filters Volume + Strength; Consistency stays at fixed 13-week heatmap; Achievements ships in this batch.
+
+673. **`buildVolumeTileData({sessions, windowStartTs, prevWindowStartTs, now})` in `helpers.js`** — pure aggregator. Walks bb-mode sessions once, returns `{totalVolume, prevTotalVolume, deltaPct, weeklySeries, byWorkoutType, sessionCount}`. Drops nested in primary working sets contribute to volume per Batch 22 decision 2. Weekly series buckets by Sunday-anchored week-start (local timezone). By-workout-type breakdown sorts descending by volume. When `windowStartTs` is null (All), `prevTotalVolume = 0` and `deltaPct = null`. Defensive against null / non-array / malformed inputs at every layer.
+
+674. **`buildAchievementsData({sessions, cardioSessions, restDaySessions, splits, activeSplitId})` in `helpers.js`** — pure aggregator. Returns `{prsThisSplit, totalSessions, bestStreak, currentStreak, badges}`. Composes `getWorkoutStreak` + `getBestStreak` + `getAchievements`. PR scoping: when `activeSplitId` matches a split in the splits array, only PRs in sessions whose `type` matches one of that split's workout ids are counted. Null `activeSplitId` falls through to all-time PR count. Defensive against null inputs.
+
+675. **`RadarChart` accepts `cutoffDate` prop** (`Progress.jsx:378`). When passed a Date object, uses that as the cutoff for filtering sessions; falls back to legacy 30-day default when `null`. Unblocks the Volume drill sheet's picker-scoped per-muscle-group radar.
+
+676. **`src/components/VolumeDrillSheet.jsx` (new)** — bottom-sheet portal at z-260 mirroring B57's `ExerciseHistorySheet` structural pattern. Renders three slots Progress.jsx supplies as React nodes (rather than importing WeeklyLoadChart / RadarChart directly): `weeklyLoadNode` (3-week stacked-bar comparison anchored to now, NOT picker-scoped), `radarNode` (per-muscle-group radar over picker's window), and a per-workout-type list at the bottom (rows showing type name + volume + session count + % of total). All hooks called BEFORE `if (!open) return null` early return per the pre-flight checklist.
+
+677. **Picker chip row in `Progress.jsx`** — `RangePicker` inline component with 4 chips (`1mo / 3mo / 6mo / All`), default `3mo`. Selected chip uses `theme.hex` + `theme.contrastText`; unselected uses neutral `bg-item`. State (`range`) lives in the `Progress` component; `windowStartTs` + `prevWindowStartTs` derived via `rangeStartTs` / `prevRangeStartTs` helpers. `filteredSessions = sessions.filter(s => t >= windowStartTs)` threaded down to Strength tile. Volume tile uses `buildVolumeTileData` directly (with both window timestamps for prior-period delta).
+
+678. **`VolumeTile` inline component in `Progress.jsx`** — picker-aware aggregate view. Layout: large 28px `47.5k` total volume, `lb · N sessions` subtitle, delta pill (`+12% vs prior 3 months`, green ≥0 / amber when negative / muted when no prior data), 80×24 weekly-volume sparkline at right, `Tap to see breakdown →` hint. Whole tile is a `<button>` opening `VolumeDrillSheet`. Empty state when sessionCount===0: "Log a few sessions to see volume trends".
+
+679. **`AchievementsCard` inline component in `Progress.jsx`** — bottom of page. 3-column stat tile row (`PRs this split` / `Total sessions` / `Best streak`) using `buildAchievementsData` output. Below: badge grid (auto-fill, 100px min-width) rendering `getAchievements()` badges as icon + label + sub. Empty state when totalSessions===0 + no badges: "Log your first session to start earning achievements." Renders "Keep training to unlock your first badge." sub-state when sessions exist but no badges yet.
+
+680. **DurationChart deleted entirely** (`Progress.jsx:292-374`). Time-in-gym is rarely actionable; per Critique §2 the 5→3 reframing implicitly drops it. Replaced with a one-line comment marker.
+
+681. **Page section order (final)**: sticky `<h1>Progress</h1>` + RangePicker → Coaching → Volume → Strength (filteredSessions) → Consistency (unfiltered, 13-week) → Achievements (unfiltered, all-time). Coaching + Consistency + Achievements ignore the picker on purpose — they own their own windowing semantics (30-day rolling, 13-week heatmap, all-time stats respectively). The picker doesn't disappear but doesn't affect them — visual signal: only Volume + Strength change when the user taps a chip.
+
+682. **`b58-progress-redesign-sanity.mjs` at repo root.** 42/42 pass. Covers: cold-start cases (empty/null/undefined/non-array sessions); aggregation math (1mo + All windows; volume + session count + weekly series + prev-period delta = +198% over basic synthetic data); drops contribute to total (Batch 22 decision 2 verified); byWorkoutType breakdown (sorted desc, correct counts); weekly series sorted asc and sums to total; defensive cases (malformed sessions / bad dates / null sets); achievements basic shape (totalSessions / prsThisSplit / bestStreak / badges array including first-session and first-PR badge IDs); PR scoping by active split (PRs in non-active workout types correctly filtered out; null activeSplitId counts all); achievements defensive cases; real-data spot check from `workout-backup-2026-04-26.json` (30 bb sessions, 3mo all-30 since user trains daily — 641,320 lb total, 6 workout types correctly sorted desc, 140 PRs this split, 30 total sessions, 12-day best streak, 7 badges).
+
+683. **Verified live in preview** (port 5185 worktree dev server, mobile 375×812).
+    - **Empty data** (`sessions: []`) → page renders without crash. Picker chips visible. Volume tile shows "Log a few sessions" empty state. Strength tile shows its own empty state. Consistency heatmap renders with 0 active days. Achievements shows "Log your first session to start earning achievements." No console errors.
+    - **Populated weight-only** (BamBam Blueprint, 30-session backup) → picker default `3mo` selected. Volume tile shows `641k lb · 30 sessions` + No prior data message + weekly sparkline. Tap Volume tile → drill sheet opens at z-260 with header `Volume breakdown / Last 3 months`, 3-week stacked-bar chart, picker-scoped Radar chart, per-workout-type list (legs1 149k lb · 6 sessions · 23% of total → pull → push → push2 → legs2 → custom). Strength tile (B57) renders top 4 over 3mo window — list size matches B57 behavior. Tapping picker chips: `1mo` → Volume shrinks; `All` → Volume balloons; Strength rate computations re-run correctly per window. Consistency heatmap unchanged when picker changes. Achievements section shows 140 PRs / 30 total / 12 best streak + 7 badges in grid.
+    - **HYROX-active** (HYROX Hybrid week-mode split active, mixed lift + HYROX sessions) → Volume tile aggregates lift volume only (HYROX rounds don't carry weight×reps in flat-set form). Strength tile only shows weight-training entries (B57 invariant unchanged). Achievements section filters PRs to HYROX Hybrid workout ids correctly. HYROX section preview on `/log/bb/hyx_tuesday` continues to render correctly (B41 surface unaffected).
+    - Daylight + white accent test: picker chip contrast holds (white-bg with dark text on selected); delta pill emerald/amber colors readable on white card; weekly sparkline stroke uses theme.hex (same caveat as B57 — white accent stroke is faint on white card; documented).
+
+684. **Files modified.**
+    - `src/utils/helpers.js` — `buildVolumeTileData` aggregator + `buildAchievementsData` aggregator.
+    - `src/pages/Progress.jsx` — picker chip row state; thread `filteredSessions` to Strength; delete DurationChart; add `RangePicker` + `VolumeSparkline` + `VolumeTile` + `AchievementsCard` inline components; adapt `RadarChart` to accept `cutoffDate` prop; rewrite main return with new section order.
+    - `src/components/VolumeDrillSheet.jsx` (new) — bottom-sheet drill-down (~150 lines).
+    - `b58-progress-redesign-sanity.mjs` (new, repo root) — 42-assertion sanity.
+    - `CLAUDE.md` — last-updated header + this Batch 58 entry.
+
+685. **Build.** `npx vite build --outDir /tmp/test-build` → 936.09 KB bundle / 251.83 KB gzipped (+10.88 KB / +2.32 KB vs Batch 57, accounted for by `buildVolumeTileData` + `buildAchievementsData` aggregators (~3 KB), `VolumeDrillSheet` component (~3 KB), the inline `RangePicker` + `VolumeSparkline` + `VolumeTile` + `AchievementsCard` components in Progress.jsx (~5 KB).
 
 ---
 

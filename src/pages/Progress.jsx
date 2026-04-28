@@ -7,8 +7,11 @@ import {
   toLocalDateStr,
   buildMonthlyCoachingSummary,
   buildStrengthTileData,
+  buildVolumeTileData,
+  buildAchievementsData,
 } from '../utils/helpers'
 import ExerciseHistorySheet from '../components/ExerciseHistorySheet'
+import VolumeDrillSheet from '../components/VolumeDrillSheet'
 
 // ── Muscle group mapping ──────────────────────────────────────────────────────
 
@@ -113,6 +116,225 @@ function Empty({ msg = 'Log more sessions to see data' }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 110, color: 'var(--text-faint)', fontSize: 13 }}>
       {msg}
+    </div>
+  )
+}
+
+// ── Batch 58: time-range picker + Volume tile + Achievements section ───────
+
+const RANGE_OPTIONS = [
+  { id: '1mo', label: '1mo', days: 30 },
+  { id: '3mo', label: '3mo', days: 90 },
+  { id: '6mo', label: '6mo', days: 180 },
+  { id: 'all', label: 'All',  days: null },
+]
+const DEFAULT_RANGE = '3mo'
+
+function rangeStartTs(rangeId, now = Date.now()) {
+  const opt = RANGE_OPTIONS.find(r => r.id === rangeId)
+  if (!opt || opt.days == null) return null
+  return now - opt.days * 86400000
+}
+function prevRangeStartTs(rangeId, now = Date.now()) {
+  const opt = RANGE_OPTIONS.find(r => r.id === rangeId)
+  if (!opt || opt.days == null) return null
+  return now - 2 * opt.days * 86400000
+}
+function rangeLabelFor(rangeId) {
+  if (rangeId === '1mo') return 'Last month'
+  if (rangeId === '3mo') return 'Last 3 months'
+  if (rangeId === '6mo') return 'Last 6 months'
+  return 'All sessions'
+}
+
+function RangePicker({ range, onChange, theme }) {
+  return (
+    <div className="flex items-center gap-1.5 mt-2" role="tablist" aria-label="Time range">
+      {RANGE_OPTIONS.map(opt => {
+        const selected = opt.id === range
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(opt.id)}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold tabular-nums transition-colors"
+            style={selected
+              ? { background: theme.hex, color: theme.contrastText, borderColor: theme.hex }
+              : { background: 'var(--bg-item)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)' }
+            }
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function shortVolume(n) {
+  const v = Number(n) || 0
+  if (v >= 100000) return `${Math.round(v / 1000)}k`
+  if (v >= 10000)  return `${(v / 1000).toFixed(1)}k`
+  if (v >= 1000)   return `${(v / 1000).toFixed(1)}k`
+  return String(Math.round(v))
+}
+
+// Tiny weekly-volume sparkline used inside the Volume tile primary view.
+function VolumeSparkline({ series, accentColor }) {
+  if (!Array.isArray(series) || series.length < 2) return null
+  const W = 80, H = 24, padX = 2, padY = 3
+  const values = series.map(p => p.volume || 0)
+  const minV = Math.min(...values)
+  const maxV = Math.max(...values)
+  const spread = Math.max(1, maxV - minV)
+  const yMin = minV - spread * 0.1
+  const yMax = maxV + spread * 0.1
+  const range = Math.max(1, yMax - yMin)
+  const xFor = i => padX + (i / (series.length - 1)) * (W - 2 * padX)
+  const yFor = v => H - padY - ((v - yMin) / range) * (H - 2 * padY)
+  const points = series.map((p, i) => `${xFor(i).toFixed(1)},${yFor(p.volume || 0).toFixed(1)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">
+      <polyline points={points} fill="none" stroke={accentColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function VolumeTile({ data, range, accentHex, onOpenDrill }) {
+  const { totalVolume, deltaPct, weeklySeries, sessionCount } = data
+  const rangeLabel = rangeLabelFor(range)
+  const isAll = range === 'all'
+
+  if (sessionCount === 0) {
+    return <Empty msg="Log a few sessions to see volume trends" />
+  }
+
+  const deltaColor = deltaPct == null
+    ? 'var(--text-muted)'
+    : deltaPct >= 0
+      ? '#10b981'
+      : '#f59e0b'
+  const deltaLabel = deltaPct == null
+    ? null
+    : `${deltaPct >= 0 ? '+' : ''}${deltaPct}% vs prior ${rangeLabel.toLowerCase().replace('last ', '')}`
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenDrill}
+      aria-label={`Open volume breakdown for ${rangeLabel}`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'transparent',
+        textAlign: 'left',
+        width: '100%',
+        cursor: 'pointer',
+        padding: 0,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+          {shortVolume(totalVolume)}
+        </span>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          lb · {sessionCount} session{sessionCount === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+        {deltaLabel && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: deltaColor, fontVariantNumeric: 'tabular-nums' }}>
+            {deltaLabel}
+          </span>
+        )}
+        {!isAll && !deltaLabel && (
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            No prior data to compare
+          </span>
+        )}
+        <div style={{ marginLeft: 'auto' }}>
+          <VolumeSparkline series={weeklySeries} accentColor={accentHex} />
+        </div>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-faint)' }}>
+        Tap to see breakdown →
+      </div>
+    </button>
+  )
+}
+
+function AchievementsCard({ data }) {
+  const { prsThisSplit, totalSessions, bestStreak, badges } = data
+  const isEmpty = totalSessions === 0 && (badges?.length || 0) === 0
+
+  if (isEmpty) {
+    return (
+      <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '12px 0' }}>
+        Log your first session to start earning achievements.
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Three stat tiles row */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-item)', borderRadius: 12, padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            PRs this split
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+            {prsThisSplit}
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-item)', borderRadius: 12, padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            Total sessions
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+            {totalSessions}
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-item)', borderRadius: 12, padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            Best streak
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+            {bestStreak}
+          </div>
+        </div>
+      </div>
+
+      {/* Badge grid */}
+      {badges?.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
+          {badges.map(b => (
+            <div
+              key={b.id}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 4,
+                padding: '12px 8px',
+                background: 'var(--bg-item)',
+                borderRadius: 12,
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: 24, lineHeight: 1 }} aria-hidden="true">{b.icon}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{b.label}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>{b.sub}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: '4px 0' }}>
+          Keep training to unlock your first badge.
+        </div>
+      )}
     </div>
   )
 }
@@ -286,88 +508,8 @@ function WeeklyLoadChart({ sessions, splits, accentHex }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Visual 2 — Time in the Gym (duration trend)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function DurationChart({ sessions, accentHex }) {
-  const sorted = [...sessions]
-    .filter(s => s.mode === 'bb' && (s.duration || 0) > 0)
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .slice(-14)
-
-  if (sorted.length < 2) return <Empty msg="Log more sessions to see duration trends" />
-
-  const durs = sorted.map(s => s.duration || 0)
-  const maxDur = Math.max(...durs, 1)
-  const yTop = Math.ceil(maxDur / 15) * 15
-
-  const rollingAvg = durs.map((_, i) => {
-    const slice = durs.slice(Math.max(0, i - 6), i + 1)
-    return slice.reduce((a, b) => a + b, 0) / slice.length
-  })
-
-  const W = 340, H = 175
-  const PL = 38, PR = 8, PT = 10, PB = 30
-  const plotW = W - PL - PR, plotH = H - PT - PB
-  const n = durs.length
-  const barW = Math.max(8, plotW / n - 3)
-  const toX = i => PL + (i + 0.5) * (plotW / n)
-  const toY = v => PT + plotH * (1 - Math.min(v, yTop) / yTop)
-
-  const avgPath = rollingAvg.map((v, i) =>
-    `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ')
-
-  const yTicks = [0, yTop * 0.5, yTop].map(v => ({ val: v, y: toY(v) }))
-
-  function fmtDur(m) {
-    return m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? `${m % 60}m` : ''}` : `${m}m`
-  }
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}>
-      {yTicks.map((t, i) => (
-        <g key={i}>
-          <line x1={PL} y1={t.y} x2={W - PR} y2={t.y} stroke="var(--border-subtle)" strokeWidth={0.6} />
-          <text x={PL - 4} y={t.y + 3.5} textAnchor="end" fontSize={9} fill="var(--text-faint)">
-            {Math.round(t.val)}m
-          </text>
-        </g>
-      ))}
-      {durs.map((d, i) => {
-        const bh = Math.max(2, (d / yTop) * plotH)
-        const x = toX(i) - barW / 2
-        const y = toY(d)
-        const isRecent = i >= n - 3
-        return (
-          <g key={i}>
-            <rect x={x} y={y} width={barW} height={bh} fill={accentHex} fillOpacity={0.65} rx={2} />
-            {isRecent && (
-              <text x={toX(i)} y={y - 3} textAnchor="middle" fontSize={7.5} fill="var(--text-secondary)">
-                {fmtDur(d)}
-              </text>
-            )}
-          </g>
-        )
-      })}
-      <path d={avgPath} fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} strokeDasharray="4 2" />
-      {sorted.map((s, i) => {
-        const step = Math.max(1, Math.floor(n / 4))
-        if (i % step !== 0) return null
-        const d = new Date(s.date)
-        return (
-          <text key={i} x={toX(i)} y={H - 2} textAnchor="middle" fontSize={7.5} fill="var(--text-faint)">
-            {d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-          </text>
-        )
-      })}
-      <g transform={`translate(${W - 86}, ${H - 20})`}>
-        <line x1={0} y1={5} x2={12} y2={5} stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} strokeDasharray="4 2" />
-        <text x={15} y={9} fontSize={8} fill="var(--text-faint)">7-session avg</text>
-      </g>
-    </svg>
-  )
-}
+// Batch 58 — DurationChart removed entirely. Time-in-gym is rarely actionable
+// info; per Critique §2 the 5→3 tile reframing implicitly drops it.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Visual 3 — Muscle Group Balance Radar
@@ -375,9 +517,13 @@ function DurationChart({ sessions, accentHex }) {
 
 const RADAR_AXES = ['Push', 'Pull', 'Legs', 'Shoulders', 'Arms', 'Core']
 
-function RadarChart({ sessions, accentHex }) {
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - 30)
+function RadarChart({ sessions, accentHex, cutoffDate = null }) {
+  // Batch 58 — accept an optional cutoffDate from the picker. Falls back to
+  // the legacy 30-day default when not provided so any pre-B58 caller (e.g.
+  // legacy tests or one-off scripts) still works.
+  const cutoff = cutoffDate instanceof Date
+    ? cutoffDate
+    : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d })()
 
   const vols = Object.fromEntries(RADAR_AXES.map(k => [k, 0]))
   sessions
@@ -707,15 +853,48 @@ export default function Progress() {
   const streak     = useMemo(() => getWorkoutStreak(sessions, cardioSessions, restDaySessions), [sessions, cardioSessions, restDaySessions])
   const bestStreak = useMemo(() => getBestStreak(sessions,    cardioSessions, restDaySessions), [sessions, cardioSessions, restDaySessions])
 
-  // Batch 57 — strength drill-down sheet state. Carries the full row from
-  // buildStrengthTileData so the sheet has fullHistory / rate / etc. without
-  // re-deriving. Closed when null.
+  // Batch 57 — strength drill-down sheet state.
   const [openExercise, setOpenExercise] = useState(null)
+  // Batch 58 — picker + Volume drill state.
+  const [range, setRange]               = useState(DEFAULT_RANGE)
+  const [volumeOpen, setVolumeOpen]     = useState(false)
+
+  // windowStartTs is null for 'all' (no filter).
+  const windowStartTs     = useMemo(() => rangeStartTs(range), [range])
+  const prevWindowStartTs = useMemo(() => prevRangeStartTs(range), [range])
+
+  // Sessions filtered to the picker's window. Threaded into Volume + Strength
+  // tiles. Consistency / Coaching / Achievements continue to read unfiltered
+  // sessions because they own their own windowing semantics.
+  const filteredSessions = useMemo(() => {
+    if (windowStartTs == null) return sessions
+    return sessions.filter(s => {
+      const t = new Date(s?.date).getTime()
+      return Number.isFinite(t) && t >= windowStartTs
+    })
+  }, [sessions, windowStartTs])
+
+  const volumeData = useMemo(
+    () => buildVolumeTileData({ sessions, windowStartTs, prevWindowStartTs }),
+    [sessions, windowStartTs, prevWindowStartTs]
+  )
+
+  const achievementsData = useMemo(
+    () => buildAchievementsData({ sessions, cardioSessions, restDaySessions, splits, activeSplitId }),
+    [sessions, cardioSessions, restDaySessions, splits, activeSplitId]
+  )
+
+  // Cutoff Date object passed to RadarChart inside the Volume drill sheet.
+  const radarCutoff = windowStartTs == null ? null : new Date(windowStartTs)
+
+  // Workout-id → display name resolver for VolumeDrillSheet's per-type list.
+  const resolveTypeName = (type) => getTypeName(type, splits)
 
   return (
     <div style={{ paddingBottom: 100, minHeight: '100vh' }}>
       <div className="sticky top-0 bg-base z-30 px-4 pb-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 20px)' }}>
         <h1 className="text-2xl font-bold">Progress</h1>
+        <RangePicker range={range} onChange={setRange} theme={theme} />
       </div>
       <div className="px-4" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
 
@@ -727,28 +906,17 @@ export default function Progress() {
           activeSplitId={activeSplitId}
         />
 
-        <SectionLabel text="Weekly Training Load" />
+        <SectionLabel text="Volume" />
         <StatCard>
           <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
-            Volume (sets × reps × weight) by workout type
+            Total weight moved · {rangeLabelFor(range).toLowerCase()}
           </p>
-          <WeeklyLoadChart sessions={sessions} splits={splits} accentHex={accentHex} />
-        </StatCard>
-
-        <SectionLabel text="Time in the Gym" />
-        <StatCard>
-          <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
-            Session duration — last 14 sessions
-          </p>
-          <DurationChart sessions={sessions} accentHex={accentHex} />
-        </StatCard>
-
-        <SectionLabel text="Muscle Group Balance" />
-        <StatCard>
-          <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
-            Relative volume by muscle group — last 30 days
-          </p>
-          <RadarChart sessions={sessions} accentHex={accentHex} />
+          <VolumeTile
+            data={volumeData}
+            range={range}
+            accentHex={accentHex}
+            onOpenDrill={() => setVolumeOpen(true)}
+          />
         </StatCard>
 
         <SectionLabel text="Strength" />
@@ -757,7 +925,7 @@ export default function Progress() {
             Per-exercise e1RM trend — tap a row for full history
           </p>
           <StrengthTile
-            sessions={sessions}
+            sessions={filteredSessions}
             exerciseLibrary={exerciseLibrary}
             accentHex={accentHex}
             onOpenExercise={setOpenExercise}
@@ -772,6 +940,11 @@ export default function Progress() {
           <ConsistencyHeatmap sessions={sessions} streak={streak} bestStreak={bestStreak} accentHex={accentHex} />
         </StatCard>
 
+        <SectionLabel text="Achievements" />
+        <StatCard>
+          <AchievementsCard data={achievementsData} />
+        </StatCard>
+
       </div>
 
       <ExerciseHistorySheet
@@ -780,6 +953,16 @@ export default function Progress() {
         sessions={sessions}
         accentColor={accentHex}
         onClose={() => setOpenExercise(null)}
+      />
+
+      <VolumeDrillSheet
+        open={volumeOpen}
+        rangeLabel={rangeLabelFor(range)}
+        byWorkoutType={volumeData.byWorkoutType}
+        weeklyLoadNode={<WeeklyLoadChart sessions={sessions} splits={splits} accentHex={accentHex} />}
+        radarNode={<RadarChart sessions={sessions} accentHex={accentHex} cutoffDate={radarCutoff} />}
+        resolveTypeName={resolveTypeName}
+        onClose={() => setVolumeOpen(false)}
       />
     </div>
   )
