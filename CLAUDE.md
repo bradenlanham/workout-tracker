@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 27, 2026 (Batch 55 — A few adjustments: focus mode + plate alignment + Incline Treadmill + week rotation + cross-type ghost rows)
+> Last updated: April 28, 2026 (Batch 56 — Monthly Coaching Summary card on /progress)
 
 ## Rules for Claude
 
@@ -2458,6 +2458,42 @@ Five live-feedback items from a HYROX session that morning. Three surgical UI tw
     - `batch-55-rotation-sanity.mjs` (new) — Item 4e (30 assertions).
 
 653. **Build.** `npx vite build --outDir /tmp/test-build` → 902.61 KB bundle / 243.67 KB gzipped (+5.24 KB / +1.59 KB vs Batch 54, accounted for by the rotation-mode helper branches + migrateSplitsToV10 + Dashboard/Log threading + SplitCanvas mode wiring + the lastExDataByName third pass).
+
+### Batch 56 (April 28, 2026) — Monthly Coaching Summary card on /progress
+
+First of three Progress-page redesign batches per `Gains-Design-Critique.md` §2 (the design doc internally calls this "B53"; landing as Batch 56 in the sequential changelog). Reframes Progress from a static report into a coaching surface. Pure additive — yellow HYROX-tinted card pinned above the existing 5 stat tiles (Weekly Load / Duration / Radar / PR Timeline / Heatmap), no edits to those tiles. Hidden when < 3 bb-mode sessions logged in the rolling 30-day window so new users don't see a card screaming "log more data."
+
+User-locked decisions (from planning round): rolling 30-day window (not calendar month — smooth, no end-of-month jitter); hybrid scope (lift PRs + HYROX rounds + running all contribute); cold-start hides the card entirely. Card uses HYROX yellow `#EAB308` independent of user's accent — same brand cue as the round logger / Start overlay / summary screen.
+
+654. **`buildMonthlyCoachingSummary({sessions, cardioSessions, restDaySessions, splits, activeSplitId, now})` in `helpers.js`.** Pure aggregator over the rolling 30-day window. Returns `{eyebrow, headline, bullets[], suggestion | null, meta} | null`. Composes existing engine helpers — `calcSessionVolume` walker pattern, `getExerciseHistory` + `getProgressionRate`, `detectRegression` + `detectPlateau` (swing intentionally skipped — too noisy for a monthly read), `getWorkoutStreak` + `getBestStreak`, plus Batch 45's `getHyroxSessionTotalTime` for HYROX session totals. Defensive against null / non-array / malformed inputs at every layer. Uses `toLocalDateStr` semantics implicitly via `Date.parse` — same timezone behavior as the rest of the app.
+
+655. **Headline picker — single line, highest-impact wins.** Priority: PR-led (≥3 PRs → `Strong push month. 3 PRs on Bench Press.`) > Streak milestone (`currentStreak === bestStreak && ≥7` → `12-day streak. Your best run yet.`) > HYROX-led (≥3 HYROX sessions → `Strong HYROX month. 4 sessions, fastest 42:30.`) > Volume-led (`±15%` delta → `Up 12% volume. Your strongest 4 weeks.` / `Volume down 22%. Your reset month.`) > Default (mirrors Dashboard v2's narrative — `5 sessions this month, 1 ahead of last.`). Push/pull/legs framing inferred from the top-PR exercise's name via `categoryForExerciseName` keyword scan.
+
+656. **Bullet composer — at most 3, ordered by impact.** Skips bullets that duplicate the headline (volume bullet hidden when headline is already volume-led; HYROX bullet hidden when headline is HYROX-led). Composes from: volume delta line, top-progressor `{exercise} trending +{rate}%/wk across {n} sessions.`, HYROX session count + fastest, `{streak}-day streak holding (best: {best}).`, and PR count breakdown. Top-progressor pickup gates at `n ≥ 4 && rSquared ≥ 0.6 && rate ≥ 0.5%/wk` to filter low-confidence fits.
+
+657. **Suggestion line — render only when triggered.** Three branches: regression anomaly fires `⚠ {exercise} has dipped {n} sessions. Consider a recovery week.` (highest priority); workout-type drift fires `💡 {workout} sessions down {pct}%. Want to add a {workout} day this week?` (gates at `≥3 prior sessions && ≥30% drop`, scoped to the active split's workouts when `activeSplitId` is provided); plateau anomaly fires `💡 {exercise} is flat for {n} sessions. Try dropping 10% and chasing reps to break through.` Silence beats verbosity — no "everything looks great" filler when nothing's actionable.
+
+658. **`MonthlyCoachingCard` inline component** (`src/pages/Progress.jsx`). Slotted at the top of the px-4 flex column above `<SectionLabel text="Weekly Training Load" />`. Yellow gradient + border match `Gains-Design-Mockups.html` `.coach-card` spec exactly: `linear-gradient(135deg, rgba(234,179,8,0.08) 0%, rgba(0,0,0,0.4) 65%)`, `1px solid rgba(234,179,8,0.18)`, `border-radius: 22`, `padding: 18`. Eyebrow `✨ COACH · LAST 30 DAYS` in `#EAB308` 11px tracking-wider. Headline 19px / 700 / `var(--text-primary)`. Bullets 13px / `var(--text-secondary)` with `·` prefix in yellow. Suggestion box: `rgba(0,0,0,0.35)` bg, `1px solid rgba(234,179,8,0.25)` border, ⚠ for warnings / 💡 for tips. `role="region"` + `aria-label="This month's coaching summary"`.
+
+659. **`formatVolumeShort(n)` helper** (`helpers.js`). Reserved for future use by the bullet composer — `47000 → 47k`, `5500 → 5.5k`, `950 → 950`. Not actively rendered in B56 but stays available for B57 (strength drill-down) when per-exercise volume tiles need a compact format. Defensive against null / non-numeric input.
+
+660. **`b53-coaching-summary-sanity.mjs` at worktree root.** 77/77 pass. Covers: `formatVolumeShort` across 6 cases; cold-start gate (0/1/2/null sessions → null); headline priority (PR-led / volume-up / volume-down / default with session-count math + ahead/behind framing); volume delta math (drops contribute via Batch 22 decision 2, div-by-zero handled when prevVolume=0); top-progressor pickup (n ≥ 4 + rSquared ≥ 0.6 cut, low-confidence n=2 NOT picked); regression anomaly + suggestion copy; plateau detection; regression beats plateau when both fire; swing intentionally NOT surfaced; workout-type drift detection (75% drop on Pull → suggestion fires); HYROX integration (4 hyrox-round sessions earn the headline; lift-only inputs don't surface HYROX bullets); hybrid scope (streak includes cardio + rest); defensive cases (null sessions / non-array / bad dates / missing data / no sets); return shape (eyebrow / headline / bullets array ≤ 3 / suggestion null-or-typed / meta object); bullet composition (top-progressor surfaces in non-headline-PR case); real-data spot check skips gracefully when backup absent.
+
+661. **Verified live in preview** (worktree port 5185, mobile 375×812). Three states pass with zero new console errors:
+    - **Empty data** (`sessions: []`, no splits) → card hidden; existing 5 stat tiles render with their canonical empty-state messages.
+    - **Populated weight-only** (BamBam Blueprint active, 22 synthetic sessions: 6 Pec Dec progression + 3 Bench Press PRs + 10 Leg Press regression + prior-window comparison data) → card renders `Strong push month. 3 PRs on Bench Press.` headline, two bullets (`Volume up 77% vs last 30 days.` + `Pec Dec trending +9.3%/wk across 6 sessions.`), and the regression suggestion `⚠ Leg Press has dipped 6 sessions. Consider a recovery week.`.
+    - **HYROX-active** (HYROX Hybrid week-mode split, 4 Tuesday sessions with 4-round HYROX SkiErg + 3 Friday lift-only) → card renders `Strong HYROX month. 4 sessions, fastest 42:30.` headline + `💡 Cable Lateral Raise is flat for 6 sessions. Try dropping 10% and chasing reps to break through.` plateau suggestion.
+    - **Daylight + white accent** test passes — yellow eyebrow holds contrast, dark `var(--text-primary)` headline + bullets read cleanly on the gradient. Yellow is independent of accent (verified by the explicit `#EAB308` literal in the component, not via theme threading).
+
+662. **Files modified.**
+    - `src/utils/helpers.js` — `buildMonthlyCoachingSummary` aggregator + `formatVolumeShort` helper + 6 inline private helpers (sumVolumeInWindow / countPRsInWindow / prCountByExercise / distinctExerciseRefsInWindow / typeCountsInWindow / hyroxStatsInWindow / categoryForExerciseName / workoutNameForType).
+    - `src/pages/Progress.jsx` — `MonthlyCoachingCard` inline component + slot above existing tiles + `activeSplitId` added to the `useStore()` destructure.
+    - `b53-coaching-summary-sanity.mjs` (new, repo root) — 77-assertion sanity script.
+    - `CLAUDE.md` — Last-updated header + this Batch 56 entry.
+
+663. **Deferred for B57 (strength drill-down) and B58 (time-range picker + tile collapse)** per the Critique doc. B56 is purely the coaching headline; the existing 5 stat tiles below stay unchanged. No filter-by-exercise / muscle-group axis this batch — that question surfaced during preview and was deferred to a follow-up after B57 ships, when direct-manipulation drill-down may make a global filter axis unnecessary.
+
+664. **Build.** `npx vite build --outDir /tmp/test-build` → 917.98 KB bundle / 247.84 KB gzipped (+15.37 KB / +4.17 KB vs Batch 55, accounted for by the aggregator + 6 private helpers + the inline MonthlyCoachingCard component).
 
 ---
 

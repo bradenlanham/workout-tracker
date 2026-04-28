@@ -3502,6 +3502,483 @@ export function pickHyroxStationForToday(roundConfig, sessions, exerciseIdOrName
   return best
 }
 
+// ── Batch 53: Monthly coaching summary (Progress page) ────────────────────
+//
+// Aggregates engine signals over the last 30 days into a single coaching
+// observation rendered atop /progress. Pure function — no store coupling.
+// Returns null when there's not enough data to coach against (< 3 bb-mode
+// sessions in window) so the caller hides the card entirely.
+//
+// Signals composed: session count delta, volume delta, PR count, top
+// progressing exercise, anomaly hits (regression > plateau), streak,
+// HYROX rounds completed + fastest, workout-type drift.
+//
+// Voice mirrors `recommendNextLoad` — specific numbers, plain English,
+// no em-dashes, present-tense.
+
+const MS_PER_DAY = 86400000
+const WINDOW_DAYS = 30
+
+// Format a volume number as a short k-suffix string. 47000 → "47k",
+// 142500 → "143k", 950 → "950". Used by the headline + bullets.
+export function formatVolumeShort(n) {
+  const v = Number(n) || 0
+  if (v >= 10000) return `${Math.round(v / 1000)}k`
+  if (v >= 1000)  return `${(v / 1000).toFixed(1)}k`
+  return `${Math.round(v)}`
+}
+
+// Sum bb-mode session volume (primary + nested drops). Mirrors
+// calcSessionVolume but takes a list of sessions and a window predicate.
+function sumVolumeInWindow(sessions, withinWindow) {
+  let total = 0
+  for (const s of sessions) {
+    if (s?.mode !== 'bb') continue
+    if (!withinWindow(s)) continue
+    const exes = s?.data?.exercises || []
+    for (const ex of exes) {
+      const sets = ex?.sets || []
+      for (const set of sets) {
+        total += (Number(set.reps) || 0) * (Number(set.weight) || 0)
+        if (Array.isArray(set.drops)) {
+          for (const d of set.drops) {
+            total += (Number(d.reps) || 0) * (Number(d.weight) || 0)
+          }
+        }
+      }
+    }
+  }
+  return total
+}
+
+// Count PR flags on working primaries inside a window.
+function countPRsInWindow(sessions, withinWindow) {
+  let count = 0
+  for (const s of sessions) {
+    if (s?.mode !== 'bb') continue
+    if (!withinWindow(s)) continue
+    const exes = s?.data?.exercises || []
+    for (const ex of exes) {
+      const sets = ex?.sets || []
+      for (const set of sets) {
+        if (set.isNewPR && set.type === 'working') count++
+      }
+    }
+  }
+  return count
+}
+
+// Walk in-window bb-mode sessions, return a Map of exerciseId → PR count
+// for surfacing the top PR-target exercise in the headline.
+function prCountByExercise(sessions, withinWindow) {
+  const m = new Map()
+  for (const s of sessions) {
+    if (s?.mode !== 'bb') continue
+    if (!withinWindow(s)) continue
+    const exes = s?.data?.exercises || []
+    for (const ex of exes) {
+      const sets = ex?.sets || []
+      let prs = 0
+      for (const set of sets) {
+        if (set.isNewPR && set.type === 'working') prs++
+      }
+      if (prs > 0) {
+        const key = ex.exerciseId || ex.name
+        if (!key) continue
+        const prev = m.get(key)
+        if (!prev || prs > prev.prs) {
+          m.set(key, { prs: (prev?.prs || 0) + prs, name: ex.name })
+        } else {
+          prev.prs += prs
+        }
+      }
+    }
+  }
+  return m
+}
+
+// Walks bb-mode sessions, returns a Set of distinct exerciseId|name keys
+// that appeared in window. Used to scope the "top progressing" search +
+// the per-exercise anomaly walk so we don't re-fit every library entry.
+function distinctExerciseRefsInWindow(sessions, withinWindow) {
+  const seen = new Map() // key → { id, name }
+  for (const s of sessions) {
+    if (s?.mode !== 'bb') continue
+    if (!withinWindow(s)) continue
+    const exes = s?.data?.exercises || []
+    for (const ex of exes) {
+      const id = ex.exerciseId
+      const name = ex.name
+      if (!id && !name) continue
+      const key = id || name
+      if (!seen.has(key)) seen.set(key, { id: id || null, name: name || null })
+    }
+  }
+  return seen
+}
+
+// Per-workout-type session counts in a window. Returns a Map of
+// session.type (workout id) → count. Drives the workout-type drift signal.
+function typeCountsInWindow(sessions, withinWindow) {
+  const m = new Map()
+  for (const s of sessions) {
+    if (s?.mode !== 'bb') continue
+    if (!withinWindow(s)) continue
+    const t = s.type
+    if (!t) continue
+    m.set(t, (m.get(t) || 0) + 1)
+  }
+  return m
+}
+
+// Resolve a workout type id to a display name via the splits[] slice.
+// Mirrors the pattern Progress.jsx already uses for the bar chart.
+// Returns the type id verbatim if no split matches.
+function workoutNameForType(type, splits) {
+  if (!Array.isArray(splits)) return type
+  for (const sp of splits) {
+    const wkt = sp?.workouts?.find(w => w?.id === type)
+    if (wkt?.name) {
+      // "Push — Chest" → "Push"
+      return wkt.name.split(' — ')[0]
+    }
+  }
+  const builtIn = { push: 'Push', legs1: 'Legs 1', pull: 'Pull', push2: 'Push 2', legs2: 'Legs 2' }
+  return builtIn[type] || type
+}
+
+// Walk in-window sessions for hyrox-round exercises with completed rounds[]
+// arrays. Returns { roundCount, fastestSec, fastestSessionDate } or null.
+function hyroxStatsInWindow(sessions, withinWindow) {
+  let roundCount = 0
+  let fastestSec = null
+  let fastestDate = null
+  let totalSessions = 0
+  for (const s of sessions) {
+    if (s?.mode !== 'bb') continue
+    if (!withinWindow(s)) continue
+    const exes = s?.data?.exercises || []
+    for (const ex of exes) {
+      const rounds = Array.isArray(ex.rounds) ? ex.rounds : null
+      if (!rounds || rounds.length === 0) continue
+      totalSessions++
+      roundCount += rounds.length
+      const total = getHyroxSessionTotalTime(rounds)
+      if (total > 0 && (fastestSec === null || total < fastestSec)) {
+        fastestSec = total
+        fastestDate = s.date
+      }
+    }
+  }
+  return totalSessions > 0
+    ? { roundCount, fastestSec, fastestDate, sessionCount: totalSessions }
+    : null
+}
+
+// Determine a rough push/pull/legs framing from an exercise name. Used for
+// the headline when a single exercise dominates the PR list — "Strong push
+// month — 3 PRs on Bench Press" reads better than "Strong month".
+function categoryForExerciseName(name) {
+  if (typeof name !== 'string') return null
+  const n = name.toLowerCase()
+  if (/bench|press|chest|fly|pec|dip|push/.test(n)) return 'push'
+  if (/squat|leg|lunge|calf|glute|hamstring|hack|romanian/.test(n)) return 'legs'
+  if (/row|pulldown|pull-up|pullup|chin|deadlift|shrug|lat/.test(n)) return 'pull'
+  if (/curl|extension|tricep|bicep/.test(n)) return 'arms'
+  if (/delt|raise|military|overhead/.test(n)) return 'shoulder'
+  return null
+}
+
+// Cap the inferred-rate noise floor so a wildly noisy fit doesn't claim
+// the headline. Mirrors the recommender's `usedFit` gate.
+const TOP_PROGRESSOR_MIN_N      = 4
+const TOP_PROGRESSOR_MIN_RSQ    = 0.6
+const TOP_PROGRESSOR_MIN_RATE   = 0.005   // 0.5%/wk — below this we don't crow
+const DRIFT_THRESHOLD_PCT       = 0.30    // ≥ 30% drop in window-vs-prior session count
+const DRIFT_MIN_PRIOR_SESSIONS  = 3       // need at least 3 prior sessions to flag a "skipped" type
+
+/**
+ * buildMonthlyCoachingSummary
+ *
+ * Composes an opinionated coaching observation over the last `WINDOW_DAYS`
+ * (rolling 30 days) for the Progress page hero card.
+ *
+ * Returns { eyebrow, headline, bullets[], suggestion | null, meta } when
+ * the user has logged ≥ 3 bb-mode sessions in window, else null.
+ *
+ * Args (object):
+ *   sessions          — bb-mode + cardio + rest aren't filtered here; we
+ *                       gate per-signal inside.
+ *   cardioSessions    — for streak math.
+ *   restDaySessions   — for streak math.
+ *   splits            — for workout-name resolution.
+ *   activeSplitId     — optional; when present, drift is computed against
+ *                       the active split's workouts only.
+ *   now               — defaults to Date.now() for testability.
+ */
+export function buildMonthlyCoachingSummary({
+  sessions = [],
+  cardioSessions = [],
+  restDaySessions = [],
+  splits = [],
+  activeSplitId = null,
+  now = Date.now(),
+} = {}) {
+  if (!Array.isArray(sessions)) return null
+
+  const nowMs       = typeof now === 'number' ? now : Date.now()
+  const windowStart = nowMs - WINDOW_DAYS * MS_PER_DAY
+  const priorStart  = nowMs - 2 * WINDOW_DAYS * MS_PER_DAY
+
+  const inWindow      = s => {
+    const t = new Date(s?.date).getTime()
+    return Number.isFinite(t) && t >= windowStart && t <= nowMs
+  }
+  const inPriorWindow = s => {
+    const t = new Date(s?.date).getTime()
+    return Number.isFinite(t) && t >= priorStart && t < windowStart
+  }
+
+  const bbSessions = sessions.filter(s => s?.mode === 'bb')
+  const sessionCount      = bbSessions.filter(inWindow).length
+  const prevSessionCount  = bbSessions.filter(inPriorWindow).length
+
+  // Cold-start gate — under 3 bb-mode sessions, no coaching to offer.
+  if (sessionCount < 3) return null
+
+  // ── Volume delta ─────────────────────────────────────────────────────
+  const volume      = sumVolumeInWindow(sessions, inWindow)
+  const prevVolume  = sumVolumeInWindow(sessions, inPriorWindow)
+  let volumeDeltaPct = 0
+  if (prevVolume > 0) {
+    volumeDeltaPct = Math.round(((volume - prevVolume) / prevVolume) * 100)
+  }
+
+  // ── PR count + top PR exercise ───────────────────────────────────────
+  const prCount   = countPRsInWindow(sessions, inWindow)
+  const prByEx    = prCountByExercise(sessions, inWindow)
+  let topPrEntry  = null
+  for (const [, entry] of prByEx) {
+    if (!topPrEntry || entry.prs > topPrEntry.prs) topPrEntry = entry
+  }
+
+  // ── Top progressing exercise ─────────────────────────────────────────
+  const exerciseRefs = distinctExerciseRefsInWindow(sessions, inWindow)
+  let topProgressor = null
+  for (const [, ref] of exerciseRefs) {
+    const hist = getExerciseHistory(sessions, ref.id, ref.name)
+    if (hist.length < TOP_PROGRESSOR_MIN_N) continue
+    const fit = getProgressionRate(hist)
+    if (fit.n < TOP_PROGRESSOR_MIN_N) continue
+    if (fit.rSquared < TOP_PROGRESSOR_MIN_RSQ) continue
+    if (fit.rate < TOP_PROGRESSOR_MIN_RATE) continue
+    const rate = fit.rate
+    const last = hist[hist.length - 1]
+    if (!topProgressor || rate > topProgressor.rate) {
+      topProgressor = {
+        name: ref.name,
+        rate,
+        n:    fit.n,
+        lastWeight: last?.weight ?? null,
+        lastReps:   last?.reps ?? null,
+      }
+    }
+  }
+
+  // ── Anomaly hits (regression > plateau, swing skipped per spec) ──────
+  let anomaly = null
+  for (const [, ref] of exerciseRefs) {
+    const hist = getExerciseHistory(sessions, ref.id, ref.name)
+    if (hist.length < 3) continue
+    const reg = detectRegression(hist)
+    if (reg) {
+      const rate = Math.abs(reg.rate * 100)
+      if (!anomaly || (anomaly.kind !== 'regression') || rate > anomaly.severity) {
+        anomaly = { kind: 'regression', name: ref.name, n: reg.n, severity: rate }
+        continue
+      }
+    }
+    if (!anomaly) {
+      const plat = detectPlateau(hist)
+      if (plat) {
+        anomaly = { kind: 'plateau', name: ref.name, n: plat.n, severity: 0 }
+      }
+    }
+  }
+
+  // ── Streak ───────────────────────────────────────────────────────────
+  const currentStreak = getWorkoutStreak(sessions, cardioSessions, restDaySessions)
+  const bestStreak    = getBestStreak(sessions,    cardioSessions, restDaySessions)
+
+  // ── HYROX rounds in window ──────────────────────────────────────────
+  const hyrox = hyroxStatsInWindow(sessions, inWindow)
+
+  // ── Workout-type drift ───────────────────────────────────────────────
+  const typeCountsCurr  = typeCountsInWindow(sessions, inWindow)
+  const typeCountsPrev  = typeCountsInWindow(sessions, inPriorWindow)
+  let drift = null
+  // Restrict to workouts in the active split when one is provided so we
+  // don't surface drift on a split the user moved away from intentionally.
+  let scopedTypeIds = null
+  if (activeSplitId) {
+    const split = splits.find(sp => sp?.id === activeSplitId)
+    if (split?.workouts) scopedTypeIds = new Set(split.workouts.map(w => w?.id).filter(Boolean))
+  }
+  for (const [type, prevCount] of typeCountsPrev) {
+    if (scopedTypeIds && !scopedTypeIds.has(type)) continue
+    if (prevCount < DRIFT_MIN_PRIOR_SESSIONS) continue
+    const currCount = typeCountsCurr.get(type) || 0
+    const dropPct   = (prevCount - currCount) / prevCount
+    if (dropPct >= DRIFT_THRESHOLD_PCT) {
+      const dropPctRounded = Math.round(dropPct * 100)
+      if (!drift || dropPctRounded > drift.dropPct) {
+        drift = {
+          type,
+          name: workoutNameForType(type, splits),
+          prevCount,
+          currCount,
+          dropPct: dropPctRounded,
+        }
+      }
+    }
+  }
+
+  // ── Headline picker ──────────────────────────────────────────────────
+  // Priority: PR-led > Streak milestone > HYROX-led > Volume-led/regress > Default.
+  let headline
+  let headlineKind
+  if (prCount >= 3 && topPrEntry) {
+    const cat = categoryForExerciseName(topPrEntry.name)
+    const lead = cat === 'push' ? 'Strong push month'
+                 : cat === 'pull' ? 'Strong pull month'
+                 : cat === 'legs' ? 'Strong legs month'
+                 : 'Strong PR month'
+    const noun = prCount === 1 ? 'PR' : 'PRs'
+    headline = `${lead}. ${prCount} ${noun} on ${topPrEntry.name}.`
+    headlineKind = 'pr'
+  } else if (currentStreak >= 7 && currentStreak === bestStreak) {
+    headline = `${currentStreak}-day streak. Your best run yet.`
+    headlineKind = 'streak'
+  } else if (hyrox && hyrox.sessionCount >= 3) {
+    const fastestStr = hyrox.fastestSec ? formatDuration(hyrox.fastestSec) : null
+    headline = fastestStr
+      ? `Strong HYROX month. ${hyrox.sessionCount} sessions, fastest ${fastestStr}.`
+      : `Strong HYROX month. ${hyrox.sessionCount} sessions.`
+    headlineKind = 'hyrox'
+  } else if (volumeDeltaPct >= 15) {
+    headline = `Up ${volumeDeltaPct}% volume. Your strongest 4 weeks.`
+    headlineKind = 'volume-up'
+  } else if (volumeDeltaPct <= -15) {
+    headline = `Volume down ${Math.abs(volumeDeltaPct)}%. Your reset month.`
+    headlineKind = 'volume-down'
+  } else {
+    // Default — session count + volume narrative, mirrors Dashboard v2.
+    const sessionsWord = sessionCount === 1 ? 'session' : 'sessions'
+    let frame
+    if (prevSessionCount === 0) {
+      frame = `${sessionCount} ${sessionsWord} this month, building momentum.`
+    } else if (sessionCount > prevSessionCount) {
+      const diff = sessionCount - prevSessionCount
+      frame = `${sessionCount} ${sessionsWord} this month, ${diff} ahead of last.`
+    } else if (sessionCount < prevSessionCount) {
+      const diff = prevSessionCount - sessionCount
+      frame = `${sessionCount} ${sessionsWord} this month, ${diff} behind last.`
+    } else {
+      frame = `${sessionCount} ${sessionsWord} this month, on pace with last.`
+    }
+    headline = frame
+    headlineKind = 'default'
+  }
+
+  // ── Bullet composer ──────────────────────────────────────────────────
+  const bullets = []
+  // Volume delta — skip if already in headline, skip if too small to call out.
+  const volumeInHeadline = headlineKind === 'volume-up' || headlineKind === 'volume-down'
+  if (!volumeInHeadline && Math.abs(volumeDeltaPct) >= 5 && prevVolume > 0) {
+    if (volumeDeltaPct > 0) {
+      bullets.push(`Volume up ${volumeDeltaPct}% vs last 30 days.`)
+    } else {
+      bullets.push(`Volume down ${Math.abs(volumeDeltaPct)}% vs last 30 days.`)
+    }
+  }
+  // Top progressor — different exercise from the headline PR target.
+  if (topProgressor && (!topPrEntry || topPrEntry.name !== topProgressor.name)) {
+    const ratePct = (topProgressor.rate * 100).toFixed(1).replace(/\.0$/, '')
+    bullets.push(`${topProgressor.name} trending +${ratePct}%/wk across ${topProgressor.n} sessions.`)
+  }
+  // Workout-type drift — only if not already used as the suggestion.
+  // (Suggestion takes precedence; if drift is the suggestion, drop the bullet.)
+  // We compose suggestion below; track whether drift is consumed there.
+  let driftConsumedBySuggestion = false
+  // HYROX bullet — if not already in headline AND we have data.
+  if (hyrox && headlineKind !== 'hyrox') {
+    const fastestStr = hyrox.fastestSec ? formatDuration(hyrox.fastestSec) : null
+    if (fastestStr) {
+      bullets.push(`${hyrox.sessionCount} HYROX sessions, fastest ${fastestStr}.`)
+    } else {
+      bullets.push(`${hyrox.sessionCount} HYROX sessions logged.`)
+    }
+  }
+  // Consistency bullet — only when we don't have many PRs and the streak is alive.
+  if (bullets.length < 3 && headlineKind !== 'streak' && currentStreak >= 3) {
+    bullets.push(`${currentStreak}-day streak holding (best: ${bestStreak}).`)
+  }
+  // PR breakdown bullet — only on non-PR headlines that still had PRs.
+  if (bullets.length < 3 && headlineKind !== 'pr' && prCount > 0) {
+    const noun = prCount === 1 ? 'PR' : 'PRs'
+    bullets.push(`${prCount} ${noun} this month.`)
+  }
+
+  // ── Suggestion line (render only when triggered) ─────────────────────
+  let suggestion = null
+  if (anomaly?.kind === 'regression') {
+    suggestion = {
+      kind: 'warning',
+      text: `${anomaly.name} has dipped ${anomaly.n} sessions. Consider a recovery week.`,
+    }
+  } else if (drift) {
+    suggestion = {
+      kind: 'tip',
+      text: `${drift.name} sessions down ${drift.dropPct}%. Want to add a ${drift.name} day this week?`,
+    }
+    driftConsumedBySuggestion = true
+  } else if (anomaly?.kind === 'plateau') {
+    suggestion = {
+      kind: 'tip',
+      text: `${anomaly.name} is flat for ${anomaly.n} sessions. Try dropping 10% and chasing reps to break through.`,
+    }
+  }
+
+  // If drift was promoted to suggestion, keep bullets intact. If drift wasn't
+  // surfaced and we have room, add it as an observation.
+  if (drift && !driftConsumedBySuggestion && bullets.length < 3) {
+    bullets.push(`${drift.name} volume down ${drift.dropPct}% vs last 30 days.`)
+  }
+
+  return {
+    eyebrow:  '✨ COACH · LAST 30 DAYS',
+    headline,
+    bullets:  bullets.slice(0, 3),
+    suggestion,
+    meta: {
+      sessionCount,
+      prevSessionCount,
+      volume,
+      prevVolume,
+      volumeDeltaPct,
+      prCount,
+      topPrName:        topPrEntry?.name || null,
+      topProgressor:    topProgressor ? { name: topProgressor.name, rate: topProgressor.rate, n: topProgressor.n } : null,
+      anomaly:          anomaly ? { kind: anomaly.kind, name: anomaly.name, n: anomaly.n } : null,
+      drift,
+      currentStreak,
+      bestStreak,
+      hyrox,
+      headlineKind,
+    },
+  }
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {

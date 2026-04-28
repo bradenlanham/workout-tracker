@@ -1,7 +1,12 @@
 import { useMemo } from 'react'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
-import { getWorkoutStreak, getBestStreak, toLocalDateStr } from '../utils/helpers'
+import {
+  getWorkoutStreak,
+  getBestStreak,
+  toLocalDateStr,
+  buildMonthlyCoachingSummary,
+} from '../utils/helpers'
 
 // ── Muscle group mapping ──────────────────────────────────────────────────────
 
@@ -106,6 +111,111 @@ function Empty({ msg = 'Log more sessions to see data' }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 110, color: 'var(--text-faint)', fontSize: 13 }}>
       {msg}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 53 — Monthly Coaching Summary card
+//
+// Yellow HYROX-tinted card pinned at the top of /progress. Pure additive —
+// existing stat tiles below are untouched. Hidden when the aggregator returns
+// null (< 3 bb-mode sessions in the rolling 30-day window).
+//
+// Visual treatment matches Gains-Design-Mockups.html .coach-card spec exactly.
+// Yellow #EAB308 is HYROX-fixed brand color; never themed by user accent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const COACH_BG       = 'linear-gradient(135deg, rgba(234,179,8,0.08) 0%, rgba(0,0,0,0.4) 65%)'
+const COACH_BORDER   = '1px solid rgba(234,179,8,0.18)'
+const COACH_YELLOW   = '#EAB308'
+const COACH_SUGGEST_BG     = 'rgba(0,0,0,0.35)'
+const COACH_SUGGEST_BORDER = '1px solid rgba(234,179,8,0.25)'
+
+function MonthlyCoachingCard({ sessions, cardioSessions, restDaySessions, splits, activeSplitId }) {
+  const summary = useMemo(
+    () => buildMonthlyCoachingSummary({
+      sessions, cardioSessions, restDaySessions, splits, activeSplitId,
+    }),
+    [sessions, cardioSessions, restDaySessions, splits, activeSplitId]
+  )
+
+  if (!summary) return null
+
+  return (
+    <div
+      role="region"
+      aria-label="This month's coaching summary"
+      style={{
+        marginTop: 4,
+        marginBottom: 10,
+        borderRadius: 22,
+        padding: 18,
+        background: COACH_BG,
+        border: COACH_BORDER,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{
+        color: COACH_YELLOW,
+        fontSize: 11,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.1em',
+        marginBottom: 10,
+      }}>{summary.eyebrow}</div>
+
+      <div style={{
+        fontSize: 19,
+        fontWeight: 700,
+        letterSpacing: '-0.02em',
+        lineHeight: 1.25,
+        marginBottom: summary.bullets.length > 0 ? 12 : 0,
+        color: 'var(--text-primary)',
+      }}>{summary.headline}</div>
+
+      {summary.bullets.length > 0 && (
+        <div>
+          {summary.bullets.map((b, i) => (
+            <div
+              key={i}
+              style={{
+                color: 'var(--text-secondary)',
+                fontSize: 13,
+                lineHeight: 1.5,
+                marginBottom: 6,
+                paddingLeft: 16,
+                position: 'relative',
+              }}
+            >
+              <span style={{
+                position: 'absolute',
+                left: 6,
+                top: 0,
+                color: COACH_YELLOW,
+                fontWeight: 700,
+              }}>·</span>
+              {b}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {summary.suggestion && (
+        <div style={{
+          marginTop: 12,
+          padding: '10px 12px',
+          background: COACH_SUGGEST_BG,
+          borderRadius: 12,
+          border: COACH_SUGGEST_BORDER,
+          fontSize: 13,
+          color: 'var(--text-primary)',
+          lineHeight: 1.4,
+        }}>
+          {summary.suggestion.kind === 'warning' ? '⚠ ' : '💡 '}{summary.suggestion.text}
+        </div>
+      )}
     </div>
   )
 }
@@ -536,7 +646,7 @@ function ConsistencyHeatmap({ sessions, streak, bestStreak, accentHex }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Progress() {
-  const { sessions, settings, splits, cardioSessions, restDaySessions } = useStore()
+  const { sessions, settings, splits, cardioSessions, restDaySessions, activeSplitId } = useStore()
   const theme = getTheme(settings.accentColor)
   const accentHex = theme.hex
 
@@ -549,6 +659,14 @@ export default function Progress() {
         <h1 className="text-2xl font-bold">Progress</h1>
       </div>
       <div className="px-4" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+
+        <MonthlyCoachingCard
+          sessions={sessions}
+          cardioSessions={cardioSessions}
+          restDaySessions={restDaySessions}
+          splits={splits}
+          activeSplitId={activeSplitId}
+        />
 
         <SectionLabel text="Weekly Training Load" />
         <StatCard>
