@@ -95,9 +95,15 @@ function SparkleIcon({ color = 'currentColor', className }) {
 // Dots are tappable: tapping a point highlights it and notifies the parent
 // via onPointSelect so the Peak stat can swap to that session's value.
 // Tapping the selected point (or a tap with no selectedIdx) clears.
+//
+// Exported for B57 — the new ExerciseHistorySheet on /progress reuses this
+// component for its full-history sparkline (with all sessions, not just last
+// 6) so the visual language stays identical between the recommender sheet
+// and the strength drill-down.
 
-function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0, selectedIdx = null, onPointSelect }) {
-  const window = history.slice(-6)
+export function E1RMSparkline({ history, accentColor = '#3b82f6', rate = 0, selectedIdx = null, onPointSelect, windowSize = 6 }) {
+  const ws = Number.isFinite(windowSize) && windowSize > 0 ? windowSize : 6
+  const window = history.slice(-ws)
   if (window.length < 2) return null
 
   const W = 300, H = 72, padX = 8, padTop = 10, padBottom = 8

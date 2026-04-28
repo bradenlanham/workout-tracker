@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import useStore from '../store/useStore'
 import { getTheme } from '../theme'
 import {
@@ -6,7 +6,9 @@ import {
   getBestStreak,
   toLocalDateStr,
   buildMonthlyCoachingSummary,
+  buildStrengthTileData,
 } from '../utils/helpers'
+import ExerciseHistorySheet from '../components/ExerciseHistorySheet'
 
 // ── Muscle group mapping ──────────────────────────────────────────────────────
 
@@ -471,83 +473,134 @@ function RadarChart({ sessions, accentHex }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Visual 4 — Personal Records Timeline
+// Visual 4 — Strength tile (Batch 57)
+//
+// Replaces the legacy PR Timeline. Per-exercise sparklines + tap-to-open
+// bottom sheet. Sort: progression rate desc. Top 4 with `Show all (N) →`
+// inline expansion. Hides cold-start (<2 sessions) entries — sparkline
+// returns null below that threshold.
+//
+// Strength = weight-training only. HYROX rounds + running entries skip the
+// tile per the type filter inside buildStrengthTileData.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PR_COLORS = ['#4ADE80','#60A5FA','#F472B6','#FBBF24','#A78BFA','#FB923C']
+const STRENGTH_TOP_N = 4
 
-function PRTimeline({ sessions, accentHex }) {
-  // Collect PRs, deduplicated to best per exercise per session date
-  const prMap = {}
-  sessions
-    .filter(s => s.mode === 'bb')
-    .forEach(s =>
-      (s.data?.exercises || []).forEach(ex =>
-        ex.sets.forEach(set => {
-          if (set.isNewPR) {
-            // Batch 25 timezone-fix: group PRs by LOCAL date so an evening
-            // PR on the east coast isn't filed under tomorrow.
-            const localDate = toLocalDateStr(s.date)
-            const key = `${ex.name}|${localDate}`
-            if (!prMap[key] || (set.weight || 0) > prMap[key].weight) {
-              prMap[key] = { exercise: ex.name, date: localDate, weight: set.weight || 0, reps: set.reps || 0 }
-            }
-          }
-        })
-      )
-    )
-  const prEvents = Object.values(prMap)
+function CompactSparkline({ history, accentColor = '#3b82f6' }) {
+  if (!Array.isArray(history) || history.length < 2) return null
+  const W = 60, H = 24, padX = 2, padY = 3
+  const values = history.map(p => p.e1RM || 0)
+  const minV = Math.min(...values)
+  const maxV = Math.max(...values)
+  const spread = Math.max(1, maxV - minV)
+  const yMin = minV - spread * 0.1
+  const yMax = maxV + spread * 0.1
+  const range = Math.max(1, yMax - yMin)
+  const xFor = i => padX + (i / (history.length - 1)) * (W - 2 * padX)
+  const yFor = v => H - padY - ((v - yMin) / range) * (H - 2 * padY)
+  const points = history.map((p, i) => `${xFor(i).toFixed(1)},${yFor(p.e1RM || 0).toFixed(1)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">
+      <polyline points={points} fill="none" stroke={accentColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
-  if (!prEvents.length) return <Empty msg="Log more sessions to see PRs here" />
+function formatRatePctShort(rate) {
+  const pct = (Number(rate) || 0) * 100
+  if (Math.abs(pct) < 0.1) return 'Flat'
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct.toFixed(1)}%`
+}
 
-  const freq = {}
-  prEvents.forEach(e => { freq[e.exercise] = (freq[e.exercise] || 0) + 1 })
-  const topExes = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n]) => n)
-  const filtered = prEvents.filter(e => topExes.includes(e.exercise)).sort((a, b) => a.date.localeCompare(b.date))
+function rateColor(rate) {
+  const r = Number(rate) || 0
+  if (r >= 0.005) return '#10b981'   // emerald-500
+  if (r < 0)     return '#f59e0b'    // amber-500
+  return 'var(--text-muted)'
+}
 
-  const dates = filtered.map(e => e.date)
-  const minDate = new Date(dates[0])
-  const maxDate = new Date(dates[dates.length - 1])
-  const rangeMs = Math.max(maxDate - minDate, 86400000 * 14)
+function StrengthTile({ sessions, exerciseLibrary, accentHex, onOpenExercise }) {
+  const [expanded, setExpanded] = useState(false)
 
-  const W = 340
-  const PL = 90, PR = 12, PT = 8, PB = 16
-  const plotW = W - PL - PR
-  const rowH = 34
-  const H = PT + topExes.length * rowH + PB
+  const data = useMemo(
+    () => buildStrengthTileData({ sessions, exerciseLibrary }),
+    [sessions, exerciseLibrary]
+  )
 
-  const toX = dateStr => PL + ((new Date(dateStr) - minDate) / rangeMs) * plotW
+  if (data.totalCount === 0) {
+    return <Empty msg="Log a few sessions to see your strength trends here" />
+  }
+
+  const visible = expanded ? data.exercises : data.exercises.slice(0, STRENGTH_TOP_N)
+  const hasMore = data.totalCount > STRENGTH_TOP_N
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}>
-      {topExes.map((ex, i) => {
-        const y = PT + i * rowH + rowH / 2
-        const short = ex.length > 14 ? ex.slice(0, 13) + '…' : ex
-        const prs = filtered.filter(e => e.exercise === ex)
-        const dotColor = PR_COLORS[i % PR_COLORS.length]
-        return (
-          <g key={ex}>
-            <text x={PL - 6} y={y + 4} textAnchor="end" fontSize={8.5} fill="var(--text-muted)">{short}</text>
-            <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="var(--border-subtle)" strokeWidth={0.5} strokeDasharray="3 3" />
-            {prs.map((pr, j) => (
-              <g key={j}>
-                <circle cx={toX(pr.date)} cy={y} r={7} fill={dotColor} fillOpacity={0.88} />
-                <text x={toX(pr.date)} y={y + 3.5} textAnchor="middle" fontSize={6.5} fill="white" fontWeight={700}>
-                  {pr.weight > 0 ? pr.weight : '✓'}
-                </text>
-              </g>
-            ))}
-          </g>
-        )
-      })}
-      {/* Date axis at bottom */}
-      <text x={PL} y={H - 1} fontSize={7.5} fill="var(--text-faint)">
-        {new Date(minDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
-      </text>
-      <text x={W - PR} y={H - 1} textAnchor="end" fontSize={7.5} fill="var(--text-faint)">
-        {new Date(maxDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
-      </text>
-    </svg>
+    <div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {visible.map(ex => (
+          <button
+            key={ex.id}
+            type="button"
+            onClick={() => onOpenExercise(ex)}
+            aria-label={`Open ${ex.name} history`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 0',
+              borderBottom: '1px solid var(--border-subtle)',
+              background: 'transparent',
+              textAlign: 'left',
+              width: '100%',
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {ex.name}
+            </span>
+            <CompactSparkline history={ex.history} accentColor={accentHex} />
+            <span style={{
+              fontSize: 11,
+              color: rateColor(ex.rate),
+              minWidth: 40,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: 600,
+            }}>
+              {formatRatePctShort(ex.rate)}
+            </span>
+          </button>
+        ))}
+      </div>
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            fontWeight: 600,
+            color: 'var(--text-secondary)',
+            background: 'transparent',
+            padding: '6px 0',
+            width: '100%',
+            textAlign: 'center',
+          }}
+        >
+          {expanded ? 'Show less ←' : `Show all ${data.totalCount} →`}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -647,11 +700,17 @@ function ConsistencyHeatmap({ sessions, streak, bestStreak, accentHex }) {
 
 export default function Progress() {
   const { sessions, settings, splits, cardioSessions, restDaySessions, activeSplitId } = useStore()
+  const exerciseLibrary = useStore(s => s.exerciseLibrary)
   const theme = getTheme(settings.accentColor)
   const accentHex = theme.hex
 
   const streak     = useMemo(() => getWorkoutStreak(sessions, cardioSessions, restDaySessions), [sessions, cardioSessions, restDaySessions])
   const bestStreak = useMemo(() => getBestStreak(sessions,    cardioSessions, restDaySessions), [sessions, cardioSessions, restDaySessions])
+
+  // Batch 57 — strength drill-down sheet state. Carries the full row from
+  // buildStrengthTileData so the sheet has fullHistory / rate / etc. without
+  // re-deriving. Closed when null.
+  const [openExercise, setOpenExercise] = useState(null)
 
   return (
     <div style={{ paddingBottom: 100, minHeight: '100vh' }}>
@@ -692,12 +751,17 @@ export default function Progress() {
           <RadarChart sessions={sessions} accentHex={accentHex} />
         </StatCard>
 
-        <SectionLabel text="Personal Records Timeline" />
+        <SectionLabel text="Strength" />
         <StatCard>
-          <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
-            Top exercises by PR frequency — dot = new record (number = weight logged)
+          <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>
+            Per-exercise e1RM trend — tap a row for full history
           </p>
-          <PRTimeline sessions={sessions} accentHex={accentHex} />
+          <StrengthTile
+            sessions={sessions}
+            exerciseLibrary={exerciseLibrary}
+            accentHex={accentHex}
+            onOpenExercise={setOpenExercise}
+          />
         </StatCard>
 
         <SectionLabel text="Consistency" />
@@ -709,6 +773,14 @@ export default function Progress() {
         </StatCard>
 
       </div>
+
+      <ExerciseHistorySheet
+        open={openExercise != null}
+        exercise={openExercise}
+        sessions={sessions}
+        accentColor={accentHex}
+        onClose={() => setOpenExercise(null)}
+      />
     </div>
   )
 }

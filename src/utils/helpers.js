@@ -3979,6 +3979,134 @@ export function buildMonthlyCoachingSummary({
   }
 }
 
+// ── Strength tile aggregator (Batch 57) ────────────────────────────────────
+//
+// Powers the Strength tile on /progress per Gains-Design-Critique.md §2 +
+// the .strength-row mockup spec. Walks bb-mode sessions once, builds a
+// per-exercise top-set history via getExerciseHistory, computes weekly
+// progression rate via getProgressionRate, filters to weight-training
+// entries with ≥2 logged sessions, and sorts by rate descending.
+//
+// Pure: no store coupling, no time dependency beyond optional `now` for
+// testability. Defensive against null / non-array / malformed inputs at
+// every layer — returns { exercises: [], totalCount: 0 } when there's
+// nothing to show.
+//
+// Returns:
+//   {
+//     exercises: [
+//       {
+//         id,                 // exerciseId or fallback name as id
+//         name,               // canonical display name
+//         history,            // last `windowSize` top-set entries (default 6)
+//         fullHistory,        // ENTIRE chronological history for the sheet
+//         rate,               // fractional /wk (e.g. 0.07 = +7%/wk)
+//         rSquared,
+//         n,                  // sessions in the rate's regression window
+//         currentE1RM,
+//         totalSessions,      // length of fullHistory
+//         latestDate,         // ISO date of most recent session
+//         libraryEntry,       // pass-through for downstream rendering
+//       },
+//       ...
+//     ],
+//     totalCount,             // exercises.length — for `Show all (N)` label
+//   }
+//
+// Args (object):
+//   sessions          — bb-mode and other modes are filtered downstream;
+//                       getExerciseHistory drops non-bb already.
+//   exerciseLibrary   — used to gate by `type === 'weight-training'` so
+//                       HYROX-station + hyrox-round + running don't surface.
+//   windowSize        — defaults to 6, matches E1RMSparkline's default.
+//
+export function buildStrengthTileData({
+  sessions = [],
+  exerciseLibrary = [],
+  windowSize = 6,
+} = {}) {
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    return { exercises: [], totalCount: 0 }
+  }
+  if (!Array.isArray(exerciseLibrary)) {
+    return { exercises: [], totalCount: 0 }
+  }
+
+  const ws = Number.isFinite(windowSize) && windowSize > 0 ? windowSize : 6
+
+  // Build a (id, name) → library entry map keyed both by id and by canonical
+  // name so we can resolve sessions that pre-date Batch 15's exerciseId.
+  const libById   = new Map()
+  const libByName = new Map()
+  for (const lib of exerciseLibrary) {
+    if (!lib || typeof lib !== 'object') continue
+    if (typeof lib.id   === 'string') libById.set(lib.id, lib)
+    if (typeof lib.name === 'string') libByName.set(lib.name, lib)
+  }
+
+  // First pass: collect distinct exercise refs from bb-mode sessions, keyed
+  // by exerciseId when present (otherwise by name as a fallback so pre-v3
+  // sessions still surface). Track first-seen canonical name for the row
+  // label — library lookup wins, then session.name.
+  const seen = new Map() // key → { id, name, libraryEntry }
+  for (const s of sessions) {
+    if (!s || s.mode !== 'bb' || !s.data || !Array.isArray(s.data.exercises)) continue
+    for (const ex of s.data.exercises) {
+      if (!ex || typeof ex !== 'object') continue
+      const exId   = typeof ex.exerciseId === 'string' ? ex.exerciseId : null
+      const exName = typeof ex.name === 'string' ? ex.name : null
+      if (!exId && !exName) continue
+      const key = exId || exName
+      if (seen.has(key)) continue
+      const lib = (exId && libById.get(exId)) || (exName && libByName.get(exName)) || null
+      seen.set(key, {
+        id: exId || exName,
+        name: lib?.name || exName || exId,
+        libraryEntry: lib,
+      })
+    }
+  }
+
+  // Second pass: per-ref, build history + rate. Filter to weight-training
+  // (or untyped legacy library entries — pre-v8 entries had no `type` field
+  // and were implicitly weight-training; treat absent type as weight-training
+  // so legacy data doesn't silently disappear). Drop exercises with <2 logged
+  // sessions (sparkline returns null below that threshold).
+  const rows = []
+  for (const ref of seen.values()) {
+    const lib  = ref.libraryEntry
+    const type = lib?.type || 'weight-training'
+    if (type !== 'weight-training') continue
+
+    // getExerciseHistory accepts (sessions, id, name?). Pass both so the
+    // matcher can fall through to name when id doesn't resolve.
+    const fullHistory = getExerciseHistory(sessions, ref.id, ref.name)
+    if (!Array.isArray(fullHistory) || fullHistory.length < 2) continue
+
+    const rateInfo = getProgressionRate(fullHistory)
+    const currentE1RM = getCurrentE1RM(fullHistory)
+    const latest = fullHistory[fullHistory.length - 1]
+
+    rows.push({
+      id:            ref.id,
+      name:          ref.name,
+      history:       fullHistory.slice(-ws),
+      fullHistory,
+      rate:          rateInfo?.rate || 0,
+      rSquared:      rateInfo?.rSquared || 0,
+      n:             rateInfo?.n || 0,
+      currentE1RM,
+      totalSessions: fullHistory.length,
+      latestDate:    latest?.date || null,
+      libraryEntry:  lib,
+    })
+  }
+
+  rows.sort((a, b) => (b.rate || 0) - (a.rate || 0))
+
+  return { exercises: rows, totalCount: rows.length }
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {
