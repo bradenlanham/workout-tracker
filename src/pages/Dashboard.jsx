@@ -390,6 +390,70 @@ function VolumeSparkline({ history, accent, height = 28, fillWidth = true, width
   )
 }
 
+// Week-over-week comparison chart for the volume + time stat tiles.
+// Last week renders as a completed filled area (Sun..Sat), this week
+// renders as a progressing line with dots through today's day-of-week.
+// Y-axis shared between weeks (auto-scales to whichever max is larger).
+// Both arrays are length-7, indexed Sun(0)..Sat(6). Days without data
+// sit at baseline. Returns null when both weeks are entirely empty.
+function WeekComparisonChart({ thisWeek, lastWeek, accent, todayDayIdx, height = 36 }) {
+  const safeThis = Array.isArray(thisWeek) && thisWeek.length === 7 ? thisWeek : [0,0,0,0,0,0,0]
+  const safeLast = Array.isArray(lastWeek) && lastWeek.length === 7 ? lastWeek : [0,0,0,0,0,0,0]
+  const allZero = safeThis.every(v => !v) && safeLast.every(v => !v)
+  if (allZero) return null
+
+  const w = 140
+  const h = height
+  const padX = 4
+  const padTop = 4
+  const padBot = 4
+  const max = Math.max(...safeThis, ...safeLast, 1)
+  const xStep = (w - padX * 2) / 6 // 7 points = 6 intervals
+  const xFor = i => padX + i * xStep
+  const yFor = v => h - padBot - (v / max) * (h - padTop - padBot)
+  const baseY = h - padBot
+
+  // Last week: closed area path covering all 7 days.
+  const lastLine = safeLast.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(v).toFixed(1)}`).join(' ')
+  const lastArea = `${lastLine} L ${xFor(6).toFixed(1)} ${baseY} L ${xFor(0).toFixed(1)} ${baseY} Z`
+
+  // This week: line through today's day index. Cap at index 6.
+  const upTo = Math.max(0, Math.min(6, todayDayIdx))
+  const thisPoints = safeThis.slice(0, upTo + 1)
+  const thisLine = thisPoints.length >= 2
+    ? thisPoints.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(v).toFixed(1)}`).join(' ')
+    : null
+
+  return (
+    <svg
+      width="100%"
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      style={{ display: 'block', overflow: 'visible' }}
+    >
+      {/* Faint baseline */}
+      <line x1={padX} y1={baseY} x2={w - padX} y2={baseY} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+      {/* Last week — completed area */}
+      <path d={lastArea} fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.28)" strokeWidth="1" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      {/* This week — progressing line */}
+      {thisLine && (
+        <path d={thisLine} fill="none" stroke={accent} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      )}
+      {/* This week — dots through today */}
+      {thisPoints.map((v, i) => (
+        <circle
+          key={i}
+          cx={xFor(i)}
+          cy={yFor(v)}
+          r={i === thisPoints.length - 1 ? 2.4 : 1.5}
+          fill={accent}
+        />
+      ))}
+    </svg>
+  )
+}
+
 // Volume delta label — pairs with the sparkline.
 function volumeDelta(history) {
   if (!history || history.length < 2) return null
@@ -562,6 +626,41 @@ export default function Dashboard() {
   const volumeLastWeek = getWeekVolume(-1)
   const timeThisWeek   = getWeekTime(0)
   const timeLastWeek   = getWeekTime(-1)
+
+  // Per-day breakdown for the WeekComparisonChart sparkline pair.
+  // Returns a length-7 array indexed Sun(0)..Sat(6) of bucketed volume.
+  const getWeekVolumeByDay = (weekOffset = 0) => {
+    const now = new Date()
+    const startOfWeek = new Date(now)
+    startOfWeek.setDate(now.getDate() - now.getDay() + (weekOffset * 7))
+    startOfWeek.setHours(0, 0, 0, 0)
+    const days = [0, 0, 0, 0, 0, 0, 0]
+    sessions.forEach(s => {
+      const d = new Date(s.date)
+      const offset = Math.floor((d - startOfWeek) / 86400000)
+      if (offset >= 0 && offset < 7) days[offset] += sessionVolume(s)
+    })
+    return days
+  }
+  const getWeekTimeByDay = (weekOffset = 0) => {
+    const now = new Date()
+    const startOfWeek = new Date(now)
+    startOfWeek.setDate(now.getDate() - now.getDay() + (weekOffset * 7))
+    startOfWeek.setHours(0, 0, 0, 0)
+    const days = [0, 0, 0, 0, 0, 0, 0]
+    sessions.forEach(s => {
+      if (!s.duration) return
+      const d = new Date(s.date)
+      const offset = Math.floor((d - startOfWeek) / 86400000)
+      if (offset >= 0 && offset < 7) days[offset] += s.duration
+    })
+    return days
+  }
+  const volumeByDayThis = getWeekVolumeByDay(0)
+  const volumeByDayLast = getWeekVolumeByDay(-1)
+  const timeByDayThis   = getWeekTimeByDay(0)
+  const timeByDayLast   = getWeekTimeByDay(-1)
+  const todayDow = new Date().getDay()
 
   const hour = new Date().getHours()
   const timeGreeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
@@ -1184,7 +1283,7 @@ export default function Dashboard() {
                     {todayDayOfCycle ? ` · Day ${todayDayOfCycle.day} of ${todayDayOfCycle.total}` : ''}
                   </p>
                   <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', alignItems: 'flex-end', gap: 10 }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, maxWidth: '100%' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0, maxWidth: '100%' }}>
                       <span style={{ fontSize: 22, lineHeight: 1 }}>
                         {getWorkoutEmoji(todaySession?.type)}
                       </span>
@@ -1201,6 +1300,24 @@ export default function Dashboard() {
                       }}>
                         {getWorkoutName(todaySession?.type)}
                       </p>
+                      {/* Green checked box — visual confirmation that today's workout is logged. */}
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 20 20"
+                        style={{ flexShrink: 0, display: 'block' }}
+                        aria-label="Done"
+                      >
+                        <rect x="0" y="0" width="20" height="20" rx="5" fill="#22C55E" />
+                        <path
+                          d="M5 10.5 L8.5 14 L15 7"
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </div>
                   </div>
                 </div>
@@ -1635,10 +1752,18 @@ export default function Dashboard() {
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
                 Volume
               </p>
-              <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
+              <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: safeAccent }}>
                 {formatVolume(volumeThisWeek)} <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>lbs</span>
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+              <div style={{ marginTop: 8 }}>
+                <WeekComparisonChart
+                  thisWeek={volumeByDayThis}
+                  lastWeek={volumeByDayLast}
+                  accent={safeAccent}
+                  todayDayIdx={todayDow}
+                />
+              </div>
+              <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontWeight: 600, letterSpacing: '0.04em' }}>
                 Last week: {formatVolume(volumeLastWeek)}
               </p>
             </div>
@@ -1652,10 +1777,18 @@ export default function Dashboard() {
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
                 Time in gym
               </p>
-              <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text-primary)' }}>
+              <p style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, color: safeAccent }}>
                 {formatTime(timeThisWeek)}
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+              <div style={{ marginTop: 8 }}>
+                <WeekComparisonChart
+                  thisWeek={timeByDayThis}
+                  lastWeek={timeByDayLast}
+                  accent={safeAccent}
+                  todayDayIdx={todayDow}
+                />
+              </div>
+              <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontWeight: 600, letterSpacing: '0.04em' }}>
                 Last week: {formatTime(timeLastWeek)}
               </p>
             </div>
