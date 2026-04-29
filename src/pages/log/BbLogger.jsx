@@ -4696,24 +4696,53 @@ export default function BbLogger() {
             scrolling. */}
       </div>
 
-      {/* ── Unified bottom action bar (B60) ─────────────────────────────
-          Three pills in one row, replacing the prior inline + Add Exercise,
-          inline Session Notes button, and the standalone floating Finish
-          portal. CSS grid `1fr auto 1fr` keeps the middle pill perfectly
-          centered regardless of right-pill width — so the row doesn't shift
-          when the right pill flips between the muted "Log a set to save"
-          hint and the accent "✓ Finish · N" button. Hidden when numpad is
-          open (preserves focus-mode behavior). */}
+      {/* ── Bottom action bar — single outer glass pill (B60b) ────────────
+          One translucent surface holds all three actions (Notes / + Add
+          Exercise / Finish-or-hint) instead of three separate floating
+          pills, per user feedback: "Contain them all within another longer
+          pill. Make it dope as hell. I want the transparent glass feel to
+          really shine."
+
+          Glass treatment on the outer pill:
+            - backdrop-blur-2xl for the strong frosted-glass look.
+            - linear-gradient white-on-white 0.10 → 0.04 for the subtle
+              top-down sheen.
+            - 1px white border at 14% opacity for the rim highlight.
+            - Three layered shadows: soft outer drop shadow lifts the pill
+              off the page; inset top highlight at 10% white reads as a
+              specular edge; inset bottom shadow at 15% black reads as a
+              depth cut. Together this is the "premium liquid glass" feel.
+
+          Children sit close together with equal 6px gap (down from B60's
+          full-width 343px spread). Inner Notes + Add Exercise are
+          borderless text-style buttons since the outer pill IS the glass
+          surface — they only tint subtly when active. The right slot keeps
+          the accent treatment (border, text, halo) as the primary CTA.
+
+          Layout-shift invariant preserved: the right slot is wrapped in a
+          fixed min-w-[120px] cell with internal `justify-content: flex-end`
+          so the outer pill width is constant regardless of whether the
+          right pill is the muted "Log a set to save" hint (~104px) or the
+          accent "✓ Finish · N" button (≤120px even with three-digit
+          counts). When the label flips, only the wider hint shrinks to the
+          accent pill within its fixed slot — Notes + Add Exercise stay
+          put. Hidden when numpad is open (preserves focus-mode behavior). */}
       {!numpadIsOpen && createPortal(
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 pb-4 safe-bottom z-40 pointer-events-none">
-          {/* Notes textarea — opens above the action bar so it's visible
-              without scrolling. Liquid-glass treatment matches the bar. */}
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 px-4 pb-4 safe-bottom z-40 pointer-events-none flex flex-col items-center">
+          {/* Notes textarea — appears above the bar when the Notes pill is
+              active. Glass treatment mirrors the bar so the two read as
+              one continuous surface stacked vertically. */}
           {sessionNotesOpen && (
             <div
-              className="pointer-events-auto mb-2 rounded-2xl backdrop-blur-md border"
+              className="pointer-events-auto mb-2 rounded-2xl backdrop-blur-2xl border w-[calc(100vw-32px)] max-w-md"
               style={{
-                backgroundColor: 'rgba(255,255,255,0.06)',
-                borderColor: 'rgba(255,255,255,0.12)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)',
+                borderColor: 'rgba(255,255,255,0.14)',
+                boxShadow: `
+                  0 8px 32px rgba(0,0,0,0.45),
+                  inset 0 1px 0 rgba(255,255,255,0.10),
+                  inset 0 -1px 0 rgba(0,0,0,0.15)
+                `,
               }}
             >
               <textarea
@@ -4730,15 +4759,21 @@ export default function BbLogger() {
             </div>
           )}
 
+          {/* THE outer glass pill */}
           <div
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full backdrop-blur-2xl border"
             style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto 1fr',
-              alignItems: 'center',
-              columnGap: 8,
+              padding: '6px',
+              borderColor: 'rgba(255,255,255,0.14)',
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)',
+              boxShadow: `
+                0 10px 40px rgba(0,0,0,0.50),
+                inset 0 1px 0 rgba(255,255,255,0.10),
+                inset 0 -1px 0 rgba(0,0,0,0.15)
+              `,
             }}
           >
-            {/* Notes (left) */}
+            {/* Notes — borderless, tints to accent when textarea open */}
             <button
               type="button"
               onClick={() => {
@@ -4752,11 +4787,10 @@ export default function BbLogger() {
                   return next
                 })
               }}
-              className="pointer-events-auto justify-self-start inline-flex items-center px-3 py-2 rounded-full text-sm font-medium backdrop-blur-md border"
+              className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
               style={{
-                backgroundColor: sessionNotesOpen ? hexToRgba(theme.hex, 0.12) : 'rgba(255,255,255,0.05)',
-                borderColor:    sessionNotesOpen ? hexToRgba(theme.hex, 0.35) : 'rgba(255,255,255,0.12)',
-                color:          sessionNotesOpen ? theme.hex : 'var(--text-secondary)',
+                background: sessionNotesOpen ? hexToRgba(theme.hex, 0.18) : 'transparent',
+                color:      sessionNotesOpen ? theme.hex : 'var(--text-secondary)',
               }}
               aria-pressed={sessionNotesOpen}
               aria-label={sessionNotesOpen ? 'Close session notes' : 'Open session notes'}
@@ -4764,14 +4798,13 @@ export default function BbLogger() {
               Notes
             </button>
 
-            {/* + Add Exercise (middle, centered) */}
+            {/* + Add Exercise — borderless inner */}
             <button
               type="button"
               onClick={() => setShowAddPanel(true)}
-              className="pointer-events-auto justify-self-center inline-flex items-center gap-1 px-3 py-2 rounded-full text-sm font-medium backdrop-blur-md border"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
               style={{
-                backgroundColor: 'rgba(255,255,255,0.05)',
-                borderColor: 'rgba(255,255,255,0.12)',
+                background: 'transparent',
                 color: 'var(--text-secondary)',
               }}
               aria-label="Add exercise"
@@ -4780,34 +4813,41 @@ export default function BbLogger() {
               <span>Add Exercise</span>
             </button>
 
-            {/* Log a set to save / Finish (right) */}
-            {loggedSets === 0 ? (
-              <span
-                className="pointer-events-auto justify-self-end inline-flex items-center px-3 py-2 rounded-full text-[12px] font-medium text-c-muted backdrop-blur-md border"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.04)',
-                  borderColor:     'rgba(255,255,255,0.10)',
-                }}
-              >
-                Log a set to save
-              </span>
-            ) : (
-              <button
-                onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
-                className="pointer-events-auto justify-self-end inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold backdrop-blur-md border"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  borderColor: hexToRgba(theme.hex, 0.35),
-                  color: theme.hex,
-                  boxShadow: `0 6px 24px ${hexToRgba(theme.hex, 0.18)}`,
-                }}
-                aria-label={`Finish session with ${loggedSets} sets`}
-              >
-                <span aria-hidden="true">✓</span>
-                <span>Finish</span>
-                <span className="opacity-70 tabular-nums">· {loggedSets}</span>
-              </button>
-            )}
+            {/* Right slot — fixed min-width to prevent layout shift on
+                the muted-hint ↔ accent-button label flip. Internal
+                justify-content: flex-end so the inner element right-aligns
+                to the pill's right edge. */}
+            <div
+              style={{
+                minWidth: 120,
+                display: 'flex',
+                justifyContent: 'flex-end',
+              }}
+            >
+              {loggedSets === 0 ? (
+                <span
+                  className="inline-flex items-center px-3 py-1.5 rounded-full text-[12px] font-medium text-c-faint"
+                >
+                  Log a set to save
+                </span>
+              ) : (
+                <button
+                  onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold border"
+                  style={{
+                    backgroundColor: hexToRgba(theme.hex, 0.20),
+                    borderColor:     hexToRgba(theme.hex, 0.40),
+                    color: theme.hex,
+                    boxShadow: `0 0 24px ${hexToRgba(theme.hex, 0.30)}, inset 0 1px 0 rgba(255,255,255,0.12)`,
+                  }}
+                  aria-label={`Finish session with ${loggedSets} sets`}
+                >
+                  <span aria-hidden="true">✓</span>
+                  <span>Finish</span>
+                  <span className="opacity-70 tabular-nums">· {loggedSets}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>,
         document.body
