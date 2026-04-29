@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 28, 2026 (Batch 58 v3.1 — drop-in fade animation on Progress, BbLogger, History)
+> Last updated: April 28, 2026 (Batch 59 — Active set hero treatment + chip toolbar rationalize, shipped through 9 polish iterations)
 
 ## Rules for Claude
 
@@ -2655,6 +2655,67 @@ User feedback: "the dashboard screen has a drop-in effect where the screen compo
     - `CLAUDE.md` — last-updated header + this v3.1 entry.
 
 709. **Build.** `npx vite build --outDir /tmp/test-build` → 940.95 KB bundle / 253.30 KB gzipped (+0.40 KB / +0.09 KB vs v3 — three keyframe blocks + inline animation styles).
+
+### Batch 59 (April 28, 2026) — Active set hero + chip toolbar rationalize (Logger v2, 9 iterations)
+
+First user-locked Logger v2 batch per `Gains-Design-Critique.md` §3 + `HANDOFF-LOGGER-V2.md`. Promotes the in-progress set row to a visually distinct hero (accent-tinted gradient + soft border + glow, mirroring the Dashboard hero card recipe) while completed sets above and below shrink to compact dimmer rows. Same primitives, less chrome, clearer hierarchy. Iterated 9 times across user feedback rounds (v1 → v9) before merge — the multi-pass tuning is the headline event; the final visual is a chip toolbar collapsed behind a +/− pill in the title row, a narrow gradient-wrapped active set, dim-but-readable compact siblings, and a centered liquid-glass Finish pill.
+
+710. **`getActiveSetIndex(exercise, activeFieldKey)` in `BbLogger.jsx`** — pure module-level helper. Resolves which set is the "hero" via three tiers: (1) the set whose numpad fieldKey is currently active wins (`weight-${exName}-${i}`, `reps-${exName}-${i}`, `reps-plate-${exName}-${i}` candidates checked by string equality; drop-stage focus on `weight-drop-…-${i}-${j}` or `reps-drop-…-${i}-${j}` hoists the parent working set as hero); (2) first set whose weight or reps is empty; (3) last set in the list. String equality (not regex) is robust to exercise names with hyphens (Pull-up, Single Arm Lat Pulldown). Co-located helpers `hexToRgba` + `resolveHeroAccent` mirror the Dashboard / Progress card recipe with the daylight + light-accent fallback to `#1A1A1A` so the hero stays visible against a white card.
+
+711. **`pendingActiveIdx` state on `ExerciseItem`** (added in v2). When `addSet(autoFocus=true)` fires after the user presses Next on a filled reps field, the new set must render as hero on the SAME commit so its input is in the DOM for the rAF focus call. Without this override, `getActiveSetIndex` keeps the prior set's focus signal pinned, the new set renders compact (no input mounted), `setWeightRefs.current[N]` is undefined, and the rAF focus no-ops silently. The override clears once focus lands and `activeFieldKey` updates naturally. State, not ref, so React re-renders the row as hero immediately.
+
+712. **`SetRow` + `PlateSetRow` accept `phase: 'hero' | 'compact'` + `heroAccent` + `compactDropCount` props.** Hero phase wraps the existing weight/reps inputs in a gradient div (`linear-gradient(135deg, rgba(accent,0.10) 0% , rgba(accent,0.02) 70%)` + `1px` accent-tinted border + `0 4px 24px` accent glow shadow + `borderRadius: 14`). Compact phase renders the same Type chip + lbs input + reps input layout but at h-7 with full `bg-item` (dark) + `text-c-primary` for proper Obsidian contrast. End-cap is a tiny green ✓ when filled, × delete button when empty/incomplete. Tapping any input still opens the numpad → activeFieldKey updates → row promotes to hero on next render. Plate-loaded compact uses explicit column widths matching the column headers (Type w-14 / Total w-20 / Reps w-16) so values align under their labels; plate strip hidden in compact mode.
+
+713. **`DropStageRow` gets `onAdvance` prop wired to `addDropStage(parentIdx)`** (v3 fix). Pre-fix bug: drop-stage reps numpad config had no `onNext` handler, so tapping Next did nothing. Now Next on drop reps adds a new drop stage to the same parent working set — mirroring the working-set Next behavior of `addSet`.
+
+714. **Title row + chip toolbar collapse layout** (final state after iterations):
+    - Title row: `[exercise name] [+/− pill] [chevron]` on a single horizontal line. Pill is to the immediate right of the name (left-anchored), chevron on the right edge.
+    - +/− pill is SVG-rendered for pixel-perfect centering (`+` and `−` Unicode glyphs drift on the baseline differently per font). Always accent-illuminated (`theme.bgSubtle` + `theme.border` + `theme.text`) regardless of expanded state.
+    - Title row padding conditional: `expanded` → `pt-4 pb-2 px-4` (asymmetric — keeps chip row close to title); `collapsed` → `py-4 px-4` (symmetric — title block centers vertically in the row).
+    - Parent flex `items-center` so chevron centers vertically against the multi-line title block (name + summary line) on collapsed cards with logged sets.
+
+715. **Chip toolbar — collapsed by default, expand via the +/− pill.** When expanded, chips render in a `flex-wrap` row directly below the title with a small `mt-1` gap. Order:
+    1. **Rec** — moved out of the title row in v7 ("first visible pill because it can carry lots of importance"). Tap edits inline, same edit-on-tap behavior preserved at chip-row size.
+    2. **Last** — toggles the ghost row showing prior session sets.
+    3. **PR** — shows `{maxWeight}×{maxRepsAtMaxWeight}` in bold amber (the "PR" prefix dropped in v3 to fit; full text in hover-title).
+    4. **Tip** — recommender chip, opens RecommendationSheet.
+    5. **Machine** — equipment instance picker, full label visible (no truncation; wraps to next row if long).
+    6. **Uni** — unilateral toggle (purple).
+    7. **Plates** — fixed orange (`bg-orange-500/20 border-orange-500/40 text-orange-300`) when active, replacing the prior user-accent treatment that conflicted with the +/− pill accent. Tap opens the existing PlateConfigPopover.
+    8. **SS** — superset chip, indigo. LAST in the row per user spec.
+
+716. **`pencil + Mark as Done` action row sized to match `+ Add Set`** (v2). All three buttons at `py-2.5 rounded-xl` with matching height for a clean visual stack at the bottom of the expanded card. Pencil tap-toggle bug fixed via `data-notes-toggle="true"` attribute + `relatedTarget` check in the notes input's `onBlur` — was a blur+click race where the click handler's stale state reopened the editor that the blur had just closed.
+
+717. **Floating Finish pill (v9 final state)** — centered at the bottom of the viewport with a glassmorphism panel: `rgba(255,255,255,0.08)` translucent surface + `backdrop-blur-md`, accent-tinted border at 35% opacity, accent-colored text (`theme.hex`), and a soft accent glow shadow at 18% alpha. Reads as a frosted glass layer lifted off the page rather than a solid CTA. Pre-log state shows a subtle "Log a set to save" muted chip instead of the full pill. Wrapper uses `pointer-events-none` so the page beneath stays tappable except on the button itself.
+
+718. **HYROX section preview + B55 focus-mode-hides-HYROX preserved.** When the numpad is open during a hybrid workout (e.g. HYROX Hybrid Tuesday with both Lift section and HYROX section), the immersive yellow HYROX preview card returns null per the Batch 55 item 1 gate. B59's hero refactor doesn't touch this code path — the HYROX preview's render branch in `BbLogger.jsx` is independent of the SetRow render loop.
+
+719. **All critical primitives preserved** per HANDOFF-LOGGER-V2.md §"Critical primitives to preserve":
+    - Active session persistence (`saveActiveSession` round-trip is unchanged; phase prop is render-time-only, never serialized).
+    - Drop-set bundling (B22-24) — `set.drops[]` walked correctly by every aggregate; B59 only changes how drops *render* (visible vs hidden via parent phase).
+    - Locked-into-Work cycler (B28) — `SetTypeBtn`'s `lockedToWorking` prop unchanged; chip lives inside SetRow, doesn't move.
+    - Convert-to-Drop cycler (B32) — preserved verbatim on hero; on compact rows the cycler is replaced by a non-interactive Work/Warm label, requiring promote-then-convert.
+    - Cross-card field refs for superset cycle (B36) — `exerciseFieldRefs` and `registerFieldRef` threading unchanged.
+    - Numpad focus + auto-classify reverted (B21) — no silent reclassification on weight entry.
+    - Coach's Call Use-it button (B28) — `applyRecommendation` populates the first empty working set + focuses reps; the newly-populated set becomes hero (empty reps qualifies under "first unfilled" branch).
+    - `lastExDataByName` cross-workout-type fallback (B55 item 5) — three-pass build upstream of B59's render path.
+
+720. **Iteration history.**
+    - **v1**: Active set hero + compact rows shipped (`ca5b345`).
+    - **v2**: Header style tweaks, button heights matched, pencil tap-toggle bug fixed, Next-after-pounds regression fixed via pendingActiveIdx (`4123d8a`).
+    - **v3**: Chip toggle repositioned to title-row right column, Plates orange, all 7 chips fit in one row, drop next added (`63f248a`).
+    - **v4**: SVG +/− glyph, title aligned with chevron, content shifted up, dark contrast restored on compact inputs, green ✓ replaces × on completed compact rows, plate compact column alignment (`9fcd511`).
+    - **v5**: +/− pill moved to right of chevron in stacked column (`c4fc0b7`).
+    - **v6**: Chip row spacing + flex-wrap (`1b76581`).
+    - **v7**: Rec moved into chip row at position 1, +/− pill moved to LEFT of chevron (inline with name), machine no longer truncates (`84a5720`).
+    - **v8**: Uni + SS moved to end with Plates (SS last), symmetric collapsed padding (`4b4a806`).
+    - **v9**: Finish pill centered + liquid glass + accent text (`942e537`).
+
+721. **Files modified.**
+    - `src/pages/log/BbLogger.jsx` — every iteration touched this file. Final diff vs main predecessor (B58 v3.1): +719 / −359 lines (~360 net additions across 9 commits).
+    - `src/pages/log/Recommendation.jsx` — Tip chip className shrunk to match the new compact chip dimensions.
+
+722. **Build.** Final `npx vite build --outDir /tmp/test-build` → ~942 KB bundle / ~254 KB gzipped (+~1 KB / +~0.5 KB vs B58 v3.1, accounting for the new helpers + phase-aware rendering branches across 9 iterations of refinement).
 
 ---
 
