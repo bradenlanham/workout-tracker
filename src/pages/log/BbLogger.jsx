@@ -91,6 +91,67 @@ function ClipGraphic() {
   )
 }
 
+// ── Batch 59: Active-set hero helpers ─────────────────────────────────────────
+// hexToRgba + resolveHeroAccent mirror the Dashboard / Progress hero card
+// recipe so the hero set row uses the same accent-tinted gradient + soft
+// border + glow treatment. resolveHeroAccent flips the surface color to a
+// near-black tint when the user's accent is light AND backgroundTheme is
+// daylight — keeps the hero visible against a white card.
+function hexToRgba(hex, alpha) {
+  const h = (hex || '#000000').replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+function resolveHeroAccent(theme, settings) {
+  const isDark = settings?.backgroundTheme !== 'daylight'
+  const hex = (theme?.hex || '#000000').replace('#', '')
+  const r = parseInt(hex.slice(0, 2), 16)
+  const g = parseInt(hex.slice(2, 4), 16)
+  const b = parseInt(hex.slice(4, 6), 16)
+  const accentIsLight = (0.299 * r + 0.587 * g + 0.114 * b) > 160
+  const lightBgWithLightAccent = !isDark && accentIsLight
+  return lightBgWithLightAccent ? '#1A1A1A' : (theme?.hex || '#3B82F6')
+}
+
+// getActiveSetIndex picks the "hero" set per spec:
+// 1. Numpad-focused set (any field on this row, including drop stages
+//    which hoist their parent working set) wins.
+// 2. Fallback: first unfilled set.
+// 3. Final fallback: last set.
+// String-equality on candidate field-keys is robust to exercise names that
+// contain hyphens (e.g. "Pull-up", "Single Arm Lat Pulldown").
+function getActiveSetIndex(exercise, activeFieldKey) {
+  const exName = exercise?.name || ''
+  const sets = exercise?.sets || []
+  if (sets.length === 0) return -1
+  if (activeFieldKey && activeFieldKey.includes(exName)) {
+    for (let i = 0; i < sets.length; i++) {
+      const candidates = [
+        `weight-${exName}-${i}`,
+        `reps-${exName}-${i}`,
+        `reps-plate-${exName}-${i}`,
+      ]
+      if (candidates.includes(activeFieldKey)) return i
+      const drops = sets[i].drops || []
+      for (let j = 0; j < drops.length; j++) {
+        if (
+          activeFieldKey === `weight-drop-${exName}-${i}-${j}` ||
+          activeFieldKey === `reps-drop-${exName}-${i}-${j}`
+        ) return i
+      }
+    }
+  }
+  for (let i = 0; i < sets.length; i++) {
+    const w = parseFloat(sets[i].weight) || 0
+    const r = parseInt(sets[i].reps) || 0
+    if (!w || !r) return i
+  }
+  return sets.length - 1
+}
+
 // ── Set type toggle ────────────────────────────────────────────────────────────
 // Batch 23: cycler produces only 'warmup' and 'working'. Drop is no longer a
 // user-selectable type at the row level — drops are added via "+ Drop stage"
@@ -464,7 +525,7 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null, phase = 'hero', heroAccent = null, compactDropCount = 0 }) {
   const numpadCtx = useContext(NumpadContext)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
@@ -525,63 +586,137 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     update(plates, newBar)
   }
 
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} />
-        <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-sm font-bold min-w-0">
-          <span className="text-c-muted text-xs font-normal">Total</span>
-          <span>{total} lbs</span>
-          {isPR && <span className="text-xs">🏆</span>}
-        </div>
-        <input
-          ref={repsRef}
-          type="text"
-          inputMode="none"
-          value={set.reps}
-          onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total), plateMultiplier: mult })}
-          onFocus={() => numpadCtx?.openNumpad({
-            fieldKey: repsFieldKey,
-            label: 'Reps',
-            isDecimalAllowed: false,
-            initialValue: set.reps,
-            onChange: handleRepsChange,
-            onNext: handleNextSet,
-            onDone: handleDone,
-            themeHex: theme.hex,
-            themeContrastText: theme.contrastText,
-          })}
-          placeholder="reps"
-          className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
-          style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
-        />
-        {set.reps && total > 0 ? (
-          <button
-            type="button"
-            onClick={() => onAdvance?.()}
-            className="w-8 h-10 flex items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        )}
+  // Batch 59 — compact summary for plate rows. Single-line; plate strip hidden.
+  // Tap promotes to hero by syntheticly opening the reps numpad.
+  if (phase === 'compact') {
+    const filled = set.reps && total > 0
+    const handleCompactTap = () => {
+      if (!numpadCtx) return
+      numpadCtx.openNumpad({
+        fieldKey: repsFieldKey,
+        label: 'Reps',
+        isDecimalAllowed: false,
+        initialValue: set.reps,
+        onChange: handleRepsChange,
+        onNext: handleNextSet,
+        onDone: handleDone,
+        themeHex: theme.hex,
+        themeContrastText: theme.contrastText,
+      })
+    }
+    return (
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={handleCompactTap}
+          className="flex-1 flex items-center gap-3 px-2 py-1.5 rounded-lg text-left"
+          style={{ minHeight: 32 }}
+          aria-label={`Edit set ${setIndex + 1}`}
+        >
+          <span className="w-12 text-[10px] font-bold uppercase tracking-wider text-c-muted shrink-0">
+            {set.type === 'warmup' ? 'Warm' : set.type === 'drop' ? 'Drop' : 'Work'}
+          </span>
+          <span className="text-sm font-semibold tabular-nums text-c-secondary">
+            {total > 0 ? total : '—'} <span className="text-c-faint">×</span> {set.reps || '—'}
+          </span>
+          {isPR && <span className="text-amber-300 text-sm" aria-label="Personal record">🏆</span>}
+          {compactDropCount > 0 && (
+            <span className="text-[11px] text-orange-400/70 italic shrink-0">
+              ↳ {compactDropCount} drop{compactDropCount === 1 ? '' : 's'}
+            </span>
+          )}
+          <span className="ml-auto shrink-0">
+            {filled
+              ? <span className="text-emerald-400 font-bold text-sm">✓</span>
+              : <span className="text-c-faint text-xs">…</span>}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-c-faint shrink-0"
+          aria-label="Delete set"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
-      {/* Batch 55 — left-pad the plate row so 100/45/35/25/10/+ buttons
-          align with the start of the Total column (right of the Set Type
-          chip). pl-16 = 64px = w-14 SetTypeBtn (56px) + gap-2 (8px). */}
-      <div className="pl-16">
-        <PlatePicker plates={plates} addPlate={addPlate} removePlate={removePlate} theme={theme} />
+    )
+  }
+
+  // Hero treatment — wrap the existing 2-row block (controls + plate strip)
+  // in an accent gradient div mirroring Dashboard / Progress hero recipe.
+  const accent = heroAccent || theme.hex
+  const heroStyle = {
+    background: `linear-gradient(135deg, ${hexToRgba(accent, 0.10)} 0%, ${hexToRgba(accent, 0.02)} 70%)`,
+    border: `1px solid ${hexToRgba(accent, 0.18)}`,
+    borderRadius: 14,
+    boxShadow: `0 4px 24px ${hexToRgba(accent, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
+    padding: '10px 10px',
+    margin: '4px 0',
+    position: 'relative',
+  }
+
+  return (
+    <div style={heroStyle}>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} />
+          <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-base font-bold min-w-0">
+            <span className="text-c-muted text-xs font-normal">Total</span>
+            <span>{total} lbs</span>
+            {isPR && <span className="text-xs">🏆</span>}
+          </div>
+          <input
+            ref={repsRef}
+            type="text"
+            inputMode="none"
+            value={set.reps}
+            onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total), plateMultiplier: mult })}
+            onFocus={() => numpadCtx?.openNumpad({
+              fieldKey: repsFieldKey,
+              label: 'Reps',
+              isDecimalAllowed: false,
+              initialValue: set.reps,
+              onChange: handleRepsChange,
+              onNext: handleNextSet,
+              onDone: handleDone,
+              themeHex: theme.hex,
+              themeContrastText: theme.contrastText,
+            })}
+            placeholder="reps"
+            className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-xl font-bold h-10 outline-none"
+            style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
+          />
+          {set.reps && total > 0 ? (
+            <button
+              type="button"
+              onClick={() => onAdvance?.()}
+              className="w-8 h-10 flex items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+        {/* Batch 55 — left-pad the plate row so 100/45/35/25/10/+ buttons
+            align with the start of the Total column (right of the Set Type
+            chip). pl-16 = 64px = w-14 SetTypeBtn (56px) + gap-2 (8px). */}
+        <div className="pl-16">
+          <PlatePicker plates={plates} addPlate={addPlate} removePlate={removePlate} theme={theme} />
+        </div>
       </div>
     </div>
   )
@@ -649,7 +784,7 @@ function PlatePicker({ plates, addPlate, removePlate, theme }) {
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null, phase = 'hero', heroAccent = null, compactDropCount = 0 }) {
   const numpadCtx    = useContext(NumpadContext)
   const localRepsRef = useRef(null)
 
@@ -736,6 +871,9 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         cyclerDisabled={cyclerDisabled}
         lockedToWorking={lockedToWorking}
         onConvertToDrop={onConvertToDrop}
+        phase={phase}
+        heroAccent={heroAccent}
+        compactDropCount={compactDropCount}
       />
     )
   }
@@ -750,63 +888,141 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   const isWeightActive = numpadCtx?.numpadConfig?.fieldKey === weightFieldKey
   const isRepsActive   = numpadCtx?.numpadConfig?.fieldKey === repsFieldKey
 
+  // Batch 59 — compact summary row. Tap promotes to hero by syntheticly
+  // opening the numpad on the weight field, which sets activeFieldKey →
+  // getActiveSetIndex returns this row → next render this row is hero.
+  if (phase === 'compact') {
+    const wDisplay = (set.rawWeight ?? set.weight)
+    const wShown = wDisplay === '' || wDisplay == null ? null : wDisplay
+    const rShown = set.reps === '' || set.reps == null ? null : set.reps
+    const filled = wShown != null && rShown != null && w > 0 && r > 0
+    const handleCompactTap = () => {
+      if (!numpadCtx) return
+      numpadCtx.openNumpad({
+        fieldKey: weightFieldKey,
+        label: 'Weight (lbs)',
+        isDecimalAllowed: true,
+        initialValue: set.weight,
+        onChange: handleWeightChange,
+        onNext: handleFocusReps,
+        onDone: handleDone,
+        themeHex: theme.hex,
+        themeContrastText: theme.contrastText,
+      })
+    }
+    return (
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={handleCompactTap}
+          className="flex-1 flex items-center gap-3 px-2 py-1.5 rounded-lg text-left"
+          style={{ minHeight: 32 }}
+          aria-label={`Edit set ${setIndex + 1}`}
+        >
+          <span className="w-12 text-[10px] font-bold uppercase tracking-wider text-c-muted shrink-0">
+            {set.type === 'warmup' ? 'Warm' : set.type === 'drop' ? 'Drop' : 'Work'}
+          </span>
+          <span className="text-sm font-semibold tabular-nums text-c-secondary">
+            {wShown != null ? wShown : '—'} <span className="text-c-faint">×</span> {rShown != null ? rShown : '—'}
+          </span>
+          {isPR && <span className="text-amber-300 text-sm" aria-label="Personal record">🏆</span>}
+          {compactDropCount > 0 && (
+            <span className="text-[11px] text-orange-400/70 italic shrink-0">
+              ↳ {compactDropCount} drop{compactDropCount === 1 ? '' : 's'}
+            </span>
+          )}
+          <span className="ml-auto shrink-0">
+            {filled
+              ? <span className="text-emerald-400 font-bold text-sm">✓</span>
+              : <span className="text-c-faint text-xs">…</span>}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-c-faint shrink-0"
+          aria-label="Delete set"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    )
+  }
+
+  // Hero row — wrap existing JSX in an accent gradient div mirroring the
+  // Dashboard / Progress hero card recipe.
+  const accent = heroAccent || theme.hex
+  const heroStyle = {
+    background: `linear-gradient(135deg, ${hexToRgba(accent, 0.10)} 0%, ${hexToRgba(accent, 0.02)} 70%)`,
+    border: `1px solid ${hexToRgba(accent, 0.18)}`,
+    borderRadius: 14,
+    boxShadow: `0 4px 24px ${hexToRgba(accent, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
+    padding: '10px 10px',
+    margin: '4px 0',
+    position: 'relative',
+  }
+
   return (
-    <div className="flex items-center gap-2">
-      <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} />
-      {/* Weight FIRST */}
-      <input
-        ref={weightRef}
-        type="text"
-        inputMode="none"
-        value={set.weight}
-        onChange={e => onChange({ ...set, weight: e.target.value })}
-        onFocus={() => numpadCtx?.openNumpad({
-          fieldKey: weightFieldKey,
-          label: 'Weight (lbs)',
-          isDecimalAllowed: true,
-          initialValue: set.weight,
-          onChange: handleWeightChange,
-          onNext: handleFocusReps,
-          onDone: handleDone,
-          themeHex: theme.hex,
-          themeContrastText: theme.contrastText,
-        })}
-        placeholder="lbs"
-        className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
-        style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
-      />
-      {/* Reps SECOND */}
-      <input
-        ref={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
-        type="text"
-        inputMode="none"
-        value={set.reps}
-        onChange={e => onChange({ ...set, reps: e.target.value })}
-        onFocus={() => numpadCtx?.openNumpad({
-          fieldKey: repsFieldKey,
-          label: 'Reps',
-          isDecimalAllowed: false,
-          initialValue: set.reps,
-          onChange: handleRepsChange,
-          onNext: handleNextSet,
-          onDone: handleDone,
-          themeHex: theme.hex,
-          themeContrastText: theme.contrastText,
-        })}
-        placeholder="reps"
-        className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
-        style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
-      />
-      <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+    <div style={heroStyle}>
+      <div className="flex items-center gap-2">
+        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} />
+        {/* Weight FIRST */}
+        <input
+          ref={weightRef}
+          type="text"
+          inputMode="none"
+          value={set.weight}
+          onChange={e => onChange({ ...set, weight: e.target.value })}
+          onFocus={() => numpadCtx?.openNumpad({
+            fieldKey: weightFieldKey,
+            label: 'Weight (lbs)',
+            isDecimalAllowed: true,
+            initialValue: set.weight,
+            onChange: handleWeightChange,
+            onNext: handleFocusReps,
+            onDone: handleDone,
+            themeHex: theme.hex,
+            themeContrastText: theme.contrastText,
+          })}
+          placeholder="lbs"
+          className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-xl font-bold h-10 outline-none"
+          style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
+        />
+        {/* Reps SECOND */}
+        <input
+          ref={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
+          type="text"
+          inputMode="none"
+          value={set.reps}
+          onChange={e => onChange({ ...set, reps: e.target.value })}
+          onFocus={() => numpadCtx?.openNumpad({
+            fieldKey: repsFieldKey,
+            label: 'Reps',
+            isDecimalAllowed: false,
+            initialValue: set.reps,
+            onChange: handleRepsChange,
+            onNext: handleNextSet,
+            onDone: handleDone,
+            themeHex: theme.hex,
+            themeContrastText: theme.contrastText,
+          })}
+          placeholder="reps"
+          className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-xl font-bold h-10 outline-none"
+          style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
+        />
+        <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }
@@ -1940,114 +2156,132 @@ function ExerciseItem({
             </>
           )}
 
-          {/* Active set rows (Batch 23 bundled shape) —
-              Each top-level entry is a warmup or working primary. Working
-              primaries with drops[] render their drop stages indented
-              beneath, separated by a subtle orange left border. "+ Drop
-              stage" CTA appears on the working card once the primary has
-              both weight + reps filled in. */}
-          {exercise.sets.map((set, i) => {
-            const isWorking    = set.type === 'working'
-            const drops        = isWorking && Array.isArray(set.drops) ? set.drops : []
-            const hasDrops     = drops.length > 0
-            const primaryW     = parseFloat(set.weight) || 0
-            const primaryR     = parseInt(set.reps)     || 0
-            const primaryReady = isWorking && primaryW > 0 && primaryR > 0
-            const cyclerDisabled = isWorking && hasDrops
-            // 2b: hide "+ Drop stage" once a later working set exists — once
-            // the user has moved on, they're not retroactively dropping on
-            // a prior set.
-            const hasLaterWorking = exercise.sets.some((s, j) => j > i && s.type === 'working')
-            // Batch 32 Feature 2: allow conversion to drop stage when this is
-            // a locked-to-Work set (index ≥ 1), the previous set is a working
-            // primary, and this set has no drops attached (would orphan its
-            // own drops). cyclerDisabled already covers the drops-attached
-            // case — piggyback on it.
-            const prevIsWorking = i > 0 && exercise.sets[i - 1]?.type === 'working'
-            const canConvertToDrop = i > 0 && prevIsWorking && !cyclerDisabled
-            return (
-              <div key={i} className="space-y-1.5">
-                <SetRow
-                  set={set}
-                  exerciseName={exercise.name}
-                  allSessions={scopedSessions}
-                  onChange={newSet => updateSet(i, newSet)}
-                  onDelete={() => deleteSet(i)}
-                  theme={theme}
-                  plateLoaded={exercise.plateLoaded}
-                  plateMultiplier={exercise.plateMultiplier || 2}
-                  cyclerDisabled={cyclerDisabled}
-                  lockedToWorking={i > 0}
-                  onConvertToDrop={canConvertToDrop ? () => convertSetToDrop(i) : null}
-                  onToggleMultiplier={() => {
-                    const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
-                    // Batch 23: plate remap only applies to working/warmup
-                    // primaries — drop stages never carry plates.
-                    // Batch 34 hotfix: stamp multiplier + bar on every set
-                    // (not just plates-loaded) so display and stored weight
-                    // agree after a change. See matching fix in PlateConfigPopover.
-                    const bar = exercise.barDefault ?? 45
-                    const updatedSets = exercise.sets.map(s => {
-                      const plates = s.plates ?? emptyPlates()
-                      const setBar = s.barWeight ?? bar
-                      const newTotal = calcTotal(plates, setBar, newMult)
-                      return { ...s, plates, barWeight: setBar, weight: String(newTotal), plateMultiplier: newMult }
-                    })
-                    onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
-                  }}
-                  weightRef={el => {
-                    setWeightRefs.current[i] = el
-                    registerFieldRef?.(exercise.id, i, 'weight', el)
-                  }}
-                  repsRef={el => {
-                    setRepsRefs.current[i] = el
-                    registerFieldRef?.(exercise.id, i, 'reps', el)
-                  }}
-                  onAdvance={inActiveSuperset
-                    ? () => onSupersetCycle?.(exercise.id)
-                    : () => addSet(true)
-                  }
-                  onDone={inActiveSuperset
-                    ? () => onFinishSuperset?.(exercise.id)
-                    : stableMarkDone
-                  }
-                  setIndex={i}
-                />
+          {/* Active set rows (Batch 23 bundled shape, Batch 59 active-set hero) —
+              Each top-level entry is a warmup or working primary. The
+              "active" set (numpad-focused, fallback first-unfilled, fallback
+              last) renders as the hero — accent-tinted gradient + larger
+              typography. Other sets shrink to compact summaries that promote
+              themselves to hero on tap. Working primaries with drops[]
+              render their drop stages indented beneath, but only when the
+              parent is hero. "+ Drop stage" CTA appears on the working card
+              once the primary has both weight + reps filled in. */}
+          {(() => {
+            const heroAccent = resolveHeroAccent(theme, settings)
+            const activeIdx = getActiveSetIndex(exercise, activeFieldKey)
+            return exercise.sets.map((set, i) => {
+              const isWorking    = set.type === 'working'
+              const drops        = isWorking && Array.isArray(set.drops) ? set.drops : []
+              const hasDrops     = drops.length > 0
+              const primaryW     = parseFloat(set.weight) || 0
+              const primaryR     = parseInt(set.reps)     || 0
+              const primaryReady = isWorking && primaryW > 0 && primaryR > 0
+              const cyclerDisabled = isWorking && hasDrops
+              // 2b: hide "+ Drop stage" once a later working set exists — once
+              // the user has moved on, they're not retroactively dropping on
+              // a prior set.
+              const hasLaterWorking = exercise.sets.some((s, j) => j > i && s.type === 'working')
+              // Batch 32 Feature 2: allow conversion to drop stage when this is
+              // a locked-to-Work set (index ≥ 1), the previous set is a working
+              // primary, and this set has no drops attached (would orphan its
+              // own drops). cyclerDisabled already covers the drops-attached
+              // case — piggyback on it.
+              const prevIsWorking = i > 0 && exercise.sets[i - 1]?.type === 'working'
+              const canConvertToDrop = i > 0 && prevIsWorking && !cyclerDisabled
+              // Batch 59 — derive phase. Hero gets full inputs + drop block;
+              // compact gets a tappable summary row, drops collapse into
+              // a "↳ N drops" indicator, and the drop CTA is hidden so the
+              // user has to promote first.
+              const phase = i === activeIdx ? 'hero' : 'compact'
+              return (
+                <div key={i} className="space-y-1.5">
+                  <SetRow
+                    set={set}
+                    exerciseName={exercise.name}
+                    allSessions={scopedSessions}
+                    onChange={newSet => updateSet(i, newSet)}
+                    onDelete={() => deleteSet(i)}
+                    theme={theme}
+                    plateLoaded={exercise.plateLoaded}
+                    plateMultiplier={exercise.plateMultiplier || 2}
+                    cyclerDisabled={cyclerDisabled}
+                    lockedToWorking={i > 0}
+                    onConvertToDrop={canConvertToDrop ? () => convertSetToDrop(i) : null}
+                    phase={phase}
+                    heroAccent={heroAccent}
+                    compactDropCount={phase === 'compact' ? drops.length : 0}
+                    onToggleMultiplier={() => {
+                      const newMult = (exercise.plateMultiplier || 2) === 2 ? 1 : 2
+                      // Batch 23: plate remap only applies to working/warmup
+                      // primaries — drop stages never carry plates.
+                      // Batch 34 hotfix: stamp multiplier + bar on every set
+                      // (not just plates-loaded) so display and stored weight
+                      // agree after a change. See matching fix in PlateConfigPopover.
+                      const bar = exercise.barDefault ?? 45
+                      const updatedSets = exercise.sets.map(s => {
+                        const plates = s.plates ?? emptyPlates()
+                        const setBar = s.barWeight ?? bar
+                        const newTotal = calcTotal(plates, setBar, newMult)
+                        return { ...s, plates, barWeight: setBar, weight: String(newTotal), plateMultiplier: newMult }
+                      })
+                      onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
+                    }}
+                    weightRef={el => {
+                      setWeightRefs.current[i] = el
+                      registerFieldRef?.(exercise.id, i, 'weight', el)
+                    }}
+                    repsRef={el => {
+                      setRepsRefs.current[i] = el
+                      registerFieldRef?.(exercise.id, i, 'reps', el)
+                    }}
+                    onAdvance={inActiveSuperset
+                      ? () => onSupersetCycle?.(exercise.id)
+                      : () => addSet(true)
+                    }
+                    onDone={inActiveSuperset
+                      ? () => onFinishSuperset?.(exercise.id)
+                      : stableMarkDone
+                    }
+                    setIndex={i}
+                  />
 
-                {/* Nested drop stages beneath a working primary. Subtle
-                    vertical accent + indent conveys bundling. */}
-                {isWorking && hasDrops && (
-                  <div className="ml-3 pl-3 border-l-2 border-orange-500/40 space-y-1.5">
-                    {drops.map((drop, j) => (
-                      <DropStageRow
-                        key={j}
-                        drop={drop}
-                        parentIdx={i}
-                        dropIdx={j}
-                        exerciseName={exercise.name}
-                        onChange={d => updateDropStage(i, j, d)}
-                        onDelete={() => deleteDropStage(i, j)}
-                        theme={theme}
-                      />
-                    ))}
-                  </div>
-                )}
+                  {/* Nested drop stages — render only when parent is hero so
+                      drops feel like continuations of the active row.
+                      Compact parents surface a "↳ N drops" indicator inside
+                      their summary instead. */}
+                  {isWorking && hasDrops && phase === 'hero' && (
+                    <div className="ml-3 pl-3 border-l-2 border-orange-500/40 space-y-1.5">
+                      {drops.map((drop, j) => (
+                        <DropStageRow
+                          key={j}
+                          drop={drop}
+                          parentIdx={i}
+                          dropIdx={j}
+                          exerciseName={exercise.name}
+                          onChange={d => updateDropStage(i, j, d)}
+                          onDelete={() => deleteDropStage(i, j)}
+                          theme={theme}
+                        />
+                      ))}
+                    </div>
+                  )}
 
-                {/* "+ Drop stage" CTA — only on a working set whose primary
-                    has weight + reps filled. Keeps users from creating
-                    orphan drops attached to a blank parent. */}
-                {isWorking && primaryReady && !hasLaterWorking && (
-                  <button
-                    type="button"
-                    onClick={() => addDropStage(i)}
-                    className="ml-3 pl-3 py-1.5 text-xs italic font-medium text-orange-400/70 flex items-center gap-1 border-l-2 border-orange-500/30 border-dashed"
-                  >
-                    <span className="text-sm leading-none">+</span> Drop stage
-                  </button>
-                )}
-              </div>
-            )
-          })}
+                  {/* "+ Drop stage" CTA — only on the hero working set whose
+                      primary has weight + reps filled. Compact parents don't
+                      show the CTA (user taps to promote first). Keeps users
+                      from creating orphan drops attached to a blank parent. */}
+                  {isWorking && primaryReady && !hasLaterWorking && phase === 'hero' && (
+                    <button
+                      type="button"
+                      onClick={() => addDropStage(i)}
+                      className="ml-3 pl-3 py-1.5 text-xs italic font-medium text-orange-400/70 flex items-center gap-1 border-l-2 border-orange-500/30 border-dashed"
+                    >
+                      <span className="text-sm leading-none">+</span> Drop stage
+                    </button>
+                  )}
+                </div>
+              )
+            })
+          })()}
 
           <button
             type="button"
