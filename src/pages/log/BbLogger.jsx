@@ -219,12 +219,18 @@ function PlateConfigPopover({ open, onClose, anchorRef, barWeight, multiplier, o
 
   // Compute popover position from the anchor (Plates button) whenever the
   // popover opens. Uses fixed positioning via portal so the card's
-  // overflow-hidden doesn't clip it.
+  // overflow-hidden doesn't clip it. Right-aligns to the anchor's right
+  // edge then clamps to the viewport with an 8px margin so the panel stays
+  // on-screen when the chip sits at the end of the toolbar row (the common
+  // case since B59 v8 reordered Plates to the end). Mirrors the clamp
+  // pattern in EquipmentInstancePopover below.
   useEffect(() => {
     if (!open) { setPos(null); return }
     const rect = anchorRef?.current?.getBoundingClientRect()
     if (!rect) return
-    setPos({ top: rect.bottom + 8, left: rect.left })
+    const width = 240 // matches the panel's w-60 below
+    const left = Math.min(rect.right - width, window.innerWidth - width - 8)
+    setPos({ top: rect.bottom + 8, left: Math.max(8, left) })
   }, [open, anchorRef])
 
   useEffect(() => {
