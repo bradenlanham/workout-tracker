@@ -586,17 +586,19 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     update(plates, newBar)
   }
 
-  // B59 v3 — compact mode for plate rows: same Type chip + Total + Reps
-  // layout as hero, but at h-7 with reduced opacity and the plate strip
-  // hidden. Tapping reps still promotes to hero (numpad opens, activeFieldKey
-  // changes). Plate strip re-renders only when this row is hero again.
+  // B59 v4 — compact plate row: column widths now match the column headers
+  // exactly (Type w-14 · Total w-20 · Reps w-16) so the row aligns under
+  // its labels. Plate strip hidden. Backgrounds use full bg-item with
+  // text-c-primary for proper Obsidian contrast (no opacity dimming on the
+  // values). End-cap shows a tiny green ✓ when filled, × when not. Tapping
+  // reps still promotes to hero by opening the numpad.
   if (phase === 'compact') {
+    const filled = total > 0 && set.reps
     return (
-      <div className="flex items-center gap-2 opacity-70">
+      <div className="flex items-center gap-2">
         <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} compact />
-        <div className="flex-1 h-7 bg-item/60 rounded-md flex items-center justify-center gap-1 text-xs font-medium text-c-secondary min-w-0">
-          <span className="text-c-muted text-[10px] font-normal">Total</span>
-          <span>{total} lbs</span>
+        <div className="w-20 h-7 bg-item rounded-md flex items-center justify-center gap-1 text-sm font-semibold text-c-primary min-w-0">
+          <span>{total}</span>
           {isPR && <span className="text-[10px]">🏆</span>}
         </div>
         <input
@@ -617,22 +619,35 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
             themeContrastText: theme.contrastText,
           })}
           placeholder="reps"
-          className="w-16 min-w-0 bg-item/60 text-c-secondary rounded-md px-1 py-0 text-center text-sm font-medium h-7 outline-none"
+          className="w-16 min-w-0 bg-item text-c-primary rounded-md px-1 py-0 text-center text-sm font-semibold h-7 outline-none"
           style={{ caretColor: 'transparent' }}
         />
-        {compactDropCount > 0 && (
-          <span className="text-[10px] text-orange-400/70 italic shrink-0">↳ {compactDropCount}</span>
+        <span className="flex-1 text-center text-[10px]">
+          {compactDropCount > 0 && (
+            <span className="text-orange-400/70 italic">↳ {compactDropCount}</span>
+          )}
+        </span>
+        {filled ? (
+          <span
+            className="w-7 h-7 flex items-center justify-center text-emerald-400 shrink-0"
+            aria-label="Set completed"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-c-faint shrink-0"
+            aria-label="Delete set"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         )}
-        <button
-          type="button"
-          onClick={onDelete}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-c-faint shrink-0"
-          aria-label="Delete set"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
       </div>
     )
   }
@@ -880,16 +895,18 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   const isWeightActive = numpadCtx?.numpadConfig?.fieldKey === weightFieldKey
   const isRepsActive   = numpadCtx?.numpadConfig?.fieldKey === repsFieldKey
 
-  // B59 v3 — compact mode now renders the SAME set-row layout as hero
-  // (Type chip · weight input · reps input · trophy/delete) but at h-7
-  // with reduced opacity so it reads as "logged, but not the focus."
-  // Tapping any input still opens the numpad → activeFieldKey changes →
-  // row promotes to hero on next render. User feedback: "continue to show
-  // the set row with the set button and the pounds and the reps fields,
-  // just make it skinnier and a little less bright."
+  // B59 v4 — compact mode renders the SAME row shape as hero (Type chip ·
+  // weight · reps · end-cap) but at h-7 with no transparency on the
+  // backgrounds — user feedback: "the completed box that surrounds the
+  // number should continue to have dark contrast." Inputs use bg-item +
+  // text-c-primary so values stay readable on Obsidian. End-cap shows a
+  // tiny green ✓ when filled, × delete button when not. Tapping any input
+  // still opens the numpad → activeFieldKey changes → row promotes to
+  // hero on next render.
   if (phase === 'compact') {
+    const filled = w > 0 && r > 0
     return (
-      <div className="flex items-center gap-2 opacity-70">
+      <div className="flex items-center gap-2">
         <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} compact />
         <input
           ref={weightRef}
@@ -909,7 +926,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
             themeContrastText: theme.contrastText,
           })}
           placeholder="lbs"
-          className="w-20 min-w-0 bg-item/60 text-c-secondary rounded-md px-1 py-0 text-center text-sm font-medium h-7 outline-none"
+          className="w-20 min-w-0 bg-item text-c-primary rounded-md px-1 py-0 text-center text-sm font-semibold h-7 outline-none"
           style={{ caretColor: 'transparent' }}
         />
         <input
@@ -930,7 +947,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
             themeContrastText: theme.contrastText,
           })}
           placeholder="reps"
-          className="w-16 min-w-0 bg-item/60 text-c-secondary rounded-md px-1 py-0 text-center text-sm font-medium h-7 outline-none"
+          className="w-16 min-w-0 bg-item text-c-primary rounded-md px-1 py-0 text-center text-sm font-semibold h-7 outline-none"
           style={{ caretColor: 'transparent' }}
         />
         <span className="flex-1 text-center text-xs">
@@ -939,16 +956,27 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
             <span className="text-[10px] text-orange-400/70 italic">↳ {compactDropCount}</span>
           )}
         </span>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-c-faint shrink-0"
-          aria-label="Delete set"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        {filled ? (
+          <span
+            className="w-7 h-7 flex items-center justify-center text-emerald-400 shrink-0"
+            aria-label="Set completed"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-c-faint shrink-0"
+            aria-label="Delete set"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
     )
   }
@@ -1812,7 +1840,7 @@ function ExerciseItem({
           role="button"
           tabIndex={0}
           onClick={() => { if (!editingRec) setExpanded(v => !v) }}
-          className="flex-1 flex items-center justify-between p-4 text-left min-w-0 cursor-pointer select-none"
+          className="flex-1 flex items-start justify-between pt-4 px-4 pb-2 text-left min-w-0 cursor-pointer select-none"
         >
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -1896,29 +1924,36 @@ function ExerciseItem({
               </p>
             )}
           </div>
-          <div className="flex flex-col items-end gap-1.5 shrink-0 ml-2">
+          <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
             <svg
               className={`w-5 h-5 text-c-dim transition-transform ${expanded ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
-            {/* B59 v3 — chip toolbar +/− toggle sits beneath the chevron in
-                the title row, only when the card is expanded. Always
-                accent-illuminated so it reads as a deliberate affordance.
-                stopPropagation so tapping doesn't collapse the card. */}
+            {/* B59 v4 — chip toolbar +/− toggle sits beneath the chevron with
+                a small right offset so it reads as visually anchored to the
+                chevron (slightly inset from the right edge per user feedback
+                "should move to the left a little bit"). Glyph rendered as SVG
+                for pixel-perfect centering. Always accent-illuminated. */}
             {effectiveExpanded && (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setChipsExpanded(v => !v) }}
                 aria-label={chipsExpanded ? 'Hide options' : 'Show options'}
                 aria-expanded={chipsExpanded}
+                style={{ marginRight: '6px' }}
                 className={`w-6 h-6 flex items-center justify-center rounded-md border ${theme.bgSubtle} ${theme.border} ${theme.text}`}
-                style={{ paddingTop: 0 }}
               >
-                <span aria-hidden="true" style={{ display: 'block', lineHeight: 1, fontSize: '14px', fontWeight: 700 }}>
-                  {chipsExpanded ? '−' : '+'}
-                </span>
+                {chipsExpanded ? (
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M2 6h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                )}
               </button>
             )}
           </div>
