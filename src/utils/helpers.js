@@ -4355,6 +4355,107 @@ export function buildAchievementsData({
   return { prsThisSplit, totalSessions, bestStreak, currentStreak, badges }
 }
 
+// ── Running ────────────────────────────────────────────────────────────────
+//
+// Manual-entry running support — user enters watch values post-run, the
+// in-session card derives pace + saves dimensioned set, the Progress page
+// aggregates pace trend across all running entries (in-session + standalone
+// cardio).
+
+// Parse a duration string from a watch readout into seconds.
+// Accepts:
+//   "43:20"      → 2600  (mm:ss)
+//   "1:23:45"    → 5025  (h:mm:ss)
+//   "1:5"        → 65    (m:ss with single-digit seconds — defensive)
+//   "43"         → 43    (bare seconds)
+//   ""/null/NaN  → null
+// Returns null on malformed input so callers can guard.
+export function parseDuration(str) {
+  if (typeof str !== 'string') return null
+  const trimmed = str.trim()
+  if (!trimmed) return null
+  const parts = trimmed.split(':').map(p => p.trim())
+  if (parts.length > 3) return null
+  const nums = parts.map(p => Number(p))
+  if (nums.some(n => !Number.isFinite(n) || n < 0)) return null
+  if (parts.length === 1) return Math.floor(nums[0])
+  if (parts.length === 2) return Math.floor(nums[0] * 60 + nums[1])
+  if (parts.length === 3) return Math.floor(nums[0] * 3600 + nums[1] * 60 + nums[2])
+  return null
+}
+
+// Format pace (seconds per mile) as M:SS string. For sub-1 mi paces returns ''.
+// Used by the running card's live pace line + Progress page's pace tile.
+export function formatPace(secPerMile) {
+  if (typeof secPerMile !== 'number' || !Number.isFinite(secPerMile) || secPerMile <= 0) return ''
+  const m = Math.floor(secPerMile / 60)
+  const s = Math.round(secPerMile % 60)
+  // Round-up edge case: 59.5s → 60 → carry into minute.
+  if (s === 60) return `${m + 1}:00`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+// Compute pace (sec/mile) from distance + time. Returns null on bad input.
+export function paceSecPerMile(distanceMiles, timeSec) {
+  if (typeof distanceMiles !== 'number' || !Number.isFinite(distanceMiles) || distanceMiles <= 0) return null
+  if (typeof timeSec !== 'number' || !Number.isFinite(timeSec) || timeSec <= 0) return null
+  return timeSec / distanceMiles
+}
+
+// Walk both bb sessions (running-typed exercises) AND cardio sessions
+// (type='Running') and return a unified chronological list of running entries
+// for the Progress page's pace trend tile.
+//
+// Each entry: { id, date, distanceMiles, timeSec, paceSec, source, name }
+// source: 'session' | 'cardio'
+// Newest-first.
+export function getAllRunningEntries(sessions, cardioSessions) {
+  const out = []
+  if (Array.isArray(sessions)) {
+    for (const s of sessions) {
+      if (!s || s.mode !== 'bb') continue
+      const exes = s.data?.exercises || []
+      for (const ex of exes) {
+        if (ex?.type !== 'running') continue
+        const set = (ex.sets || [])[0]
+        if (!set) continue
+        const distanceMiles = typeof set.distanceMiles === 'number' ? set.distanceMiles : null
+        const timeSec       = typeof set.timeSec       === 'number' ? set.timeSec       : null
+        if (!distanceMiles || !timeSec) continue
+        out.push({
+          id:   `${s.id}_${ex.exerciseId || ex.name}`,
+          date: s.date,
+          distanceMiles,
+          timeSec,
+          paceSec: paceSecPerMile(distanceMiles, timeSec),
+          source: 'session',
+          name:   ex.name || 'Run',
+        })
+      }
+    }
+  }
+  if (Array.isArray(cardioSessions)) {
+    for (const c of cardioSessions) {
+      if (!c || c.type !== 'Running') continue
+      // CardioLogger stores duration in seconds, distance in user's chosen unit.
+      const distMi = c.distanceUnit === 'miles' && typeof c.distance === 'number' ? c.distance : null
+      const timeSec = typeof c.duration === 'number' ? c.duration : null
+      if (!distMi || !timeSec) continue
+      out.push({
+        id:   c.id,
+        date: c.date || c.createdAt,
+        distanceMiles: distMi,
+        timeSec,
+        paceSec: paceSecPerMile(distMi, timeSec),
+        source: 'cardio',
+        name:   'Run',
+      })
+    }
+  }
+  out.sort((a, b) => new Date(b.date) - new Date(a.date))
+  return out
+}
+
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 export function generateId() {

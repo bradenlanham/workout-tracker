@@ -17,6 +17,7 @@
 import useStore from '../../store/useStore'
 import { getLastHyroxRoundSession, formatDuration, formatRec } from '../../utils/helpers'
 import { HYROX_STATIONS } from '../../data/hyroxStations'
+import RunningExerciseCard from './RunningExerciseCard'
 
 const YELLOW = '#EAB308'
 const YELLOW_DIM = 'rgba(234, 179, 8, 0.7)'
@@ -225,7 +226,7 @@ function HyroxRoundCard({ exercise, libraryEntry, sessions, onStart }) {
   )
 }
 
-export default function HyroxSectionPreview({ exercises, sessions, onStart, onCompleteAddOn }) {
+export default function HyroxSectionPreview({ exercises, sessions, onStart, onCompleteAddOn, onUpdateAddOn }) {
   const exerciseLibrary = useStore(s => s.exerciseLibrary)
 
   // Section may contain a mix: hyrox-round entries get the immersive yellow
@@ -271,13 +272,28 @@ export default function HyroxSectionPreview({ exercises, sessions, onStart, onCo
                 Add-ons
               </div>
             )}
-            {splitByType.addOns.map(({ ex }) => (
-              <HyroxAddOnCard
-                key={ex.id}
-                exercise={ex}
-                onComplete={onCompleteAddOn}
-              />
-            ))}
+            {splitByType.addOns.map(({ ex, lib }) => {
+              if (lib?.type === 'running') {
+                // Type-tag the in-session exercise so the saved session
+                // carries `type: 'running'` (Progress page's pace aggregator
+                // scans for this).
+                const exWithType = { ...ex, type: 'running' }
+                return (
+                  <RunningExerciseCard
+                    key={ex.id}
+                    exercise={exWithType}
+                    onUpdate={onUpdateAddOn}
+                  />
+                )
+              }
+              return (
+                <HyroxAddOnCard
+                  key={ex.id}
+                  exercise={ex}
+                  onComplete={onCompleteAddOn}
+                />
+              )
+            })}
           </>
         )}
       </div>

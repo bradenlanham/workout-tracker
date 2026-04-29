@@ -24,6 +24,7 @@ import { RecommendationChip, RecommendationSheet, AnomalyBanner, GymTagPrompt } 
 import ReadinessCheckIn from './ReadinessCheckIn'
 import SessionGymPill from './SessionGymPill'
 import HyroxSectionPreview, { HyroxAddOnCard } from './HyroxSectionPreview'
+import RunningExerciseCard from './RunningExerciseCard'
 
 // Shared context so SetRow/PlateSetRow can register with the page-level numpad
 // without prop drilling through ExerciseItem.
@@ -3929,9 +3930,6 @@ export default function BbLogger() {
   const buildExerciseData = () =>
     exercises
       .map(ex => {
-        const filledSets = ex.sets.filter(s => s.reps || s.weight)
-        if (!filledSets.length) return null
-        const uni = !!ex.unilateral
         // Resolve exerciseId: prefer the row's linked id (from AddExercisePanel
         // selection), fall back to a library lookup by canonical/alias name.
         // If nothing matches, leave undefined — future save-time migrations
@@ -3945,6 +3943,33 @@ export default function BbLogger() {
                 normalizeExerciseName(a) === normalizeExerciseName(ex.name)
               )
             )
+
+        // Running entries follow a different filled-set rule: they save when
+        // distanceMiles + timeSec are present (not reps + weight). Branch
+        // here so the standard weight-training filter doesn't drop them.
+        if (libEntry?.type === 'running') {
+          const runSet = (ex.sets || [])[0]
+          const hasRun = runSet && typeof runSet.distanceMiles === 'number' && typeof runSet.timeSec === 'number'
+          if (!hasRun) return null
+          return {
+            name:       libEntry?.name ?? ex.name,
+            exerciseId: libEntry?.id,
+            type:       'running',
+            notes:      ex.notes,
+            completedAt: ex.completedAt || 0,
+            sets: [{
+              type:           'working',
+              distanceMiles:  runSet.distanceMiles,
+              distanceMeters: typeof runSet.distanceMeters === 'number' ? runSet.distanceMeters : null,
+              timeSec:        runSet.timeSec,
+              ...(runSet.intensity ? { intensity: runSet.intensity } : {}),
+            }],
+          }
+        }
+
+        const filledSets = ex.sets.filter(s => s.reps || s.weight)
+        if (!filledSets.length) return null
+        const uni = !!ex.unilateral
         const trimmedInstance = typeof ex.equipmentInstance === 'string'
           ? ex.equipmentInstance.trim().slice(0, 40)
           : ''
@@ -4255,9 +4280,14 @@ export default function BbLogger() {
   // ── Render helpers ───────────────────────────────────────────────────────
 
   // Batch 23 decision 1: logged-sets count tracks working primaries only
-  // (warmups and nested drops don't inflate the visible count).
+  // (warmups and nested drops don't inflate the visible count). Running
+  // entries count as one set when distance + time are filled (post-Brooke
+  // running v1).
   const loggedSets    = exercises.reduce((t, ex) =>
-    t + ex.sets.filter(s => s.type === 'working' && (s.reps || s.weight)).length, 0)
+    t + ex.sets.filter(s =>
+      (s.type === 'working' && (s.reps || s.weight)) ||
+      (typeof s.distanceMiles === 'number' && typeof s.timeSec === 'number')
+    ).length, 0)
   // Sort completed exercises by completedAt; tiebreak by supersetOrder so
   // members of a finished superset (which share the same completedAt stamp
   // by handleFinishSuperset's design) render adjacently in cycle order. The
@@ -4570,9 +4600,8 @@ export default function BbLogger() {
                     }
                   }}
                   onCompleteAddOn={(ex) => {
-                    // Batch 46 — running / station add-ons inside a HYROX
-                    // section: tap "Mark done" toggles completedAt on the
-                    // exercise so the card flips to ✓ Done state.
+                    // Batch 46 — station add-ons inside a HYROX section:
+                    // tap "Mark done" toggles completedAt on the exercise.
                     setExercises(prev => prev.map(e => {
                       if (e.id !== ex.id) return e
                       return {
@@ -4580,6 +4609,13 @@ export default function BbLogger() {
                         completedAt: e.completedAt ? 0 : Date.now(),
                       }
                     }))
+                  }}
+                  onUpdateAddOn={(updated) => {
+                    // Running entries inside a HYROX section save full
+                    // distance + time + intensity payload via RunningExerciseCard.
+                    setExercises(prev => prev.map(e =>
+                      e.id === updated.id ? updated : e
+                    ))
                   }}
                 />
               </div>
@@ -4602,17 +4638,34 @@ export default function BbLogger() {
                   if (item.type === 'single') {
                     // Batch 47 — non-weight-training entries (running,
                     // hyrox-station) in NON-HYROX sections render as compact
-                    // Add-on cards with a Mark done toggle. ExerciseItem
-                    // assumes weight/reps and renders garbled UI for
-                    // running / station types. Routing them here keeps
-                    // Thursday's Primary (Light Movement) + Optional (Sled
-                    // Push / Pull / Farmers Carry) completable without
-                    // needing weight/reps inputs.
+                    // cards. ExerciseItem assumes weight/reps and renders
+                    // garbled UI for these types.
                     const lib = exerciseLibraryAll.find(
                       e => e.id === item.ex.exerciseId || e.name === item.ex.name
                     )
-                    const isAddOn = lib?.type === 'running' || lib?.type === 'hyrox-station'
-                    if (isAddOn) {
+                    // Type-aware tag thread: stamp the exercise with its
+                    // library type so render-time + save-time consumers can
+                    // branch without a second library lookup. Running entries
+                    // in the saved session will carry `type: 'running'`,
+                    // which the Progress page's pace aggregator scans for.
+                    const exWithType = lib?.type ? { ...item.ex, type: lib.type } : item.ex
+                    // Running gets a full inputs card (distance + time +
+                    // intensity); hyrox-station and any other non-strength
+                    // types stay on the Mark-done-only HyroxAddOnCard.
+                    if (lib?.type === 'running') {
+                      return (
+                        <RunningExerciseCard
+                          key={item.ex.id}
+                          exercise={exWithType}
+                          onUpdate={(updated) => {
+                            setExercises(prev => prev.map(e =>
+                              e.id === updated.id ? updated : e
+                            ))
+                          }}
+                        />
+                      )
+                    }
+                    if (lib?.type === 'hyrox-station') {
                       return (
                         <HyroxAddOnCard
                           key={item.ex.id}

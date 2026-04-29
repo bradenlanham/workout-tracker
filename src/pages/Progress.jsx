@@ -9,6 +9,9 @@ import {
   buildStrengthTileData,
   buildVolumeTileData,
   buildAchievementsData,
+  getAllRunningEntries,
+  formatPace,
+  formatDuration,
 } from '../utils/helpers'
 import ExerciseHistorySheet from '../components/ExerciseHistorySheet'
 import VolumeDrillSheet from '../components/VolumeDrillSheet'
@@ -197,6 +200,7 @@ function rangeLabelFor(rangeId) {
 const PROGRESS_TABS = [
   { id: 'volume',       label: 'Volume' },
   { id: 'strength',     label: 'Strength' },
+  { id: 'running',      label: 'Running' },
   { id: 'consistency',  label: 'Consistency' },
   { id: 'achievements', label: 'Achievements' },
 ]
@@ -818,6 +822,176 @@ function rateColor(rate) {
   return 'var(--text-muted)'
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Running tile — pace trend across all running entries (in-session + cardio)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PaceSparkline({ entries, accentColor = '#3b82f6' }) {
+  if (!Array.isArray(entries) || entries.length < 2) return null
+  const W = 220, H = 50, padX = 4, padY = 6
+  // Entries are newest-first, so reverse for left-to-right time order.
+  const series = [...entries].reverse()
+  const paces = series.map(p => p.paceSec || 0)
+  const minV = Math.min(...paces)
+  const maxV = Math.max(...paces)
+  const spread = Math.max(1, maxV - minV)
+  const yMin = minV - spread * 0.15
+  const yMax = maxV + spread * 0.15
+  const range = Math.max(1, yMax - yMin)
+  const xFor = i => padX + (i / (series.length - 1)) * (W - 2 * padX)
+  // Lower pace (faster) is better — INVERT y-axis so faster runs sit higher.
+  const yFor = v => padY + ((v - yMin) / range) * (H - 2 * padY)
+  const points = series.map((p, i) => `${xFor(i).toFixed(1)},${yFor(p.paceSec || 0).toFixed(1)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" style={{ display: 'block' }} aria-hidden="true">
+      <polyline points={points} fill="none" stroke={accentColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      {series.map((p, i) => (
+        <circle key={i} cx={xFor(i)} cy={yFor(p.paceSec || 0)} r={i === series.length - 1 ? 2.6 : 1.6} fill={accentColor} />
+      ))}
+    </svg>
+  )
+}
+
+function RunningTile({ sessions, cardioSessions, accentHex }) {
+  const entries = useMemo(
+    () => getAllRunningEntries(sessions, cardioSessions),
+    [sessions, cardioSessions]
+  )
+
+  if (entries.length === 0) {
+    return <Empty msg="Log a run to see your pace trend here" />
+  }
+
+  // Pace stats: best, current (most recent), trend direction.
+  const recent = entries.slice(0, 8) // chart window
+  const bestPaceEntry = entries.reduce((best, e) =>
+    (e.paceSec && (!best || e.paceSec < best.paceSec)) ? e : best, null)
+  const longestEntry = entries.reduce((best, e) =>
+    (e.distanceMiles && (!best || e.distanceMiles > best.distanceMiles)) ? e : best, null)
+
+  // Mileage this week vs last week.
+  const now = new Date()
+  const startOfThisWeek = new Date(now)
+  startOfThisWeek.setDate(now.getDate() - now.getDay())
+  startOfThisWeek.setHours(0, 0, 0, 0)
+  const startOfLastWeek = new Date(startOfThisWeek)
+  startOfLastWeek.setDate(startOfLastWeek.getDate() - 7)
+  let milesThisWeek = 0
+  let milesLastWeek = 0
+  for (const e of entries) {
+    const d = new Date(e.date)
+    if (d >= startOfThisWeek)      milesThisWeek += e.distanceMiles
+    else if (d >= startOfLastWeek) milesLastWeek += e.distanceMiles
+  }
+
+  // Latest pace vs prior pace — directional badge.
+  const latestPace = entries[0]?.paceSec
+  const priorPace = entries[1]?.paceSec
+  const paceDeltaSec = (latestPace && priorPace) ? latestPace - priorPace : null
+  const paceTrendColor = paceDeltaSec == null
+    ? 'var(--text-muted)'
+    : paceDeltaSec < -2 ? '#10b981'  // faster = green
+    : paceDeltaSec >  2 ? '#f59e0b'  // slower = amber
+    : 'var(--text-muted)'
+
+  return (
+    <div>
+      {/* Stat row */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+            Latest pace
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: accentHex, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+            {latestPace ? formatPace(latestPace) : '—'}
+            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginLeft: 4 }}>/ mi</span>
+          </div>
+          {paceDeltaSec != null && (
+            <div style={{ fontSize: 10, color: paceTrendColor, marginTop: 2, fontWeight: 600 }}>
+              {paceDeltaSec < 0 ? '↓' : paceDeltaSec > 0 ? '↑' : '—'} {Math.abs(Math.round(paceDeltaSec))}s vs last
+            </div>
+          )}
+        </div>
+        <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+            This week
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+            {milesThisWeek.toFixed(1)}
+            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginLeft: 4 }}>mi</span>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+            Last: {milesLastWeek.toFixed(1)} mi
+          </div>
+        </div>
+      </div>
+
+      {/* Pace sparkline */}
+      {recent.length >= 2 && (
+        <div style={{ marginBottom: 10, padding: '8px 8px 4px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>
+            Pace trend · last {recent.length}
+          </div>
+          <PaceSparkline entries={recent} accentColor={accentHex} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+            <span>oldest</span>
+            <span>faster ↑</span>
+            <span>latest</span>
+          </div>
+        </div>
+      )}
+
+      {/* Recent runs list */}
+      <div>
+        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>
+          Recent runs
+        </div>
+        {entries.slice(0, 6).map(e => {
+          const dateStr = new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          return (
+            <div
+              key={e.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 0',
+                borderBottom: '1px solid var(--border-subtle)',
+              }}
+            >
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', minWidth: 44, fontVariantNumeric: 'tabular-nums' }}>
+                {dateStr}
+              </span>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                {e.distanceMiles.toFixed(1)} mi
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                {formatDuration(e.timeSec)}
+              </span>
+              <span style={{
+                fontSize: 12, fontWeight: 700, color: e.id === bestPaceEntry?.id ? accentHex : 'var(--text-secondary)',
+                minWidth: 56, textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+              }}>
+                {formatPace(e.paceSec)}/mi
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Footer summary */}
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+        <span>
+          {bestPaceEntry && <>Best pace: <span style={{ color: accentHex, fontWeight: 700 }}>{formatPace(bestPaceEntry.paceSec)}/mi</span></>}
+        </span>
+        <span>
+          {longestEntry && <>Longest: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{longestEntry.distanceMiles.toFixed(1)} mi</span></>}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function StrengthTile({ sessions, exerciseLibrary, accentHex, onOpenExercise }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -1221,6 +1395,19 @@ export default function Progress() {
                 exerciseLibrary={exerciseLibrary}
                 accentHex={accentHex}
                 onOpenExercise={setOpenExercise}
+              />
+            </StatCard>
+          )}
+
+          {activeTab === 'running' && (
+            <StatCard theme={theme} settings={settings}>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
+                Pace + mileage across in-session runs and standalone cardio
+              </p>
+              <RunningTile
+                sessions={filteredSessions}
+                cardioSessions={cardioSessions}
+                accentHex={accentHex}
               />
             </StatCard>
           )}
