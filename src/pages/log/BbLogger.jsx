@@ -4334,7 +4334,7 @@ export default function BbLogger() {
           color: 'var(--text-primary)',
           borderBottom: `1px solid ${hexToRgba(resolveHeroAccent(theme, settings), 0.18)}`,
           borderRadius: '0 0 24px 24px',
-          boxShadow: `0 4px 30px ${hexToRgba(resolveHeroAccent(theme, settings), 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
+          boxShadow: `0 4px 30px ${hexToRgba(resolveHeroAccent(theme, settings), 0.12)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
         }}
       >
         {/* Single-row header (B60): back · workout name (large, prominent,
@@ -4773,7 +4773,9 @@ export default function BbLogger() {
               `,
             }}
           >
-            {/* Notes — borderless, tints to accent when textarea open */}
+            {/* Notes — own inner pill wrapper to match Finish's structure
+                so the three children read as siblings within the outer
+                glass surface. Tints to accent when textarea is open. */}
             <button
               type="button"
               onClick={() => {
@@ -4787,10 +4789,12 @@ export default function BbLogger() {
                   return next
                 })
               }}
-              className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+              className="inline-flex items-center whitespace-nowrap px-3 py-1.5 rounded-full text-sm font-medium border transition-colors"
               style={{
-                background: sessionNotesOpen ? hexToRgba(theme.hex, 0.18) : 'transparent',
-                color:      sessionNotesOpen ? theme.hex : 'var(--text-secondary)',
+                background: sessionNotesOpen ? hexToRgba(theme.hex, 0.18) : 'rgba(255,255,255,0.04)',
+                borderColor: sessionNotesOpen ? hexToRgba(theme.hex, 0.40) : 'rgba(255,255,255,0.10)',
+                color: sessionNotesOpen ? theme.hex : 'var(--text-secondary)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
               }}
               aria-pressed={sessionNotesOpen}
               aria-label={sessionNotesOpen ? 'Close session notes' : 'Open session notes'}
@@ -4798,14 +4802,17 @@ export default function BbLogger() {
               Notes
             </button>
 
-            {/* + Add Exercise — borderless inner */}
+            {/* + Add Exercise — own inner pill wrapper, same subtle
+                treatment as Notes so they read as a balanced pair. */}
             <button
               type="button"
               onClick={() => setShowAddPanel(true)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+              className="inline-flex items-center whitespace-nowrap gap-1 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors"
               style={{
-                background: 'transparent',
+                background: 'rgba(255,255,255,0.04)',
+                borderColor: 'rgba(255,255,255,0.10)',
                 color: 'var(--text-secondary)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
               }}
               aria-label="Add exercise"
             >
@@ -4813,41 +4820,46 @@ export default function BbLogger() {
               <span>Add Exercise</span>
             </button>
 
-            {/* Right slot — fixed min-width to prevent layout shift on
-                the muted-hint ↔ accent-button label flip. Internal
-                justify-content: flex-end so the inner element right-aligns
-                to the pill's right edge. */}
-            <div
-              style={{
-                minWidth: 120,
-                display: 'flex',
-                justifyContent: 'flex-end',
+            {/* Finish — always rendered as a direct sibling of Notes /
+                Add Exercise so the outer pill's `gap-1.5` applies uniformly
+                between all three children. Disabled state (loggedSets === 0)
+                wears the same subtle treatment as Notes/Add Exercise so the
+                row reads as three balanced pills; the "lit up" accent
+                treatment kicks in the moment the user logs their first set
+                (loggedSets > 0). */}
+            <button
+              type="button"
+              onClick={() => {
+                if (loggedSets === 0) return
+                frozenElapsedRef.current = elapsedSeconds
+                setShowConfirm(true)
               }}
-            >
-              {loggedSets === 0 ? (
-                <span
-                  className="inline-flex items-center px-3 py-1.5 rounded-full text-[12px] font-medium text-c-faint"
-                >
-                  Log a set to save
-                </span>
-              ) : (
-                <button
-                  onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold border"
-                  style={{
+              disabled={loggedSets === 0}
+              className="inline-flex items-center whitespace-nowrap gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold border transition-colors"
+              style={loggedSets === 0
+                ? {
+                    background: 'rgba(255,255,255,0.04)',
+                    borderColor: 'rgba(255,255,255,0.10)',
+                    color: 'var(--text-faint)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+                    cursor: 'default',
+                  }
+                : {
                     backgroundColor: hexToRgba(theme.hex, 0.20),
                     borderColor:     hexToRgba(theme.hex, 0.40),
                     color: theme.hex,
                     boxShadow: `0 0 24px ${hexToRgba(theme.hex, 0.30)}, inset 0 1px 0 rgba(255,255,255,0.12)`,
-                  }}
-                  aria-label={`Finish session with ${loggedSets} sets`}
-                >
-                  <span aria-hidden="true">✓</span>
-                  <span>Finish</span>
-                  <span className="opacity-70 tabular-nums">· {loggedSets}</span>
-                </button>
-              )}
-            </div>
+                  }
+              }
+              aria-label={loggedSets === 0
+                ? 'Finish (log a set first)'
+                : `Finish session with ${loggedSets} sets`}
+              title={loggedSets === 0 ? 'Log a set to save' : undefined}
+            >
+              <span aria-hidden="true">✓</span>
+              <span>Finish</span>
+              {loggedSets > 0 && <span className="opacity-70 tabular-nums">· {loggedSets}</span>}
+            </button>
           </div>
         </div>,
         document.body
