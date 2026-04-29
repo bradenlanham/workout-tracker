@@ -4331,82 +4331,106 @@ export default function BbLogger() {
           boxShadow: `0 4px 30px ${hexToRgba(resolveHeroAccent(theme, settings), 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
         }}
       >
-        <div className="flex items-center px-4 pb-1.5 pt-0.5">
-          <div className="flex-1 flex justify-start">
-            <button
-              onClick={() => {
-                // In focus mode, back arrow exits focus (closes numpad) instead
-                // of navigating away — prevents an accidental tap from bouncing
-                // the user out of an in-progress session. Second tap does the
-                // normal navigate-back.
-                if (numpadIsOpen) {
-                  closeNumpad()
-                  return
-                }
-                if (sessionStarted && !isPaused) handlePause()
-                navigate(-1)
-              }}
-              className="w-7 h-7 flex items-center justify-center rounded-full"
-              style={{ background: 'var(--bg-item)' }}
-              aria-label={numpadIsOpen ? 'Exit focus mode' : 'Back'}
-            >
-              <svg className="w-3.5 h-3.5 text-c-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 flex justify-end items-center gap-2">
-            {sessionStarted && (
-              <button
-                onClick={isPaused ? handleResume : handlePause}
-                className="w-7 h-7 flex items-center justify-center rounded-full"
-                style={{ background: 'var(--bg-item)' }}
-              >
-                {isPaused ? (
-                  <svg className="w-3.5 h-3.5 text-c-primary" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5 text-c-primary" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                  </svg>
-                )}
-              </button>
-            )}
-            <div className={`rounded-full px-2.5 py-1 flex items-center ${isPaused ? 'opacity-60' : ''}`} style={{ background: 'var(--bg-item)' }}>
-              <span className="text-sm font-mono font-extrabold tracking-tight leading-none" style={{ color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
-                {formatElapsed(elapsedSeconds)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Title + gym pill collapse in focus mode to reclaim vertical space
-            for set rows (especially plate-loaded). Transition on max-height +
-            opacity so the collapse reads as intentional, not a layout jump. */}
+        {/* Single-row header (B60): back · workout name (large, prominent,
+            truncates) · timer-stack with gym pill nested directly under the
+            session timer. Uses CSS grid `auto minmax(0,1fr) auto` so the title
+            cell can ellipsis on long names without pushing the timer cell off
+            screen. The floating draggable RestTimer (App.jsx) lives at default
+            top:70 right:16, occupying the same horizontal band visually. */}
         <div
-          className="px-5 overflow-hidden transition-all duration-200 ease-out"
+          className="px-4 pb-2"
           style={{
-            maxHeight: numpadIsOpen ? 0 : 120,
-            opacity:   numpadIsOpen ? 0 : 1,
-            paddingBottom: numpadIsOpen ? 0 : 8,
+            display: 'grid',
+            gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+            alignItems: 'center',
+            columnGap: 12,
           }}
         >
+          {/* Back button (left cell) */}
+          <button
+            onClick={() => {
+              // In focus mode, back arrow exits focus (closes numpad) instead
+              // of navigating away — prevents an accidental tap from bouncing
+              // the user out of an in-progress session. Second tap does the
+              // normal navigate-back.
+              if (numpadIsOpen) {
+                closeNumpad()
+                return
+              }
+              if (sessionStarted && !isPaused) handlePause()
+              navigate(-1)
+            }}
+            className="w-7 h-7 flex items-center justify-center rounded-full"
+            style={{ background: 'var(--bg-item)' }}
+            aria-label={numpadIsOpen ? 'Exit focus mode' : 'Back'}
+          >
+            <svg className="w-3.5 h-3.5 text-c-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          {/* Workout name (middle cell) — 20px bold, truncates. Collapses to
+              0 max-height when numpad opens so focus-mode header stays compact;
+              back + timer stack (right) remain visible. */}
           <h1
-            className="font-bold leading-tight"
-            style={{ fontSize: 21, color: 'var(--text-primary)' }}
+            className="font-bold leading-tight truncate transition-all duration-200 ease-out"
+            style={{
+              fontSize: 20,
+              color: 'var(--text-primary)',
+              margin: 0,
+              opacity: numpadIsOpen ? 0 : 1,
+              maxHeight: numpadIsOpen ? 0 : 32,
+              overflow: 'hidden',
+            }}
           >
             {workoutEmoji} {workoutName}
           </h1>
-          {sessionStarted && (
-            <div className="mt-1">
-              <SessionGymPill
-                gymId={gymId}
-                onChange={setGymId}
-                theme={theme}
-              />
+
+          {/* Right cell: pause + session timer on row 1, gym pill nested on
+              row 2 directly under the timer. The gym pill row collapses in
+              focus mode to mirror the title's collapse. */}
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              {sessionStarted && (
+                <button
+                  onClick={isPaused ? handleResume : handlePause}
+                  className="w-7 h-7 flex items-center justify-center rounded-full"
+                  style={{ background: 'var(--bg-item)' }}
+                  aria-label={isPaused ? 'Resume session' : 'Pause session'}
+                >
+                  {isPaused ? (
+                    <svg className="w-3.5 h-3.5 text-c-primary" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5 text-c-primary" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                    </svg>
+                  )}
+                </button>
+              )}
+              <div className={`rounded-full px-2.5 py-1 flex items-center ${isPaused ? 'opacity-60' : ''}`} style={{ background: 'var(--bg-item)' }}>
+                <span className="text-sm font-mono font-extrabold tracking-tight leading-none" style={{ color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
+                  {formatElapsed(elapsedSeconds)}
+                </span>
+              </div>
             </div>
-          )}
+            {sessionStarted && (
+              <div
+                className="overflow-hidden transition-all duration-200 ease-out"
+                style={{
+                  maxHeight: numpadIsOpen ? 0 : 32,
+                  opacity:   numpadIsOpen ? 0 : 1,
+                }}
+              >
+                <SessionGymPill
+                  gymId={gymId}
+                  onChange={setGymId}
+                  theme={theme}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -4631,15 +4655,10 @@ export default function BbLogger() {
           )
         })}
 
-        {/* Add exercise – hidden when numpad is open to save space */}
-        {!numpadIsOpen && (
-          <button
-            onClick={() => setShowAddPanel(true)}
-            className="w-full py-4 mt-2 rounded-2xl text-c-muted font-semibold flex items-center justify-center gap-2"
-          >
-            <span className="text-xl">+</span> Add Exercise
-          </button>
-        )}
+        {/* Add Exercise + Session Notes are now in the fixed bottom action
+            bar (B60), no longer inline. The floating bar holds all three
+            non-set actions (Notes / Add Exercise / Finish) so the row stays
+            consistent regardless of which label the right pill is showing. */}
 
         {/* Focus mode exit zone – tap to dismiss numpad and return to full list.
             Uses onPointerDown (not onClick) so that ghost/delayed click events
@@ -4665,12 +4684,55 @@ export default function BbLogger() {
           </div>
         )}
 
-        {/* Session notes — post-batch redesign: button-styled like
-            "+ Add Exercise" above, stacked just beneath with a small gap.
-            Tap to expand an inline textarea. Slightly smaller py than + Add
-            Exercise (py-3 vs py-4) per the visual hierarchy ask. */}
-        {!numpadIsOpen && (
-          <div>
+        {/* Session notes textarea relocated to the fixed bottom-bar portal
+            (see below). Tapping the Notes pill there expands the textarea
+            just above the action bar so the user sees it open without
+            scrolling. */}
+      </div>
+
+      {/* ── Unified bottom action bar (B60) ─────────────────────────────
+          Three pills in one row, replacing the prior inline + Add Exercise,
+          inline Session Notes button, and the standalone floating Finish
+          portal. CSS grid `1fr auto 1fr` keeps the middle pill perfectly
+          centered regardless of right-pill width — so the row doesn't shift
+          when the right pill flips between the muted "Log a set to save"
+          hint and the accent "✓ Finish · N" button. Hidden when numpad is
+          open (preserves focus-mode behavior). */}
+      {!numpadIsOpen && createPortal(
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 pb-4 safe-bottom z-40 pointer-events-none">
+          {/* Notes textarea — opens above the action bar so it's visible
+              without scrolling. Liquid-glass treatment matches the bar. */}
+          {sessionNotesOpen && (
+            <div
+              className="pointer-events-auto mb-2 rounded-2xl backdrop-blur-md border"
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                borderColor: 'rgba(255,255,255,0.12)',
+              }}
+            >
+              <textarea
+                ref={sessionNotesRef}
+                value={sessionNotes}
+                onChange={e => setSessionNotes(e.target.value)}
+                onBlur={() => {
+                  if (!sessionNotes) setSessionNotesOpen(false)
+                }}
+                placeholder="How did the session go? Any notes…"
+                rows={3}
+                className="w-full bg-transparent text-c-secondary rounded-2xl px-3 py-2.5 text-sm placeholder-gray-400 resize-none focus:outline-none"
+              />
+            </div>
+          )}
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto 1fr',
+              alignItems: 'center',
+              columnGap: 8,
+            }}
+          >
+            {/* Notes (left) */}
             <button
               type="button"
               onClick={() => {
@@ -4684,56 +4746,63 @@ export default function BbLogger() {
                   return next
                 })
               }}
-              className="w-full py-3 mt-1 rounded-2xl text-c-muted font-medium flex items-center justify-center gap-2 text-sm"
+              className="pointer-events-auto justify-self-start inline-flex items-center px-3 py-2 rounded-full text-sm font-medium backdrop-blur-md border"
+              style={{
+                backgroundColor: sessionNotesOpen ? hexToRgba(theme.hex, 0.12) : 'rgba(255,255,255,0.05)',
+                borderColor:    sessionNotesOpen ? hexToRgba(theme.hex, 0.35) : 'rgba(255,255,255,0.12)',
+                color:          sessionNotesOpen ? theme.hex : 'var(--text-secondary)',
+              }}
+              aria-pressed={sessionNotesOpen}
+              aria-label={sessionNotesOpen ? 'Close session notes' : 'Open session notes'}
             >
-              <span aria-hidden="true">✏️</span> Session Notes
+              Notes
             </button>
-            {sessionNotesOpen && (
-              <textarea
-                ref={sessionNotesRef}
-                value={sessionNotes}
-                onChange={e => setSessionNotes(e.target.value)}
-                onBlur={() => {
-                  if (!sessionNotes) setSessionNotesOpen(false)
+
+            {/* + Add Exercise (middle, centered) */}
+            <button
+              type="button"
+              onClick={() => setShowAddPanel(true)}
+              className="pointer-events-auto justify-self-center inline-flex items-center gap-1 px-3 py-2 rounded-full text-sm font-medium backdrop-blur-md border"
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                borderColor: 'rgba(255,255,255,0.12)',
+                color: 'var(--text-secondary)',
+              }}
+              aria-label="Add exercise"
+            >
+              <span aria-hidden="true">+</span>
+              <span>Add Exercise</span>
+            </button>
+
+            {/* Log a set to save / Finish (right) */}
+            {loggedSets === 0 ? (
+              <span
+                className="pointer-events-auto justify-self-end inline-flex items-center px-3 py-2 rounded-full text-[12px] font-medium text-c-muted backdrop-blur-md border"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.04)',
+                  borderColor:     'rgba(255,255,255,0.10)',
                 }}
-                placeholder="How did the session go? Any notes…"
-                rows={3}
-                className="w-full bg-item text-c-secondary rounded-xl px-3 py-2.5 text-sm placeholder-gray-400 resize-none mt-1"
-              />
+              >
+                Log a set to save
+              </span>
+            ) : (
+              <button
+                onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
+                className="pointer-events-auto justify-self-end inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold backdrop-blur-md border"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  borderColor: hexToRgba(theme.hex, 0.35),
+                  color: theme.hex,
+                  boxShadow: `0 6px 24px ${hexToRgba(theme.hex, 0.18)}`,
+                }}
+                aria-label={`Finish session with ${loggedSets} sets`}
+              >
+                <span aria-hidden="true">✓</span>
+                <span>Finish</span>
+                <span className="opacity-70 tabular-nums">· {loggedSets}</span>
+              </button>
             )}
           </div>
-        )}
-      </div>
-
-      {/* ── Floating Finish pill (B59 v9) — centered, liquid-glass background
-          with accent-colored text + border. Translucent panel with backdrop
-          blur reads as a glass surface lifted off the page; the accent text
-          ties it to the user's theme without shouting. Only renders when at
-          least one set is logged; pre-log shows a subtle hint pill instead.
-          Hidden when numpad is open. */}
-      {!numpadIsOpen && createPortal(
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg flex justify-center px-4 pb-4 safe-bottom z-40 pointer-events-none">
-          {loggedSets === 0 ? (
-            <span className="pointer-events-auto inline-flex items-center px-3 py-1.5 rounded-full text-[11px] font-medium text-c-muted bg-base/80 backdrop-blur border border-c-subtle">
-              Log a set to save
-            </span>
-          ) : (
-            <button
-              onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
-              className="pointer-events-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold backdrop-blur-md border"
-              style={{
-                backgroundColor: 'rgba(255,255,255,0.08)',
-                borderColor: hexToRgba(theme.hex, 0.35),
-                color: theme.hex,
-                boxShadow: `0 6px 24px ${hexToRgba(theme.hex, 0.18)}`,
-              }}
-              aria-label={`Finish session with ${loggedSets} sets`}
-            >
-              <span aria-hidden="true">✓</span>
-              <span>Finish</span>
-              <span className="opacity-70 tabular-nums">· {loggedSets}</span>
-            </button>
-          )}
         </div>,
         document.body
       )}
