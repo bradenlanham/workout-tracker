@@ -69,7 +69,7 @@ export function RecommendationChip({ recommendation, onTap }) {
     <button
       type="button"
       onClick={onTap}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 transition-colors"
+      className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 transition-colors whitespace-nowrap shrink-0"
       title="Tap for coach's call"
     >
       <SparkleIcon className="w-3 h-3" color="currentColor" />

@@ -163,7 +163,7 @@ const SET_TYPES = [
   { id: 'warmup',  label: 'Warm' },
 ]
 
-function SetTypeBtn({ value, onChange, theme, disabled = false, lockedToWorking = false, onConvertToDrop = null }) {
+function SetTypeBtn({ value, onChange, theme, disabled = false, lockedToWorking = false, onConvertToDrop = null, compact = false }) {
   // lockedToWorking: set 2+ always displays as Work — warmups only make sense
   // on the first set of an exercise.
   //
@@ -200,7 +200,7 @@ function SetTypeBtn({ value, onChange, theme, disabled = false, lockedToWorking 
       onClick={handleClick}
       disabled={!isInteractive}
       title={title}
-      className={`w-14 h-10 rounded-lg text-xs font-bold shrink-0 transition-colors ${color} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${!isInteractive ? 'cursor-default' : ''}`}
+      className={`${compact ? 'w-14 h-7 text-[10px]' : 'w-14 h-10 text-xs'} rounded-lg font-bold shrink-0 transition-colors ${color} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${!isInteractive ? 'cursor-default' : ''}`}
       style={colorStyle}
     >
       {current.label}
@@ -586,51 +586,43 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     update(plates, newBar)
   }
 
-  // Batch 59 — compact summary for plate rows. Single-line; plate strip hidden.
-  // Tap promotes to hero by syntheticly opening the reps numpad.
+  // B59 v3 — compact mode for plate rows: same Type chip + Total + Reps
+  // layout as hero, but at h-7 with reduced opacity and the plate strip
+  // hidden. Tapping reps still promotes to hero (numpad opens, activeFieldKey
+  // changes). Plate strip re-renders only when this row is hero again.
   if (phase === 'compact') {
-    const filled = set.reps && total > 0
-    const handleCompactTap = () => {
-      if (!numpadCtx) return
-      numpadCtx.openNumpad({
-        fieldKey: repsFieldKey,
-        label: 'Reps',
-        isDecimalAllowed: false,
-        initialValue: set.reps,
-        onChange: handleRepsChange,
-        onNext: handleNextSet,
-        onDone: handleDone,
-        themeHex: theme.hex,
-        themeContrastText: theme.contrastText,
-      })
-    }
     return (
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={handleCompactTap}
-          className="flex-1 flex items-center gap-3 px-2 py-1.5 rounded-lg text-left"
-          style={{ minHeight: 32 }}
-          aria-label={`Edit set ${setIndex + 1}`}
-        >
-          <span className="w-12 text-[10px] font-bold uppercase tracking-wider text-c-muted shrink-0">
-            {set.type === 'warmup' ? 'Warm' : set.type === 'drop' ? 'Drop' : 'Work'}
-          </span>
-          <span className="text-sm font-semibold tabular-nums text-c-secondary">
-            {total > 0 ? total : '—'} <span className="text-c-faint">×</span> {set.reps || '—'}
-          </span>
-          {isPR && <span className="text-amber-300 text-sm" aria-label="Personal record">🏆</span>}
-          {compactDropCount > 0 && (
-            <span className="text-[11px] text-orange-400/70 italic shrink-0">
-              ↳ {compactDropCount} drop{compactDropCount === 1 ? '' : 's'}
-            </span>
-          )}
-          <span className="ml-auto shrink-0">
-            {filled
-              ? <span className="text-emerald-400 font-bold text-sm">✓</span>
-              : <span className="text-c-faint text-xs">…</span>}
-          </span>
-        </button>
+      <div className="flex items-center gap-2 opacity-70">
+        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} compact />
+        <div className="flex-1 h-7 bg-item/60 rounded-md flex items-center justify-center gap-1 text-xs font-medium text-c-secondary min-w-0">
+          <span className="text-c-muted text-[10px] font-normal">Total</span>
+          <span>{total} lbs</span>
+          {isPR && <span className="text-[10px]">🏆</span>}
+        </div>
+        <input
+          ref={repsRef}
+          type="text"
+          inputMode="none"
+          value={set.reps}
+          onChange={e => onChange({ ...set, reps: e.target.value, plates, barWeight, weight: String(total), plateMultiplier: mult })}
+          onFocus={() => numpadCtx?.openNumpad({
+            fieldKey: repsFieldKey,
+            label: 'Reps',
+            isDecimalAllowed: false,
+            initialValue: set.reps,
+            onChange: handleRepsChange,
+            onNext: handleNextSet,
+            onDone: handleDone,
+            themeHex: theme.hex,
+            themeContrastText: theme.contrastText,
+          })}
+          placeholder="reps"
+          className="w-16 min-w-0 bg-item/60 text-c-secondary rounded-md px-1 py-0 text-center text-sm font-medium h-7 outline-none"
+          style={{ caretColor: 'transparent' }}
+        />
+        {compactDropCount > 0 && (
+          <span className="text-[10px] text-orange-400/70 italic shrink-0">↳ {compactDropCount}</span>
+        )}
         <button
           type="button"
           onClick={onDelete}
@@ -653,8 +645,8 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
     border: `1px solid ${hexToRgba(accent, 0.18)}`,
     borderRadius: 14,
     boxShadow: `0 4px 24px ${hexToRgba(accent, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
-    padding: '10px 10px',
-    margin: '4px 0',
+    padding: '8px 6px',
+    margin: '4px -6px',
     position: 'relative',
   }
 
@@ -888,55 +880,65 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
   const isWeightActive = numpadCtx?.numpadConfig?.fieldKey === weightFieldKey
   const isRepsActive   = numpadCtx?.numpadConfig?.fieldKey === repsFieldKey
 
-  // Batch 59 — compact summary row. Tap promotes to hero by syntheticly
-  // opening the numpad on the weight field, which sets activeFieldKey →
-  // getActiveSetIndex returns this row → next render this row is hero.
+  // B59 v3 — compact mode now renders the SAME set-row layout as hero
+  // (Type chip · weight input · reps input · trophy/delete) but at h-7
+  // with reduced opacity so it reads as "logged, but not the focus."
+  // Tapping any input still opens the numpad → activeFieldKey changes →
+  // row promotes to hero on next render. User feedback: "continue to show
+  // the set row with the set button and the pounds and the reps fields,
+  // just make it skinnier and a little less bright."
   if (phase === 'compact') {
-    const wDisplay = (set.rawWeight ?? set.weight)
-    const wShown = wDisplay === '' || wDisplay == null ? null : wDisplay
-    const rShown = set.reps === '' || set.reps == null ? null : set.reps
-    const filled = wShown != null && rShown != null && w > 0 && r > 0
-    const handleCompactTap = () => {
-      if (!numpadCtx) return
-      numpadCtx.openNumpad({
-        fieldKey: weightFieldKey,
-        label: 'Weight (lbs)',
-        isDecimalAllowed: true,
-        initialValue: set.weight,
-        onChange: handleWeightChange,
-        onNext: handleFocusReps,
-        onDone: handleDone,
-        themeHex: theme.hex,
-        themeContrastText: theme.contrastText,
-      })
-    }
     return (
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={handleCompactTap}
-          className="flex-1 flex items-center gap-3 px-2 py-1.5 rounded-lg text-left"
-          style={{ minHeight: 32 }}
-          aria-label={`Edit set ${setIndex + 1}`}
-        >
-          <span className="w-12 text-[10px] font-bold uppercase tracking-wider text-c-muted shrink-0">
-            {set.type === 'warmup' ? 'Warm' : set.type === 'drop' ? 'Drop' : 'Work'}
-          </span>
-          <span className="text-sm font-semibold tabular-nums text-c-secondary">
-            {wShown != null ? wShown : '—'} <span className="text-c-faint">×</span> {rShown != null ? rShown : '—'}
-          </span>
-          {isPR && <span className="text-amber-300 text-sm" aria-label="Personal record">🏆</span>}
-          {compactDropCount > 0 && (
-            <span className="text-[11px] text-orange-400/70 italic shrink-0">
-              ↳ {compactDropCount} drop{compactDropCount === 1 ? '' : 's'}
-            </span>
+      <div className="flex items-center gap-2 opacity-70">
+        <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} compact />
+        <input
+          ref={weightRef}
+          type="text"
+          inputMode="none"
+          value={set.weight}
+          onChange={e => onChange({ ...set, weight: e.target.value })}
+          onFocus={() => numpadCtx?.openNumpad({
+            fieldKey: weightFieldKey,
+            label: 'Weight (lbs)',
+            isDecimalAllowed: true,
+            initialValue: set.weight,
+            onChange: handleWeightChange,
+            onNext: handleFocusReps,
+            onDone: handleDone,
+            themeHex: theme.hex,
+            themeContrastText: theme.contrastText,
+          })}
+          placeholder="lbs"
+          className="w-20 min-w-0 bg-item/60 text-c-secondary rounded-md px-1 py-0 text-center text-sm font-medium h-7 outline-none"
+          style={{ caretColor: 'transparent' }}
+        />
+        <input
+          ref={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
+          type="text"
+          inputMode="none"
+          value={set.reps}
+          onChange={e => onChange({ ...set, reps: e.target.value })}
+          onFocus={() => numpadCtx?.openNumpad({
+            fieldKey: repsFieldKey,
+            label: 'Reps',
+            isDecimalAllowed: false,
+            initialValue: set.reps,
+            onChange: handleRepsChange,
+            onNext: handleNextSet,
+            onDone: handleDone,
+            themeHex: theme.hex,
+            themeContrastText: theme.contrastText,
+          })}
+          placeholder="reps"
+          className="w-16 min-w-0 bg-item/60 text-c-secondary rounded-md px-1 py-0 text-center text-sm font-medium h-7 outline-none"
+          style={{ caretColor: 'transparent' }}
+        />
+        <span className="flex-1 text-center text-xs">
+          {isPR && <span aria-label="Personal record">🏆</span>}
+          {!isPR && compactDropCount > 0 && (
+            <span className="text-[10px] text-orange-400/70 italic">↳ {compactDropCount}</span>
           )}
-          <span className="ml-auto shrink-0">
-            {filled
-              ? <span className="text-emerald-400 font-bold text-sm">✓</span>
-              : <span className="text-c-faint text-xs">…</span>}
-          </span>
-        </button>
+        </span>
         <button
           type="button"
           onClick={onDelete}
@@ -959,8 +961,8 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
     border: `1px solid ${hexToRgba(accent, 0.18)}`,
     borderRadius: 14,
     boxShadow: `0 4px 24px ${hexToRgba(accent, 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
-    padding: '10px 10px',
-    margin: '4px 0',
+    padding: '8px 6px',
+    margin: '4px -6px',
     position: 'relative',
   }
 
@@ -1035,13 +1037,15 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
 // parent working is plate-loaded). Uses "↳ Drop" as the leading label in
 // place of SetTypeBtn so column widths stay aligned with the primary row.
 
-function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exerciseName }) {
+function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exerciseName, onAdvance = null }) {
   const numpadCtx = useContext(NumpadContext)
 
   const dropRef    = useRef(drop)
   const onChgRef   = useRef(onChange)
+  const onAdvanceRef = useRef(onAdvance)
   dropRef.current  = drop
   onChgRef.current = onChange
+  onAdvanceRef.current = onAdvance
 
   const handleWeightChange = useCallback((v) => {
     onChgRef.current({ ...dropRef.current, weight: v })
@@ -1062,11 +1066,23 @@ function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exe
       isDecimalAllowed: false,
       initialValue: dropRef.current.reps,
       onChange: handleRepsChange,
+      onNext: handleNextDrop,
       themeHex: theme.hex,
       themeContrastText: theme.contrastText,
     })
     // eslint-disable-next-line
   }, [repsFieldKey, handleRepsChange, theme.hex, theme.contrastText])
+
+  // B59 v3 — Next on drop reps adds another drop stage to the same parent
+  // working set. Mirrors the working-set Next behavior (which calls addSet).
+  // Only fires when drop has weight + reps filled. Plate strip (none on drops)
+  // and PR trophy (excluded by Batch 22 decision 3) intentionally not handled.
+  const handleNextDrop = useCallback((currentNumpadValue) => {
+    const repsVal = currentNumpadValue ?? dropRef.current.reps
+    if (dropRef.current.weight && repsVal) {
+      onAdvanceRef.current?.()
+    }
+  }, [])
 
   // Compact row — ~2/3 the height of a primary set row to visually reinforce
   // that drop stages are bundled within the parent working set.
@@ -1108,6 +1124,7 @@ function DropStageRow({ drop, onChange, onDelete, theme, parentIdx, dropIdx, exe
           isDecimalAllowed: false,
           initialValue: drop.reps,
           onChange: handleRepsChange,
+          onNext: handleNextDrop,
           themeHex: theme.hex,
           themeContrastText: theme.contrastText,
         })}
@@ -1879,12 +1896,32 @@ function ExerciseItem({
               </p>
             )}
           </div>
-          <svg
-            className={`w-5 h-5 text-c-dim transition-transform shrink-0 ml-2 ${expanded ? 'rotate-180' : ''}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+          <div className="flex flex-col items-end gap-1.5 shrink-0 ml-2">
+            <svg
+              className={`w-5 h-5 text-c-dim transition-transform ${expanded ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            {/* B59 v3 — chip toolbar +/− toggle sits beneath the chevron in
+                the title row, only when the card is expanded. Always
+                accent-illuminated so it reads as a deliberate affordance.
+                stopPropagation so tapping doesn't collapse the card. */}
+            {effectiveExpanded && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setChipsExpanded(v => !v) }}
+                aria-label={chipsExpanded ? 'Hide options' : 'Show options'}
+                aria-expanded={chipsExpanded}
+                className={`w-6 h-6 flex items-center justify-center rounded-md border ${theme.bgSubtle} ${theme.border} ${theme.text}`}
+                style={{ paddingTop: 0 }}
+              >
+                <span aria-hidden="true" style={{ display: 'block', lineHeight: 1, fontSize: '14px', fontWeight: 700 }}>
+                  {chipsExpanded ? '−' : '+'}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Reorder arrows — right side, only in reorder mode ──────── */}
@@ -1917,7 +1954,7 @@ function ExerciseItem({
       {/* ── Expanded body ─────────────────────────────────────────────── */}
       {effectiveExpanded && (
         <div
-          className="px-4 pb-4 space-y-3"
+          className="relative px-4 pb-4 space-y-3"
           style={bodyVisuallyHidden ? {
             maxHeight: 0,
             paddingTop: 0,
@@ -1928,26 +1965,13 @@ function ExerciseItem({
           } : undefined}
         >
 
-          {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine · SS
-              (wraps when tight). B59 v2 — collapsed by default behind a
-              +/− toggle button. The +/− pill stays in place; tapping it
-              flips chipsExpanded which conditionally renders the rest of
-              the chip row. Reduces visual chrome above the set rows. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setChipsExpanded(v => !v)}
-              aria-label={chipsExpanded ? 'Hide options' : 'Show options'}
-              aria-expanded={chipsExpanded}
-              className={`flex items-center justify-center w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
-                chipsExpanded
-                  ? `${theme.bgSubtle} ${theme.border} ${theme.text}`
-                  : 'bg-item border-transparent text-c-muted'
-              }`}
-            >
-              <span aria-hidden="true">{chipsExpanded ? '−' : '+'}</span>
-            </button>
-            {chipsExpanded && (<>
+          {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine · SS.
+              B59 v3 — chips themselves shrunk to text-[10px] / px-2 / py-0.5
+              with gap-1 so all 7 fit in one row at 375px. Toolbar row is
+              hidden when chipsExpanded is false; the +/− toggle in the title
+              row (next to the chevron) controls visibility. */}
+          {chipsExpanded && (
+          <div className="flex flex-nowrap items-center gap-0.5 overflow-hidden -mt-1">
             <div className="relative">
               <button
                 ref={platesBtnRef}
@@ -1966,9 +1990,9 @@ function ExerciseItem({
                   }
                   setPlateConfigOpen(true)
                 }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
                   exercise.plateLoaded
-                    ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
+                    ? 'bg-orange-500/20 border border-orange-500/40 text-orange-300'
                     : 'bg-item text-c-dim'
                 }`}
               >
@@ -2028,7 +2052,7 @@ function ExerciseItem({
             <button
               type="button"
               onClick={() => onUpdate({ ...exercise, unilateral: !exercise.unilateral })}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
                 exercise.unilateral
                   ? 'bg-purple-500/20 border border-purple-500/40 text-purple-400'
                   : 'bg-item text-c-dim'
@@ -2040,7 +2064,7 @@ function ExerciseItem({
               <button
                 type="button"
                 onClick={() => setShowPrev(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
                   showPrev
                     ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400'
                     : 'bg-item text-c-dim'
@@ -2051,11 +2075,10 @@ function ExerciseItem({
             )}
             {exercisePR.maxWeight > 0 && (
               <span
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0 whitespace-nowrap"
-                title="All-time PR for this exercise"
+                className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0 whitespace-nowrap"
+                title={`All-time PR: ${exercisePR.maxWeight} × ${exercisePR.maxRepsAtMaxWeight}`}
               >
-                <span className="font-bold">PR</span>
-                <span>{exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}</span>
+                {exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}
               </span>
             )}
             {settings.enableAiCoaching && recommendation?.prescription && recommendation.confidence !== 'none' && (
@@ -2071,7 +2094,7 @@ function ExerciseItem({
                   type="button"
                   onClick={() => setMachineOpen(v => !v)}
                   title={currentInstance ? `Machine: ${currentInstance}` : 'Tag a specific machine (optional)'}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap max-w-[10rem] ${
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap max-w-[3.5rem] ${
                     currentInstance
                       ? 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300'
                       : 'bg-item text-c-faint border border-dashed border-white/10'
@@ -2130,7 +2153,7 @@ function ExerciseItem({
                     ? `Superset — last paired with ${priorSuperset.partners.join(', ')}`
                     : 'Initiate superset'
               }
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 inActiveSuperset
                   ? 'bg-indigo-500/35 border border-indigo-500/60 text-white font-bold'
                   : priorSuperset
@@ -2143,8 +2166,8 @@ function ExerciseItem({
                 <span className="tabular-nums">×{activeSupersetMembers.length}</span>
               ) : null}
             </button>
-            </>)}
           </div>
+          )}
 
           {/* Item 7 (post-workout feedback batch): GymTagPrompt banner removed.
               The library's Gyms section in ExerciseEditSheet is now the single
@@ -2306,6 +2329,7 @@ function ExerciseItem({
                           onChange={d => updateDropStage(i, j, d)}
                           onDelete={() => deleteDropStage(i, j)}
                           theme={theme}
+                          onAdvance={() => addDropStage(i)}
                         />
                       ))}
                     </div>
@@ -4659,18 +4683,26 @@ export default function BbLogger() {
         )}
       </div>
 
-      {/* ── Sticky footer – hidden when numpad is open ───────────────────── */}
+      {/* ── Floating Finish pill (B59 v3) — small, bottom-right, no full-bleed
+          row. Only renders when at least one set is logged; pre-log shows a
+          subtle hint pill instead of the prior full-width status bar.
+          Hidden when numpad is open. */}
       {!numpadIsOpen && createPortal(
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-base/95 backdrop-blur border-t border-c-subtle px-3 pt-3 safe-bottom z-40">
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg flex justify-end px-4 pb-4 safe-bottom z-40 pointer-events-none">
           {loggedSets === 0 ? (
-            <p className="text-center text-sm text-c-muted py-1">Log at least one set to save</p>
+            <span className="pointer-events-auto inline-flex items-center px-3 py-1.5 rounded-full text-[11px] font-medium text-c-muted bg-base/80 backdrop-blur border border-c-subtle">
+              Log a set to save
+            </span>
           ) : (
             <button
               onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
-              className={`w-full ${theme.bg} text-white py-4 rounded-2xl font-bold text-lg`}
-              style={{ color: theme.contrastText }}
+              className={`pointer-events-auto inline-flex items-center gap-1.5 ${theme.bg} px-3 py-2 rounded-full text-sm font-semibold shadow-lg`}
+              style={{ color: theme.contrastText, boxShadow: `0 6px 20px ${hexToRgba(theme.hex, 0.35)}` }}
+              aria-label={`Finish session with ${loggedSets} sets`}
             >
-              Finish Session · {loggedSets} sets
+              <span aria-hidden="true">✓</span>
+              <span>Finish</span>
+              <span className="opacity-70 tabular-nums">· {loggedSets}</span>
             </button>
           )}
         </div>,
