@@ -4705,12 +4705,14 @@ export default function BbLogger() {
         )}
       </div>
 
-      {/* ── Floating Finish pill (B59 v3) — small, bottom-right, no full-bleed
-          row. Only renders when at least one set is logged; pre-log shows a
-          subtle hint pill instead of the prior full-width status bar.
+      {/* ── Floating Finish pill (B59 v9) — centered, liquid-glass background
+          with accent-colored text + border. Translucent panel with backdrop
+          blur reads as a glass surface lifted off the page; the accent text
+          ties it to the user's theme without shouting. Only renders when at
+          least one set is logged; pre-log shows a subtle hint pill instead.
           Hidden when numpad is open. */}
       {!numpadIsOpen && createPortal(
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg flex justify-end px-4 pb-4 safe-bottom z-40 pointer-events-none">
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg flex justify-center px-4 pb-4 safe-bottom z-40 pointer-events-none">
           {loggedSets === 0 ? (
             <span className="pointer-events-auto inline-flex items-center px-3 py-1.5 rounded-full text-[11px] font-medium text-c-muted bg-base/80 backdrop-blur border border-c-subtle">
               Log a set to save
@@ -4718,8 +4720,13 @@ export default function BbLogger() {
           ) : (
             <button
               onClick={() => { frozenElapsedRef.current = elapsedSeconds; setShowConfirm(true) }}
-              className={`pointer-events-auto inline-flex items-center gap-1.5 ${theme.bg} px-3 py-2 rounded-full text-sm font-semibold shadow-lg`}
-              style={{ color: theme.contrastText, boxShadow: `0 6px 20px ${hexToRgba(theme.hex, 0.35)}` }}
+              className="pointer-events-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold backdrop-blur-md border"
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.08)',
+                borderColor: hexToRgba(theme.hex, 0.35),
+                color: theme.hex,
+                boxShadow: `0 6px 24px ${hexToRgba(theme.hex, 0.18)}`,
+              }}
               aria-label={`Finish session with ${loggedSets} sets`}
             >
               <span aria-hidden="true">✓</span>
