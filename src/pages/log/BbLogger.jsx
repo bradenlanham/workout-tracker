@@ -663,7 +663,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <SetTypeBtn value={set.type} onChange={val => onChange({ ...set, type: val })} theme={theme} disabled={cyclerDisabled} lockedToWorking={lockedToWorking} onConvertToDrop={onConvertToDrop} />
-          <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-base font-bold min-w-0">
+          <div className="flex-1 h-10 bg-item rounded-lg flex items-center justify-center gap-1.5 text-sm font-bold min-w-0">
             <span className="text-c-muted text-xs font-normal">Total</span>
             <span>{total} lbs</span>
             {isPR && <span className="text-xs">🏆</span>}
@@ -686,7 +686,7 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
               themeContrastText: theme.contrastText,
             })}
             placeholder="reps"
-            className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-xl font-bold h-10 outline-none"
+            className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
             style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
           />
           {set.reps && total > 0 ? (
@@ -987,7 +987,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
             themeContrastText: theme.contrastText,
           })}
           placeholder="lbs"
-          className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-xl font-bold h-10 outline-none"
+          className="w-20 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
           style={isWeightActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
         />
         {/* Reps SECOND */}
@@ -1009,7 +1009,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
             themeContrastText: theme.contrastText,
           })}
           placeholder="reps"
-          className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-xl font-bold h-10 outline-none"
+          className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
           style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
         />
         <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
@@ -1159,6 +1159,10 @@ function ExerciseItem({
   // pencil pill so users see at a glance that the exercise has notes.
   const [notesOpen, setNotesOpen] = useState(false)
   const notesInputRef = useRef(null)
+  // B59 v2 — chip toolbar collapsed by default. User taps "+" to expand,
+  // "−" to collapse back. Reduces above-the-fold chrome when the user just
+  // wants to log sets quickly. State is per-exercise (reset on remount).
+  const [chipsExpanded, setChipsExpanded] = useState(false)
 
   const commitRec = () => {
     const val = (recDraft || '').trim().slice(0, 20)
@@ -1217,6 +1221,14 @@ function ExerciseItem({
   const setWeightRefs = useRef({})
   const setRepsRefs   = useRef({})
   const pendingFocusRef = useRef(null)
+  // B59 v2 — when addSet(autoFocus=true) fires, the new set must render as
+  // the hero on the SAME commit so the rAF.focus() call below has an actual
+  // input element to target. Without this override, getActiveSetIndex would
+  // keep the prior set's focus signal pinned, the new set would render
+  // compact (no input in DOM), setWeightRefs.current[N] would be undefined,
+  // and the focus call would silently no-op. State, not ref, so React
+  // re-renders the row as hero immediately. Cleared after focus lands.
+  const [pendingActiveIdx, setPendingActiveIdx] = useState(null)
 
   // Focus the weight (or reps for plate mode) input of a newly added set after render.
   // Use preventScroll to avoid the browser yanking the viewport when the new row appears.
@@ -1229,6 +1241,10 @@ function ExerciseItem({
         const repsEl   = setRepsRefs.current[idx]
         const target = (exercise.plateLoaded && repsEl) ? repsEl : weightEl
         if (target) target.focus({ preventScroll: true })
+        // Clear the pending hero override — focus has fired, the input's
+        // onFocus has set activeFieldKey via openNumpad, and getActiveSetIndex
+        // will resolve to this set naturally from now on.
+        setPendingActiveIdx(null)
       })
     }
   }, [exercise.sets.length, exercise.plateLoaded])
@@ -1253,7 +1269,13 @@ function ExerciseItem({
       newSet.plates    = emptyPlates()
       newSet.barWeight = exercise.barDefault ?? prevSet?.barWeight ?? 45
     }
-    if (autoFocus) pendingFocusRef.current = exercise.sets.length
+    if (autoFocus) {
+      const newIdx = exercise.sets.length
+      pendingFocusRef.current = newIdx
+      // B59 v2 — pin the new set as hero immediately so its input renders
+      // and the rAF focus has a target. Cleared once focus lands.
+      setPendingActiveIdx(newIdx)
+    }
     onUpdate({ ...exercise, sets: [...exercise.sets, newSet] })
     if (settings.autoStartRest && lastSet?.type === 'working' && (lastSet.reps || lastSet.weight)) {
       setRestEndTimestamp(Date.now() + settings.restTimerDuration * 1000)
@@ -1906,8 +1928,26 @@ function ExerciseItem({
           } : undefined}
         >
 
-          {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine (wraps when tight) */}
+          {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine · SS
+              (wraps when tight). B59 v2 — collapsed by default behind a
+              +/− toggle button. The +/− pill stays in place; tapping it
+              flips chipsExpanded which conditionally renders the rest of
+              the chip row. Reduces visual chrome above the set rows. */}
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setChipsExpanded(v => !v)}
+              aria-label={chipsExpanded ? 'Hide options' : 'Show options'}
+              aria-expanded={chipsExpanded}
+              className={`flex items-center justify-center w-8 h-8 rounded-lg border text-sm font-bold transition-colors ${
+                chipsExpanded
+                  ? `${theme.bgSubtle} ${theme.border} ${theme.text}`
+                  : 'bg-item border-transparent text-c-muted'
+              }`}
+            >
+              <span aria-hidden="true">{chipsExpanded ? '−' : '+'}</span>
+            </button>
+            {chipsExpanded && (<>
             <div className="relative">
               <button
                 ref={platesBtnRef}
@@ -2103,6 +2143,7 @@ function ExerciseItem({
                 <span className="tabular-nums">×{activeSupersetMembers.length}</span>
               ) : null}
             </button>
+            </>)}
           </div>
 
           {/* Item 7 (post-workout feedback batch): GymTagPrompt banner removed.
@@ -2167,7 +2208,12 @@ function ExerciseItem({
               once the primary has both weight + reps filled in. */}
           {(() => {
             const heroAccent = resolveHeroAccent(theme, settings)
-            const activeIdx = getActiveSetIndex(exercise, activeFieldKey)
+            // pendingActiveIdx wins when set (covers the post-addSet render
+            // where the new set must be hero immediately so its input renders
+            // for the rAF focus call). Falls back to natural focus / unfilled
+            // resolution otherwise.
+            const naturalIdx = getActiveSetIndex(exercise, activeFieldKey)
+            const activeIdx = pendingActiveIdx !== null ? pendingActiveIdx : naturalIdx
             return exercise.sets.map((set, i) => {
               const isWorking    = set.type === 'working'
               const drops        = isWorking && Array.isArray(set.drops) ? set.drops : []
@@ -2296,10 +2342,16 @@ function ExerciseItem({
               the right (2/3 width). The dedicated "Notes for this exercise"
               row is gone — tap the pencil to expand an inline editor below.
               Pencil pill flips to a filled accent state when notes are set
-              so you can see at a glance which exercises carry context. */}
+              so you can see at a glance which exercises carry context.
+              B59 v2 — both buttons shrunk to py-2.5 (matching + Add Set
+              height), pencil glyph reduced to text-sm, and the data-attr
+              tag lets the notes input's onBlur skip its auto-close branch
+              when focus is moving back to the pencil itself (fixes the
+              blur+click race condition where tap-tap-tap never collapsed). */}
           <div className="w-full flex items-stretch gap-2">
             <button
               type="button"
+              data-notes-toggle="true"
               aria-label={notesOpen ? 'Close notes' : (exercise.notes ? 'Edit notes' : 'Add notes')}
               title={exercise.notes ? `Notes: ${exercise.notes}` : 'Add notes'}
               onClick={() => {
@@ -2314,20 +2366,20 @@ function ExerciseItem({
                   return next
                 })
               }}
-              className={`basis-1/3 py-3 rounded-xl text-base font-semibold flex items-center justify-center transition-colors ${
+              className={`basis-1/3 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center transition-colors ${
                 exercise.notes
                   ? `${theme.bgSubtle} border ${theme.border} ${theme.text}`
                   : 'bg-item text-c-muted border border-transparent'
               }`}
             >
-              <span aria-hidden="true">✏️</span>
+              <span aria-hidden="true" className="text-sm">✏️</span>
             </button>
             {!exercise.done ? (
               inActiveSuperset ? (
                 <button
                   type="button"
                   onClick={() => onFinishSuperset?.(exercise.id)}
-                  className="basis-2/3 py-3 rounded-xl bg-indigo-500/20 border border-indigo-500/50 text-indigo-200 text-sm font-bold flex items-center justify-center gap-2"
+                  className="basis-2/3 py-2.5 rounded-xl bg-indigo-500/20 border border-indigo-500/50 text-indigo-200 text-sm font-bold flex items-center justify-center gap-2"
                 >
                   <span>↔</span> Finish superset
                 </button>
@@ -2335,7 +2387,7 @@ function ExerciseItem({
                 <button
                   type="button"
                   onClick={markDone}
-                  className="basis-2/3 py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-sm font-bold flex items-center justify-center gap-2"
+                  className="basis-2/3 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-sm font-bold flex items-center justify-center gap-2"
                 >
                   <span>✓</span> Mark as Done
                 </button>
@@ -2344,7 +2396,7 @@ function ExerciseItem({
               <button
                 type="button"
                 onClick={() => onUpdate({ ...exercise, done: false })}
-                className="basis-2/3 py-3 rounded-xl bg-item text-c-muted text-sm font-semibold"
+                className="basis-2/3 py-2.5 rounded-xl bg-item text-c-muted text-sm font-semibold"
               >
                 Undo completion
               </button>
@@ -2356,10 +2408,17 @@ function ExerciseItem({
               type="text"
               value={exercise.notes || ''}
               onChange={e => onUpdate({ ...exercise, notes: e.target.value })}
-              onBlur={() => {
-                // Auto-collapse on blur unless the input is empty AND was
-                // never typed in — keeps the editor sticky during fast
-                // tapping but doesn't trap the user in expanded state.
+              onBlur={(e) => {
+                // B59 v2 — when the user taps the pencil to close the editor,
+                // the blur fires BEFORE the click handler. If we naively call
+                // setNotesOpen(false) here AND the click handler fires
+                // setNotesOpen(v => !v) with stale `v=true`, React batches both
+                // updates and the final state ends up `true` again (closed by
+                // blur, then reopened by stale toggle). Skipping when focus
+                // moves to the pencil itself lets the click handler own the
+                // toggle cleanly. Empty-input auto-collapse for taps elsewhere
+                // is preserved.
+                if (e.relatedTarget?.dataset?.notesToggle === 'true') return
                 if (!exercise.notes) setNotesOpen(false)
               }}
               onKeyDown={e => {
@@ -4208,16 +4267,22 @@ export default function BbLogger() {
         />
       )}
 
-      {/* ── Clipboard header (sticky) ────────────────────────────────────── */}
+      {/* ── Clipboard header (sticky, B59 v2 — mirrors Dashboard hero card) ─
+          Drops the violet linear-gradient in favor of a flat bg-card surface
+          with accent-tinted border + soft accent glow shadow, matching the
+          Dashboard hero card recipe (rounded bottom corners read as a card
+          hanging from the top edge). User feedback after B59 v1: "have the
+          top banner mirror the appearance of the hero card on the dashboard,
+          no gradient." */}
       <div
         className="sticky top-0 z-30"
         style={{
           backgroundColor: 'var(--bg-card)',
-          backgroundImage: `linear-gradient(to top, ${theme.hex}E6 0%, ${theme.hex}66 60%, transparent 100%)`,
           paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0.75rem))',
           color: 'var(--text-primary)',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+          borderBottom: `1px solid ${hexToRgba(resolveHeroAccent(theme, settings), 0.18)}`,
+          borderRadius: '0 0 24px 24px',
+          boxShadow: `0 4px 30px ${hexToRgba(resolveHeroAccent(theme, settings), 0.10)}, inset 0 1px 0 rgba(255,255,255,0.04)`,
         }}
       >
         <div className="flex items-center px-4 pb-1.5 pt-0.5">
