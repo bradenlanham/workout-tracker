@@ -1840,12 +1840,34 @@ function ExerciseItem({
           role="button"
           tabIndex={0}
           onClick={() => { if (!editingRec) setExpanded(v => !v) }}
-          className="flex-1 flex items-start justify-between pt-4 px-4 pb-2 text-left min-w-0 cursor-pointer select-none"
+          className="flex-1 flex items-center justify-between pt-4 px-4 pb-2 text-left min-w-0 cursor-pointer select-none"
         >
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {exercise.done && <span className="text-emerald-400 text-lg leading-none">✓</span>}
               <p className="font-semibold text-base truncate">{exercise.name}</p>
+              {/* B59 v7 — chip toolbar +/− toggle sits inline with the name,
+                  to its right. When chips are collapsed user sees only the
+                  + glyph; tapping expands the chip row beneath the title. */}
+              {effectiveExpanded && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setChipsExpanded(v => !v) }}
+                  aria-label={chipsExpanded ? 'Hide options' : 'Show options'}
+                  aria-expanded={chipsExpanded}
+                  className={`w-6 h-6 flex items-center justify-center rounded-md border shrink-0 ${theme.bgSubtle} ${theme.border} ${theme.text}`}
+                >
+                  {chipsExpanded ? (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M2 6h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  )}
+                </button>
+              )}
               {/* Batch 36 followup: SS ✓ marker on completed-as-superset cards
                   so the user sees at a glance that this exercise was part of a
                   finished group. Renders only when the card is collapsed +
@@ -1861,50 +1883,6 @@ function ExerciseItem({
                 </span>
               )}
               {hasPR && !exercise.done && <span className="text-amber-400 text-sm">🏆</span>}
-              {expanded && !exercise.done && settings.showRecPill && (
-                editingRec ? (
-                  <input
-                    type="text"
-                    value={recDraft}
-                    onChange={e => setRecDraft(e.target.value.slice(0, 20))}
-                    onBlur={commitRec}
-                    onClick={e => e.stopPropagation()}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter')  { e.preventDefault(); commitRec() }
-                      if (e.key === 'Escape') { setRecDraft(exercise.rec || ''); setEditingRec(false) }
-                    }}
-                    maxLength={20}
-                    autoFocus
-                    placeholder="e.g. 3x20 (warmup)"
-                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-item text-c-primary border border-blue-500/50 outline-none w-44"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={e => {
-                      e.stopPropagation()
-                      // Batch 17h — in-session rec edits stay as strings for
-                      // speed. If the value is structured (set via Canvas /
-                      // WorkoutEditSheet), pre-fill with the formatted display
-                      // so the user sees the full prescription and can tweak.
-                      const seed = typeof exercise.rec === 'string'
-                        ? exercise.rec
-                        : (formatRec(exercise.rec) || '')
-                      setRecDraft(seed)
-                      setEditingRec(true)
-                    }}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0 max-w-[14rem] ${
-                      formatRec(exercise.rec)
-                        ? 'bg-blue-500/15 border border-blue-500/40 text-blue-300'
-                        : 'bg-item text-c-faint'
-                    }`}
-                    title="Coach's recommendation (tap to edit)"
-                  >
-                    <span>📋</span>
-                    <span className="truncate">{formatRec(exercise.rec) || 'Rec'}</span>
-                  </button>
-                )
-              )}
             </div>
             {/* Collapsed row: Last / Try hints removed per 16h feedback —
                 cleaner collapsed state, all prescription detail lives in the
@@ -1924,40 +1902,16 @@ function ExerciseItem({
               </p>
             )}
           </div>
-          {/* B59 v5 — chevron + chip toolbar +/− toggle live side-by-side
-              on the title row, with the pill to the LEFT of the chevron.
-              When chips are collapsed, only the chevron shows. When the
-              card is expanded, the +/− pill appears next to it. The chip
-              row below the title row therefore sits closer to the title
-              (no longer needs to leave space below the chevron for a
-              stacked pill). */}
-          <div className="flex items-center gap-2 shrink-0 ml-2">
-            {effectiveExpanded && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setChipsExpanded(v => !v) }}
-                aria-label={chipsExpanded ? 'Hide options' : 'Show options'}
-                aria-expanded={chipsExpanded}
-                className={`w-6 h-6 flex items-center justify-center rounded-md border ${theme.bgSubtle} ${theme.border} ${theme.text}`}
-              >
-                {chipsExpanded ? (
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M2 6h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                ) : (
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                )}
-              </button>
-            )}
-            <svg
-              className={`w-5 h-5 text-c-dim transition-transform ${expanded ? 'rotate-180' : ''}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
+          {/* B59 v7 — chevron alone on the right; +/- pill moved into the
+              left column inline with the exercise name. items-center on
+              the parent so chevron centers against the multi-line title
+              block in collapsed state (name + summary). */}
+          <svg
+            className={`w-5 h-5 text-c-dim transition-transform shrink-0 ml-2 ${expanded ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
         </div>
 
         {/* ── Reorder arrows — right side, only in reorder mode ──────── */}
@@ -2001,101 +1955,55 @@ function ExerciseItem({
           } : undefined}
         >
 
-          {/* Toolbar chips: Plates · Uni · Last · PR · Tip · Machine · SS.
-              B59 v3 — chips themselves shrunk to text-[10px] / px-2 / py-0.5
-              with gap-1 so all 7 fit in one row at 375px. Toolbar row is
-              hidden when chipsExpanded is false; the +/− toggle in the title
-              row (next to the chevron) controls visibility. */}
+          {/* B59 v7 — toolbar chips in user-specified order:
+              1. Rec  2. Last  3. PR  4. Tip  5. Uni  6. Machine  7. SS
+              Plus Plates retained at position 8 (config toggle, kept
+              accessible). Wraps when chips don't fit in one row.
+              Machine chip no longer truncates — full label visible. */}
           {chipsExpanded && (
           <div className="flex flex-wrap items-center gap-1 mt-1">
-            <div className="relative">
-              <button
-                ref={platesBtnRef}
-                type="button"
-                onClick={() => {
-                  // Off→on: turn on AND open popover so the user can configure.
-                  // On: re-open popover (don't toggle off — that's what Turn off
-                  // plate mode button inside the popover does).
-                  if (!exercise.plateLoaded) {
-                    onUpdate({
-                      ...exercise,
-                      plateLoaded:     true,
-                      barDefault:      exercise.barDefault      ?? 45,
-                      plateMultiplier: exercise.plateMultiplier ?? 2,
-                    })
-                  }
-                  setPlateConfigOpen(true)
-                }}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
-                  exercise.plateLoaded
-                    ? 'bg-orange-500/20 border border-orange-500/40 text-orange-300'
-                    : 'bg-item text-c-dim'
-                }`}
-              >
-                Plates
-                {exercise.plateLoaded && (
-                  <span className="text-[10px] opacity-70 tabular-nums">
-                    {exercise.barDefault ?? 45}·{exercise.plateMultiplier ?? 2}×
-                  </span>
-                )}
-              </button>
-              <PlateConfigPopover
-                open={plateConfigOpen}
-                onClose={() => setPlateConfigOpen(false)}
-                anchorRef={platesBtnRef}
-                barWeight={exercise.barDefault ?? 45}
-                multiplier={exercise.plateMultiplier ?? 2}
-                onBarChange={newBar => {
-                  // Batch 34 hotfix: stamp bar + recompute weight on EVERY set,
-                  // not only those with a plate breakdown. Pre-fix, the
-                  // `if (!s.plates) return s` skip left bar-less sets with
-                  // stale weight values while the display silently rendered
-                  // `calcTotal(emptyPlates(), bar, mult) = just-the-bar` via
-                  // the per-render fallback — user saw the display update,
-                  // but the stored weight (and saved volume) stayed at the
-                  // old value. Seeding `emptyPlates()` here normalizes the
-                  // set shape: after a bar change, every set has a
-                  // consistent plates+barWeight+weight triple, and the
-                  // display, stored total, and saved volume all agree.
-                  const mult = exercise.plateMultiplier ?? 2
-                  const updatedSets = exercise.sets.map(s => {
-                    const plates = s.plates ?? emptyPlates()
-                    const newTotal = calcTotal(plates, newBar, mult)
-                    return { ...s, plates, barWeight: newBar, weight: String(newTotal), plateMultiplier: mult }
-                  })
-                  onUpdate({ ...exercise, barDefault: newBar, sets: updatedSets })
-                }}
-                onMultChange={newMult => {
-                  // Batch 34 hotfix: same pattern as onBarChange — stamp
-                  // multiplier on every set so bar-less sets stay in sync.
-                  const bar = exercise.barDefault ?? 45
-                  const updatedSets = exercise.sets.map(s => {
-                    const plates = s.plates ?? emptyPlates()
-                    const setBar = s.barWeight ?? bar
-                    const newTotal = calcTotal(plates, setBar, newMult)
-                    return { ...s, plates, barWeight: setBar, weight: String(newTotal), plateMultiplier: newMult }
-                  })
-                  onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
-                }}
-                onTurnOff={() => {
-                  setPlateConfigOpen(false)
-                  onUpdate({ ...exercise, plateLoaded: false })
-                }}
-                onConfirm={() => setPlateConfigOpen(false)}
-                theme={theme}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => onUpdate({ ...exercise, unilateral: !exercise.unilateral })}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
-                exercise.unilateral
-                  ? 'bg-purple-500/20 border border-purple-500/40 text-purple-400'
-                  : 'bg-item text-c-dim'
-              }`}
-            >
-              Uni
-            </button>
+            {/* 1. Rec — moved from title row. Tap edits inline (same
+                behavior as before, just rendered in the chip row). */}
+            {!exercise.done && settings.showRecPill && (
+              editingRec ? (
+                <input
+                  type="text"
+                  value={recDraft}
+                  onChange={e => setRecDraft(e.target.value.slice(0, 20))}
+                  onBlur={commitRec}
+                  onClick={e => e.stopPropagation()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter')  { e.preventDefault(); commitRec() }
+                    if (e.key === 'Escape') { setRecDraft(exercise.rec || ''); setEditingRec(false) }
+                  }}
+                  maxLength={20}
+                  autoFocus
+                  placeholder="e.g. 3x20 (warmup)"
+                  className="px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-item text-c-primary border border-blue-500/50 outline-none w-44"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const seed = typeof exercise.rec === 'string'
+                      ? exercise.rec
+                      : (formatRec(exercise.rec) || '')
+                    setRecDraft(seed)
+                    setEditingRec(true)
+                  }}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                    formatRec(exercise.rec)
+                      ? 'bg-blue-500/15 border border-blue-500/40 text-blue-300'
+                      : 'bg-item text-c-faint border border-dashed border-white/10'
+                  }`}
+                  title="Coach's recommendation (tap to edit)"
+                >
+                  <span>📋</span>
+                  <span>{formatRec(exercise.rec) || 'Rec'}</span>
+                </button>
+              )
+            )}
+            {/* 2. Last */}
             {prevSets.length > 0 && (
               <button
                 type="button"
@@ -2109,6 +2017,7 @@ function ExerciseItem({
                 Last
               </button>
             )}
+            {/* 3. PR */}
             {exercisePR.maxWeight > 0 && (
               <span
                 className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0 whitespace-nowrap"
@@ -2117,12 +2026,26 @@ function ExerciseItem({
                 {exercisePR.maxWeight}×{exercisePR.maxRepsAtMaxWeight}
               </span>
             )}
+            {/* 4. Tip */}
             {settings.enableAiCoaching && recommendation?.prescription && recommendation.confidence !== 'none' && (
               <RecommendationChip
                 recommendation={recommendation}
                 onTap={() => setRecSheetOpen(true)}
               />
             )}
+            {/* 5. Uni */}
+            <button
+              type="button"
+              onClick={() => onUpdate({ ...exercise, unilateral: !exercise.unilateral })}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                exercise.unilateral
+                  ? 'bg-purple-500/20 border border-purple-500/40 text-purple-400'
+                  : 'bg-item text-c-dim'
+              }`}
+            >
+              Uni
+            </button>
+            {/* 6. Machine — no truncation, full label, wraps to next row if needed */}
             {showMachineChip && (
               <div className="relative">
                 <button
@@ -2130,14 +2053,14 @@ function ExerciseItem({
                   type="button"
                   onClick={() => setMachineOpen(v => !v)}
                   title={currentInstance ? `Machine: ${currentInstance}` : 'Tag a specific machine (optional)'}
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap max-w-[3.5rem] ${
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
                     currentInstance
                       ? 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300'
                       : 'bg-item text-c-faint border border-dashed border-white/10'
                   }`}
                 >
                   {currentInstance ? (
-                    <span className="truncate">{currentInstance}</span>
+                    <span>{currentInstance}</span>
                   ) : (
                     <span className="font-bold">Machine</span>
                   )}
@@ -2202,6 +2125,70 @@ function ExerciseItem({
                 <span className="tabular-nums">×{activeSupersetMembers.length}</span>
               ) : null}
             </button>
+            {/* 8. Plates (config toggle — kept at end so user's stated 1-7
+                ordering is preserved exactly; Plates is critical for plate-
+                loaded exercises so it stays accessible). */}
+            <div className="relative">
+              <button
+                ref={platesBtnRef}
+                type="button"
+                onClick={() => {
+                  if (!exercise.plateLoaded) {
+                    onUpdate({
+                      ...exercise,
+                      plateLoaded:     true,
+                      barDefault:      exercise.barDefault      ?? 45,
+                      plateMultiplier: exercise.plateMultiplier ?? 2,
+                    })
+                  }
+                  setPlateConfigOpen(true)
+                }}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                  exercise.plateLoaded
+                    ? 'bg-orange-500/20 border border-orange-500/40 text-orange-300'
+                    : 'bg-item text-c-dim'
+                }`}
+              >
+                Plates
+                {exercise.plateLoaded && (
+                  <span className="text-[10px] opacity-70 tabular-nums">
+                    {exercise.barDefault ?? 45}·{exercise.plateMultiplier ?? 2}×
+                  </span>
+                )}
+              </button>
+              <PlateConfigPopover
+                open={plateConfigOpen}
+                onClose={() => setPlateConfigOpen(false)}
+                anchorRef={platesBtnRef}
+                barWeight={exercise.barDefault ?? 45}
+                multiplier={exercise.plateMultiplier ?? 2}
+                onBarChange={newBar => {
+                  const mult = exercise.plateMultiplier ?? 2
+                  const updatedSets = exercise.sets.map(s => {
+                    const plates = s.plates ?? emptyPlates()
+                    const newTotal = calcTotal(plates, newBar, mult)
+                    return { ...s, plates, barWeight: newBar, weight: String(newTotal), plateMultiplier: mult }
+                  })
+                  onUpdate({ ...exercise, barDefault: newBar, sets: updatedSets })
+                }}
+                onMultChange={newMult => {
+                  const bar = exercise.barDefault ?? 45
+                  const updatedSets = exercise.sets.map(s => {
+                    const plates = s.plates ?? emptyPlates()
+                    const setBar = s.barWeight ?? bar
+                    const newTotal = calcTotal(plates, setBar, newMult)
+                    return { ...s, plates, barWeight: setBar, weight: String(newTotal), plateMultiplier: newMult }
+                  })
+                  onUpdate({ ...exercise, plateMultiplier: newMult, sets: updatedSets })
+                }}
+                onTurnOff={() => {
+                  setPlateConfigOpen(false)
+                  onUpdate({ ...exercise, plateLoaded: false })
+                }}
+                onConfirm={() => setPlateConfigOpen(false)}
+                theme={theme}
+              />
+            </div>
           </div>
           )}
 
