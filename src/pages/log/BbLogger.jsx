@@ -2007,7 +2007,7 @@ function ExerciseItem({
               hidden when chipsExpanded is false; the +/− toggle in the title
               row (next to the chevron) controls visibility. */}
           {chipsExpanded && (
-          <div className="flex flex-nowrap items-center gap-0.5 overflow-hidden -mt-1">
+          <div className="flex flex-wrap items-center gap-1 mt-1">
             <div className="relative">
               <button
                 ref={platesBtnRef}
