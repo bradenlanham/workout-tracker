@@ -1924,25 +1924,20 @@ function ExerciseItem({
               </p>
             )}
           </div>
-          <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
-            <svg
-              className={`w-5 h-5 text-c-dim transition-transform ${expanded ? 'rotate-180' : ''}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-            {/* B59 v4 — chip toolbar +/− toggle sits beneath the chevron with
-                a small right offset so it reads as visually anchored to the
-                chevron (slightly inset from the right edge per user feedback
-                "should move to the left a little bit"). Glyph rendered as SVG
-                for pixel-perfect centering. Always accent-illuminated. */}
+          {/* B59 v5 — chevron + chip toolbar +/− toggle live side-by-side
+              on the title row, with the pill to the LEFT of the chevron.
+              When chips are collapsed, only the chevron shows. When the
+              card is expanded, the +/− pill appears next to it. The chip
+              row below the title row therefore sits closer to the title
+              (no longer needs to leave space below the chevron for a
+              stacked pill). */}
+          <div className="flex items-center gap-2 shrink-0 ml-2">
             {effectiveExpanded && (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setChipsExpanded(v => !v) }}
                 aria-label={chipsExpanded ? 'Hide options' : 'Show options'}
                 aria-expanded={chipsExpanded}
-                style={{ marginRight: '6px' }}
                 className={`w-6 h-6 flex items-center justify-center rounded-md border ${theme.bgSubtle} ${theme.border} ${theme.text}`}
               >
                 {chipsExpanded ? (
@@ -1956,6 +1951,12 @@ function ExerciseItem({
                 )}
               </button>
             )}
+            <svg
+              className={`w-5 h-5 text-c-dim transition-transform ${expanded ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
           </div>
         </div>
 
