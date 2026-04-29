@@ -1840,7 +1840,7 @@ function ExerciseItem({
           role="button"
           tabIndex={0}
           onClick={() => { if (!editingRec) setExpanded(v => !v) }}
-          className="flex-1 flex items-center justify-between pt-4 px-4 pb-2 text-left min-w-0 cursor-pointer select-none"
+          className={`flex-1 flex items-center justify-between px-4 text-left min-w-0 cursor-pointer select-none ${expanded ? 'pt-4 pb-2' : 'py-4'}`}
         >
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -2033,19 +2033,7 @@ function ExerciseItem({
                 onTap={() => setRecSheetOpen(true)}
               />
             )}
-            {/* 5. Uni */}
-            <button
-              type="button"
-              onClick={() => onUpdate({ ...exercise, unilateral: !exercise.unilateral })}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
-                exercise.unilateral
-                  ? 'bg-purple-500/20 border border-purple-500/40 text-purple-400'
-                  : 'bg-item text-c-dim'
-              }`}
-            >
-              Uni
-            </button>
-            {/* 6. Machine — no truncation, full label, wraps to next row if needed */}
+            {/* 5. Machine — no truncation, full label, wraps to next row if needed */}
             {showMachineChip && (
               <div className="relative">
                 <button
@@ -2091,43 +2079,20 @@ function ExerciseItem({
                 />
               </div>
             )}
-            {/* Batch 36 — Superset (SS) chip. Three states nested behind the tap:
-                idle / no history (muted dashed), idle / prior history
-                (indigo filled — illuminated), or active in a live superset
-                (brighter indigo + member count). Tap opens SupersetSheet. */}
+            {/* 6. Uni (B59 v8 — moved from earlier in row to sit with the
+                other config toggles at the end per user). */}
             <button
               type="button"
-              onClick={() => setSupersetOpen(true)}
-              title={
-                inActiveSuperset
-                  ? `Active superset — ${activeSupersetMembers?.length ?? 0} exercises`
-                  : priorSuperset
-                    ? `Last paired with ${priorSuperset.partners.join(' + ')}`
-                    : 'Initiate a superset'
-              }
-              aria-label={
-                inActiveSuperset
-                  ? `Active superset with ${activeSupersetMembers?.length ?? 0} exercises`
-                  : priorSuperset
-                    ? `Superset — last paired with ${priorSuperset.partners.join(', ')}`
-                    : 'Initiate superset'
-              }
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                inActiveSuperset
-                  ? 'bg-indigo-500/35 border border-indigo-500/60 text-white font-bold'
-                  : priorSuperset
-                    ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-300'
-                    : 'bg-item text-c-faint border border-dashed border-white/10'
+              onClick={() => onUpdate({ ...exercise, unilateral: !exercise.unilateral })}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                exercise.unilateral
+                  ? 'bg-purple-500/20 border border-purple-500/40 text-purple-400'
+                  : 'bg-item text-c-dim'
               }`}
             >
-              <span>SS</span>
-              {inActiveSuperset && activeSupersetMembers?.length ? (
-                <span className="tabular-nums">×{activeSupersetMembers.length}</span>
-              ) : null}
+              Uni
             </button>
-            {/* 8. Plates (config toggle — kept at end so user's stated 1-7
-                ordering is preserved exactly; Plates is critical for plate-
-                loaded exercises so it stays accessible). */}
+            {/* 7. Plates (config toggle — kept at end-but-not-last). */}
             <div className="relative">
               <button
                 ref={platesBtnRef}
@@ -2189,6 +2154,40 @@ function ExerciseItem({
                 theme={theme}
               />
             </div>
+            {/* 8. SS — LAST in the row per user spec. Three states nested
+                behind the tap: idle / no history (muted dashed), idle /
+                prior history (indigo filled), or active in a live superset
+                (brighter indigo + member count). Tap opens SupersetSheet. */}
+            <button
+              type="button"
+              onClick={() => setSupersetOpen(true)}
+              title={
+                inActiveSuperset
+                  ? `Active superset — ${activeSupersetMembers?.length ?? 0} exercises`
+                  : priorSuperset
+                    ? `Last paired with ${priorSuperset.partners.join(' + ')}`
+                    : 'Initiate a superset'
+              }
+              aria-label={
+                inActiveSuperset
+                  ? `Active superset with ${activeSupersetMembers?.length ?? 0} exercises`
+                  : priorSuperset
+                    ? `Superset — last paired with ${priorSuperset.partners.join(', ')}`
+                    : 'Initiate superset'
+              }
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                inActiveSuperset
+                  ? 'bg-indigo-500/35 border border-indigo-500/60 text-white font-bold'
+                  : priorSuperset
+                    ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-300'
+                    : 'bg-item text-c-faint border border-dashed border-white/10'
+              }`}
+            >
+              <span>SS</span>
+              {inActiveSuperset && activeSupersetMembers?.length ? (
+                <span className="tabular-nums">×{activeSupersetMembers.length}</span>
+              ) : null}
+            </button>
           </div>
           )}
 
