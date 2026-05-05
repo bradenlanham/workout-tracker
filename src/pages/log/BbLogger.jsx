@@ -532,7 +532,7 @@ function PrevSetRow({ set }) {
 
 // ── Plate-loaded set row ───────────────────────────────────────────────────────
 
-function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null, phase = 'hero', heroAccent = null, compactDropCount = 0 }) {
+function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateMultiplier, onToggleMultiplier, repsRef, onAdvance, onDone, onRepeat = null, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null, phase = 'hero', heroAccent = null, compactDropCount = 0 }) {
   const numpadCtx = useContext(NumpadContext)
   const plates    = set.plates    ?? emptyPlates()
   const barWeight = set.barWeight ?? 45
@@ -634,6 +634,20 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
             <span className="text-orange-400/70 italic">↳ {compactDropCount}</span>
           )}
         </span>
+        {filled && onRepeat && (
+          <button
+            type="button"
+            onClick={onRepeat}
+            className="w-7 h-7 flex items-center justify-center shrink-0"
+            style={{ color: theme.hex }}
+            aria-label="Repeat last weight to next set"
+            title="Repeat weight"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 15a8 8 0 0 1-15.65 2M20 20v-5h-5M4 9a8 8 0 0 1 15.65-2" />
+            </svg>
+          </button>
+        )}
         {filled ? (
           <span
             className="w-7 h-7 flex items-center justify-center text-emerald-400 shrink-0"
@@ -703,27 +717,17 @@ function PlateSetRow({ set, exerciseName, allSessions, onChange, onDelete, onBar
             className="w-16 min-w-0 bg-item text-c-primary rounded-lg px-1 py-2 text-center text-base font-semibold h-10 outline-none"
             style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
           />
-          {set.reps && total > 0 ? (
-            <button
-              type="button"
-              onClick={() => onAdvance?.()}
-              className="w-8 h-10 flex items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
+          {/* Hero (active) row never shows the green ✓ or cyan ⟳ — those affordances
+              only appear on COMPLETED compact rows. The active row stays × delete. */}
+          <button
+            type="button"
+            onClick={onDelete}
+            className="w-8 h-10 flex items-center justify-center rounded-lg bg-item text-c-muted shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
         {/* Batch 55 — left-pad the plate row so 100/45/35/25/10/+ buttons
             align with the start of the Total column (right of the Set Type
@@ -798,7 +802,7 @@ function PlatePicker({ plates, addPlate, removePlate, theme }) {
 
 // ── Active set row ─────────────────────────────────────────────────────────────
 
-function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null, phase = 'hero', heroAccent = null, compactDropCount = 0 }) {
+function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChange, theme, plateLoaded, plateMultiplier, onToggleMultiplier, weightRef, repsRef, onAdvance, onDone, onRepeat = null, setIndex, cyclerDisabled = false, lockedToWorking = false, onConvertToDrop = null, phase = 'hero', heroAccent = null, compactDropCount = 0 }) {
   const numpadCtx    = useContext(NumpadContext)
   const localRepsRef = useRef(null)
 
@@ -881,6 +885,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
         repsRef={el => { localRepsRef.current = el; if (repsRef) repsRef(el) }}
         onAdvance={onAdvance}
         onDone={onDone}
+        onRepeat={onRepeat}
         setIndex={setIndex}
         cyclerDisabled={cyclerDisabled}
         lockedToWorking={lockedToWorking}
@@ -963,6 +968,20 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
             <span className="text-[10px] text-orange-400/70 italic">↳ {compactDropCount}</span>
           )}
         </span>
+        {filled && onRepeat && (
+          <button
+            type="button"
+            onClick={onRepeat}
+            className="w-7 h-7 flex items-center justify-center shrink-0"
+            style={{ color: theme.hex }}
+            aria-label="Repeat last weight to next set"
+            title="Repeat weight"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 15a8 8 0 0 1-15.65 2M20 20v-5h-5M4 9a8 8 0 0 1 15.65-2" />
+            </svg>
+          </button>
+        )}
         {filled ? (
           <span
             className="w-7 h-7 flex items-center justify-center text-emerald-400 shrink-0"
@@ -1050,6 +1069,7 @@ function SetRow({ set, exerciseName, allSessions, onChange, onDelete, onBarChang
           style={isRepsActive ? { boxShadow: `0 0 0 2px ${theme.hex}`, caretColor: 'transparent' } : { caretColor: 'transparent' }}
         />
         <span className="flex-1 text-center text-base">{isPR ? '🏆' : ''}</span>
+        {/* Hero (active) row never shows ⟳ — only compact (completed) rows do. */}
         <button
           type="button"
           onClick={onDelete}
@@ -1498,6 +1518,38 @@ function ExerciseItem({
     }
     const sets = exercise.sets.filter((_, idx) => idx !== i)
     onUpdate({ ...exercise, sets: sets.length ? sets : [{ type: firstSetType, reps: '', weight: '' }] })
+  }
+
+  // ⟳ Repeat-set: copy the source set's weight (or full plate config) forward
+  // into the next set. Reps stays untouched. If the next set doesn't exist yet
+  // (rare — typical Next-on-reps already auto-spawns one), append a fresh empty
+  // one first. Mirrors the pasteOutline plate-copy pattern.
+  const repeatSetForward = (sourceIdx) => {
+    const source = exercise.sets[sourceIdx]
+    if (!source) return
+    const targetIdx = sourceIdx + 1
+    const nextSets = [...exercise.sets]
+    if (targetIdx >= nextSets.length) {
+      nextSets.push(buildEmptySetFor(exercise))
+    }
+    const target = nextSets[targetIdx]
+    if (exercise.plateLoaded) {
+      const mult = exercise.plateMultiplier || 2
+      const newPlates = { ...(source.plates ?? emptyPlates()) }
+      const newBar = source.barWeight ?? exercise.barDefault ?? 45
+      const newWeight = String(calcTotal(newPlates, newBar, mult))
+      nextSets[targetIdx] = {
+        ...target,
+        plates: newPlates,
+        barWeight: newBar,
+        weight: newWeight,
+        plateLoaded: true,
+        plateMultiplier: mult,
+      }
+    } else {
+      nextSets[targetIdx] = { ...target, weight: source.weight }
+    }
+    onUpdate({ ...exercise, sets: nextSets })
   }
 
   // Batch 23: drop-stage handlers. Drop stages live inside a working set's
@@ -2339,6 +2391,7 @@ function ExerciseItem({
                       ? () => onFinishSuperset?.(exercise.id)
                       : stableMarkDone
                     }
+                    onRepeat={() => repeatSetForward(i)}
                     setIndex={i}
                   />
 
@@ -2873,7 +2926,7 @@ function SessionComparison({ currentExercises, lastSession, theme, onContinue })
 
 const GRADES = ['D', 'C', 'B', 'A', 'A+']
 
-const CARDIO_TYPES = ['Running', 'Cycling', 'Elliptical', 'StairMaster', 'Rowing', 'Jump Rope', 'Swimming', 'Other']
+const CARDIO_TYPES = ['Running', 'Walking Incline Treadmill', 'Cycling', 'Elliptical', 'StairMaster', 'Rowing', 'Jump Rope', 'Swimming', 'Other']
 
 const INLINE_INTENSITIES = [
   { id: 'easy',     label: 'Easy' },
