@@ -1,6 +1,6 @@
 # Gains — Project State
 
-> Last updated: April 28, 2026 (Batch 59 — Active set hero treatment + chip toolbar rationalize, shipped through 9 polish iterations)
+> Last updated: May 6, 2026 (Batch 61 — Machine chip persistence fix: v11 library backfill + inheritance promotion + gym-prefer pass-3 fallback)
 
 ## Rules for Claude
 
@@ -2716,6 +2716,34 @@ First user-locked Logger v2 batch per `Gains-Design-Critique.md` §3 + `HANDOFF-
     - `src/pages/log/Recommendation.jsx` — Tip chip className shrunk to match the new compact chip dimensions.
 
 722. **Build.** Final `npx vite build --outDir /tmp/test-build` → ~942 KB bundle / ~254 KB gzipped (+~1 KB / +~0.5 KB vs B58 v3.1, accounting for the new helpers + phase-aware rendering branches across 9 iterations of refinement).
+
+### Batch 61 (May 6, 2026) — Machine chip persistence fix (A1 + A2 + A3)
+
+User report: "the app does not remember the machine value that I input into the machine chip from session to session or gym to gym." Diagnosis from a backup walk: 11 of 13 ever-typed `equipmentInstance` values never made it into the library's `defaultMachineByGym` map. Two failure classes: pre-Batch-50 typings (April 21–25, before the auto-write code existed at all) AND a structural gap where the chip silently inherits values from session-history fallback (Layer C) without firing the popover's onChange — so Batch 50's dual-write never triggers and the per-gym map stays empty. User-locked decision: keep the chip + fix the persistence (Option A from `wise-forging-breeze.md`).
+
+723. **`migrateLibraryToV11(library, sessions)` in `helpers.js`** (A2). Pure helper. Walks every bb-mode session newest-first; for each `(exerciseId-or-name, gymId)` pair with a non-empty `equipmentInstance`, writes the FIRST occurrence (= most-recent given newest-first sort) into `library[i].defaultMachineByGym[gymId]` if that slot is empty. Existing user-set values are preserved (the user may have set them explicitly via ExerciseEditSheet → Gyms — never overwrite). Sessions without `gymId` are skipped (no slot to write into). Idempotent: returns same library array reference when nothing changed. Defensive against null / non-array / malformed inputs at every layer.
+
+724. **Persist version bumped 10 → 11 in `useStore.js`** (A2 wiring). New `if (version < 11)` block in the migrate chain runs `migrateLibraryToV11(persistedState.exerciseLibrary, persistedState.sessions || [])`. Must run AFTER v9 (sessions normalized) and AFTER v6/v7/v8 (library entries have stable ids + dimensions + the 8 HYROX stations seeded). `importData` also chains v11 after the v8 library migration so pre-v11 backups land in the current schema.
+
+725. **A1 inheritance promotion useEffect in `BbLogger.jsx`.** New mount-only useEffect right after `[exercises] = useState(...)` that walks each seeded exercise; when `equipmentInstance` is set AND `seedGymId` is set AND the library entry has no `defaultMachineByGym[seedGymId]` yet, calls `setDefaultMachineByGymStore(libraryEntry.id, seedGymId, inst)`. Ref guard (`didPromoteInheritance`) prevents re-runs. Mid-session changes are still handled by the popover's onChange (Batch 50 dual-write) — A1 only catches the silent-inheritance case where onChange never fires. Closes the structural gap going forward.
+
+726. **A3 gym-prefer in cross-workout-type pass 3 (`BbLogger.jsx`).** Pre-Batch-61 the cross-type fallback at line 3409-3416 ignored gym entirely, so switching active split (different workout-type IDs cause pass 1+2 to miss) could pre-fill the chip with a value from the wrong gym. Now split into 3a (same gym, any type) + 3b (any gym, any type — legacy fallback). Within-pass-3 same-gym preference closes the active-split-change destabilization the user suspected.
+
+727. **`machine-persistence-sanity.mjs` at worktree root.** 29/29 pass. Covers: defensive cases (null/undefined/empty inputs); basic backfill; most-recent-wins per (exercise, gym) pair; existing values preserved; partial fill (new gym alongside existing); name fallback for pre-v3 sessions; sessions without gymId skipped; empty/whitespace equipmentInstance ignored; non-bb sessions skipped; idempotency (re-run = same reference); complex multi-exercise multi-gym; real-data spot check against `workout-backup-2026-05-06.json` (12 distinct (exercise, gym) pairs in sessions → 11 library entries gain `defaultMachineByGym`, jumping from 2 pre-migration to 11 post-migration; specific assertions for Pec Dec @ TR + VASA = "Life Fitness", Leg Press @ Lanhammer = "Freemotion" preserved); full v6→v7→v8→v9→v11 chain matches importData order.
+
+728. **Live preview verification** (port 5173, mobile 375×812, real backup data injected at v10 to force the v10→v11 migrate hook). Three states pass:
+    - **Empty data** → app boots clean, zero new console errors. No regressions.
+    - **Populated weight-only** → pushed to `/log/bb/push` at TR with active split BamBam Blueprint. Pec Dec card expanded → +/− chip toggle revealed → Machine chip reads `Life Fitness` with title `Machine: Life Fitness` — pre-filled from the v11 library map, zero taps required. Switched defaultGymId to VASA, restarted session, expanded Pec Dec → chip reads `Life Fitness` (correct — same machine name at both gyms in the user's data). Single Arm Lat Pulldown's library entry verified to have ONLY `gym_TR: "Freemotion"` in its map (gym-axis specificity correct — empty at VASA).
+    - **HYROX-active** → switched to Metamorphosis split, opened `/log/bb/hyx_tuesday` (Quads). Page renders cleanly: 5 LIFTS (Leg Extensions, Hammer Strength Leg Extension, Squats, Leg Press, Standing Calf Raise) above the immersive yellow HYROX section preview (HYROX Simulation Round, INTERVALS · 4 ROUNDS, RUN LEG 1000m, STATION Rotates 8, REST 1:30, Start HYROX button). No regressions.
+    - All console errors are pre-existing `<ExerciseItem>` key-spread warnings predating B41 (documented known caveat); no new errors introduced.
+
+729. **Files modified.**
+    - `src/utils/helpers.js` — added `migrateLibraryToV11(library, sessions)` after `migrateSplitsToV10`.
+    - `src/store/useStore.js` — imported `migrateLibraryToV11`, bumped persist `version: 10 → 11`, added `if (version < 11)` migrate block, chained `migrateLibraryToV11(libV8, migratedSessions)` in `importData`.
+    - `src/pages/log/BbLogger.jsx` — added A1 inheritance-promotion useEffect after `useState(exercises)`; rewrote pass 3 of `lastExDataByName` build to gym-prefer first then fall through to any-gym (A3).
+    - `machine-persistence-sanity.mjs` (new, worktree root) — 29-assertion sanity script.
+
+730. **Build.** `npx vite build --outDir /tmp/test-build` → 967.66 KB bundle / 259.06 KB gzipped (+~25 KB / +~5 KB vs B59 — most of that delta is Hybrid Training-related batches B60+ that landed in main between B59 and B61, NOT B61 itself; the B61 net delta is ~3-5 KB across the migration helper + A1 useEffect + A3 sub-pass).
 
 ---
 

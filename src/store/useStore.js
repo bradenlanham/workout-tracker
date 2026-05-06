@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateSessionsToV9, migrateCardioSessionsToV9, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, migrateSplitsToV10, defaultDimensionsForType, classifyRepRange, toLocalDateStr, collectLibraryAdditionsFromSplit } from '../utils/helpers'
+import { generateId, migrateSessionsToV2, migrateSessionsToV3, migrateSessionsToV5, migrateSessionsToV9, migrateCardioSessionsToV9, migrateLibraryToV6, migrateLibraryToV7, migrateLibraryToV8, migrateSplitsToV10, migrateLibraryToV11, defaultDimensionsForType, classifyRepRange, toLocalDateStr, collectLibraryAdditionsFromSplit } from '../utils/helpers'
 import {
   BB_WORKOUT_SEQUENCE,
   BB_WORKOUT_NAMES,
@@ -1014,9 +1014,14 @@ const useStore = create(
             // defaultRepRange + repRangeUserSet flag). Idempotent.
             // Batch 37: chain v8 to add type + dimensions + seed the 8
             // HYROX stations on imported libraries. Idempotent.
+            // Batch 61: chain v11 to backfill defaultMachineByGym from the
+            // freshly-migrated session history. Must run AFTER v8 (so
+            // entries have ids) and AFTER session migrations (so the
+            // session shapes are normalized). Idempotent.
             const libV6 = migrateLibraryToV6(data.exerciseLibrary || [])
             const libV7 = migrateLibraryToV7(libV6)
-            const migratedLibrary = migrateLibraryToV8(libV7)
+            const libV8 = migrateLibraryToV8(libV7)
+            const migratedLibrary = migrateLibraryToV11(libV8, migratedSessions)
             // Batch 38: derive distanceMiles / distanceMeters on imported
             // cardio sessions where distanceUnit === 'miles'. Idempotent.
             const migratedCardio = migrateCardioSessionsToV9(data.cardioSessions || [])
@@ -1042,7 +1047,7 @@ const useStore = create(
     }),
     {
       name: 'workout-tracker-v1',
-      version: 10,
+      version: 11,
       // Versioned persist migrations. Each block runs in order; they modify
       // persistedState in place and pass it along.
       //   V1→V2 (Batch 14): backfill rawWeight on every set and recompute
@@ -1088,6 +1093,14 @@ const useStore = create(
       //   HYROX Hybrid template + on user splits saved while the WEEK toggle
       //   is active in SplitCanvas). Pre-Batch-55 splits all become 'cycle'
       //   so the legacy session-anchored behavior is preserved exactly.
+      //   V10→V11 (Batch 61): library backfill of defaultMachineByGym from
+      //   session.equipmentInstance values. Catches up the historical typings
+      //   that pre-dated Batch 50's auto-write, plus any inherited values
+      //   the chip silently carried without firing onChange. Idempotent;
+      //   never overwrites an existing per-(exercise,gym) value. Must run
+      //   after v9 (so session shapes are normalized) and after v6/v7/v8
+      //   (so library entries have stable ids + dimensions + the 8 HYROX
+      //   stations seeded).
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
         if (version < 2 && Array.isArray(persistedState.sessions)) {
@@ -1130,6 +1143,12 @@ const useStore = create(
         }
         if (version < 10 && Array.isArray(persistedState.splits)) {
           persistedState.splits = migrateSplitsToV10(persistedState.splits)
+        }
+        if (version < 11 && Array.isArray(persistedState.exerciseLibrary)) {
+          persistedState.exerciseLibrary = migrateLibraryToV11(
+            persistedState.exerciseLibrary,
+            persistedState.sessions || []
+          )
         }
         return persistedState
       },

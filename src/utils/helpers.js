@@ -1479,6 +1479,90 @@ export function migrateSplitsToV10(splits) {
   return changed > 0 ? out : splits
 }
 
+// Batch 61 v10 → v11 library backfill. Walks every bb-mode session's
+// equipmentInstance values (ordered newest-first) and seeds
+// exerciseLibrary[i].defaultMachineByGym[session.gymId] where missing.
+// Most-recent value per (exerciseId, gymId) wins; existing entries are
+// preserved (the user may have set them explicitly via ExerciseEditSheet).
+//
+// Why this exists: Batch 50 (April 25, 2026) added the dual-write that
+// promotes typed machine values into the library's per-gym map, but
+// pre-Batch-50 typings never reached the map. Plus there's a structural
+// gap where the chip can inherit a value from session history without
+// firing onChange — silently skipping the dual-write. This migration
+// catches up the historical debt; A1's inheritance-promotion useEffect
+// (BbLogger) closes the structural gap going forward.
+//
+// Resolution priority: prefer ex.exerciseId, fall back to ex.name match
+// (handles pre-v3 sessions). Sessions without a gymId are skipped — there's
+// no per-gym slot to write into.
+//
+// Idempotent: returns the same library array reference when nothing
+// changed. Defensive against null / non-array inputs.
+export function migrateLibraryToV11(library, sessions) {
+  if (!Array.isArray(library)) return library
+  if (!Array.isArray(sessions) || sessions.length === 0) return library
+
+  // Build (exerciseId or name) → { [gymId]: instance } map by walking
+  // sessions newest-first and only setting if not yet seen — first
+  // occurrence in newest-first order = "most recent" per the design.
+  const sortedSessions = [...sessions].sort(
+    (a, b) => new Date(b?.date || 0) - new Date(a?.date || 0)
+  )
+  const byId = new Map()
+  const byName = new Map()
+  for (const sess of sortedSessions) {
+    if (!sess || sess.mode !== 'bb' || !sess.gymId) continue
+    if (!sess.data?.exercises || !Array.isArray(sess.data.exercises)) continue
+    const gymId = sess.gymId
+    for (const ex of sess.data.exercises) {
+      if (!ex) continue
+      const inst = typeof ex.equipmentInstance === 'string'
+        ? ex.equipmentInstance.trim()
+        : ''
+      if (!inst) continue
+      if (ex.exerciseId) {
+        if (!byId.has(ex.exerciseId)) byId.set(ex.exerciseId, {})
+        const map = byId.get(ex.exerciseId)
+        if (!map[gymId]) map[gymId] = inst
+      } else if (ex.name) {
+        const key = ex.name.toLowerCase()
+        if (!byName.has(key)) byName.set(key, {})
+        const map = byName.get(key)
+        if (!map[gymId]) map[gymId] = inst
+      }
+    }
+  }
+
+  if (byId.size === 0 && byName.size === 0) return library
+
+  // Apply to library — only fill empty (gymId, exercise) slots; never
+  // overwrite existing user-set values.
+  let changed = 0
+  const out = library.map(entry => {
+    if (!entry || typeof entry !== 'object' || !entry.id) return entry
+    const proposed = byId.get(entry.id) ||
+      (entry.name ? byName.get(entry.name.toLowerCase()) : null)
+    if (!proposed) return entry
+    const current = (entry.defaultMachineByGym && typeof entry.defaultMachineByGym === 'object')
+      ? entry.defaultMachineByGym
+      : {}
+    let entryChanged = false
+    const next = { ...current }
+    for (const gymId of Object.keys(proposed)) {
+      const existing = next[gymId]
+      if (typeof existing === 'string' && existing.trim()) continue
+      next[gymId] = proposed[gymId]
+      entryChanged = true
+    }
+    if (!entryChanged) return entry
+    changed++
+    return { ...entry, defaultMachineByGym: next }
+  })
+
+  return changed > 0 ? out : library
+}
+
 // Per-session top set for an exercise — the working set with the highest
 // e1RM. Skips warmups; drop sets count (same per-side load as the parent
 // working set is fine for fit purposes). Returns chronological ascending.

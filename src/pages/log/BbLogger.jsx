@@ -3406,9 +3406,27 @@ export default function BbLogger() {
   // newest-first, regardless of workout type. Same-type sessions still win
   // (passes 1+2 above ran first), so no behavior change for active splits
   // with their own history.
+  //
+  // Batch 61 (A3) — within pass 3, prefer same-gym sessions before falling
+  // through to any-gym. Without this preference, switching active split
+  // (which changes the workout-type ID) caused the seed to land on whichever
+  // session was most-recent globally, ignoring the current gym. So a TR
+  // session of a freshly-renamed Push could pre-fill the Machine chip with
+  // a Lanhammer machine name. The 3a sub-pass restores gym fidelity; 3b
+  // remains as the broad safety net.
   const allBbSessions = sessions
     .filter(s => s.mode === 'bb' && s.data?.exercises?.length)
     .sort((a, b) => new Date(b.date) - new Date(a.date))
+  // 3a — same gym, any type
+  if (seedGymId) {
+    for (const sess of allBbSessions) {
+      if (sess.gymId !== seedGymId) continue
+      for (const ex of sess.data.exercises) {
+        if (!lastExDataByName[ex.name]) lastExDataByName[ex.name] = ex
+      }
+    }
+  }
+  // 3b — any gym, any type (legacy fallback)
   for (const sess of allBbSessions) {
     for (const ex of sess.data.exercises) {
       if (!lastExDataByName[ex.name]) lastExDataByName[ex.name] = ex
@@ -3511,6 +3529,34 @@ export default function BbLogger() {
   })()
 
   const [exercises,      setExercises]      = useState(() => savedSession?.exercises || defaultExercises)
+
+  // A1 (Batch 61) — inheritance promotion. When the session-start seed (above)
+  // populated equipmentInstance from session-history fallback (Layer C), the
+  // library's defaultMachineByGym map for this gym is silent — Batch 50's
+  // popover-onChange dual-write fires only on user typing, never on inherited
+  // values. Promote those inherited values into the library map so the NEXT
+  // session at this gym can pre-fill from Layer B without re-walking history.
+  // Only fills empty (exercise, gym) slots; never overwrites an existing
+  // value (the user may have set it explicitly via ExerciseEditSheet → Gyms).
+  // Mount-only — mid-session changes are handled by the popover's onChange.
+  const setDefaultMachineByGymStore = useStore(s => s.setDefaultMachineByGym)
+  const didPromoteInheritance = useRef(false)
+  useEffect(() => {
+    if (didPromoteInheritance.current) return
+    didPromoteInheritance.current = true
+    if (!seedGymId || !exercises?.length) return
+    for (const ex of exercises) {
+      const inst = (ex.equipmentInstance || '').trim()
+      if (!inst) continue
+      const libEntry = libraryByName.get(normalizeExerciseName(ex.name))
+      if (!libEntry?.id) continue
+      const existing = libEntry.defaultMachineByGym?.[seedGymId]
+      if (typeof existing === 'string' && existing.trim()) continue
+      setDefaultMachineByGymStore(libEntry.id, seedGymId, inst)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [sessionNotes,   setSessionNotes]   = useState(() => savedSession?.sessionNotes || '')
   // Post-batch redesign: session notes is now a tap-to-expand button styled
   // like + Add Exercise, stacked just below it. Default closed unless the
